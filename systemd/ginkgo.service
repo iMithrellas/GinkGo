@@ -1,0 +1,15 @@
+[Unit]
+Description=GinkGo Daemon (single-binary)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/ginkgo-cli daemon
+Restart=on-failure
+RestartSec=2
+Environment=GODEBUG=madvdontneed=1
+
+[Install]
+WantedBy=default.target
+

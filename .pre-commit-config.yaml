@@ -1,0 +1,21 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: check-merge-conflict
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+
+  - repo: local
+    hooks:
+      - id: go-fmt
+        name: go fmt
+        entry: bash -lc 'test -d cmd || exit 0; go fmt ./...'
+        language: system
+        pass_filenames: false
+      - id: go-vet
+        name: go vet
+        entry: bash -lc 'test -d cmd || exit 0; go vet ./...'
+        language: system
+        pass_filenames: false
+
