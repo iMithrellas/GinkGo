@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	_ "modernc.org/sqlite"
 
@@ -231,83 +232,112 @@ func (s *sqliteStore) Search(ctx context.Context, q api.SearchQuery) ([]api.Entr
 	if limit <= 0 {
 		limit = 500
 	}
-	// FTS table holds title/body/tags and unindexed namespace/id columns.
-	// Non-regex: use MATCH directly, optionally JOIN tag filter; Regex: narrow via token and optionally intersect with tag filter, then filter in Go.
 	var ids []string
-	if !q.Regex {
-		var rows *sql.Rows
-		var err error
-		args := []any{}
-		if len(q.All) > 0 || len(q.Any) > 0 {
-			// CTE to filter by tags first, then join FTS results, order by created_at desc.
-			cte := `WITH tagged AS (
+	var err error
+	if q.Regex {
+		ids, err = s.searchRegex(ctx, q, limit)
+	} else {
+		ids, err = s.searchFTS(ctx, q, limit)
+	}
+	if err != nil {
+		return nil, api.Page{}, err
+	}
+	return s.fetchEntriesByIDs(ctx, ids)
+}
+
+func (s *sqliteStore) searchFTS(ctx context.Context, q api.SearchQuery, limit int) ([]string, error) {
+	if len(q.All) > 0 || len(q.Any) > 0 {
+		return s.searchFTSWithTags(ctx, q, limit)
+	}
+	return s.searchFTSSimple(ctx, q, limit)
+}
+
+func (s *sqliteStore) searchFTSWithTags(ctx context.Context, q api.SearchQuery, limit int) ([]string, error) {
+	args := []any{}
+	cte := `WITH tagged AS (
   SELECT e.id, MAX(e.created_at) AS c_at
   FROM entries e
   JOIN note_tags nt ON nt.note_id = e.id`
-			if q.Namespace != "" {
-				cte += "\n  WHERE e.namespace = ?"
-				args = append(args, q.Namespace)
-			}
-			cte += "\n  GROUP BY e.id\n  HAVING "
-			havings := []string{}
-			if len(q.All) > 0 {
-				ph := strings.Repeat("?,", len(q.All))
-				ph = strings.TrimSuffix(ph, ",")
-				havings = append(havings, "SUM(CASE WHEN nt.tag IN ("+ph+") THEN 1 ELSE 0 END) = "+itoa(len(q.All)))
-				for _, t := range q.All {
-					args = append(args, t)
-				}
-			}
-			if len(q.Any) > 0 {
-				ph := strings.Repeat("?,", len(q.Any))
-				ph = strings.TrimSuffix(ph, ",")
-				havings = append(havings, "SUM(CASE WHEN nt.tag IN ("+ph+") THEN 1 ELSE 0 END) >= 1")
-				for _, t := range q.Any {
-					args = append(args, t)
-				}
-			}
-			cte += strings.Join(havings, " AND ") + "\n)\n"
-			sqlq := cte + `SELECT e.id
+	if q.Namespace != "" {
+		cte += "\n  WHERE e.namespace = ?"
+		args = append(args, q.Namespace)
+	}
+	cte += "\n  GROUP BY e.id\n  HAVING "
+	havings := []string{}
+	if len(q.All) > 0 {
+		ph := strings.Repeat("?,", len(q.All))
+		ph = strings.TrimSuffix(ph, ",")
+		havings = append(havings, "SUM(CASE WHEN nt.tag IN ("+ph+") THEN 1 ELSE 0 END) = "+itoa(len(q.All)))
+		for _, t := range q.All {
+			args = append(args, t)
+		}
+	}
+	if len(q.Any) > 0 {
+		ph := strings.Repeat("?,", len(q.Any))
+		ph = strings.TrimSuffix(ph, ",")
+		havings = append(havings, "SUM(CASE WHEN nt.tag IN ("+ph+") THEN 1 ELSE 0 END) >= 1")
+		for _, t := range q.Any {
+			args = append(args, t)
+		}
+	}
+	cte += strings.Join(havings, " AND ") + "\n)\n"
+	sqlq := cte + `SELECT e.id
 FROM tagged t
 JOIN entries e ON e.id = t.id
 JOIN entries_fts f ON f.rowid = e.rowid
 WHERE f.entries_fts MATCH ?
 ORDER BY t.c_at DESC
 LIMIT ?`
-			args = append(args, q.Query, limit)
-			rows, err = s.db.QueryContext(ctx, sqlq, args...)
-		} else {
-			// No tag filters: scan full FTS with optional namespace, order by created_at.
-			sqlq := `SELECT e.id
+	args = append(args, q.Query, limit)
+	rows, err := s.db.QueryContext(ctx, sqlq, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
+func (s *sqliteStore) searchFTSSimple(ctx context.Context, q api.SearchQuery, limit int) ([]string, error) {
+	sqlq := `SELECT e.id
 FROM entries_fts f
 JOIN entries e ON e.id = f.id
 WHERE f.entries_fts MATCH ?`
-			args = append(args, q.Query)
-			if q.Namespace != "" {
-				sqlq += " AND e.namespace = ?"
-				args = append(args, q.Namespace)
-			}
-			sqlq += " ORDER BY e.created_at DESC LIMIT ?"
-			args = append(args, limit)
-			rows, err = s.db.QueryContext(ctx, sqlq, args...)
-		}
-		if err != nil {
-			return nil, api.Page{}, err
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var id string
-			if err := rows.Scan(&id); err != nil {
-				return nil, api.Page{}, err
-			}
-			ids = append(ids, id)
-		}
-		return s.fetchEntriesByIDs(ctx, ids)
+	args := []any{q.Query}
+	if q.Namespace != "" {
+		sqlq += " AND e.namespace = ?"
+		args = append(args, q.Namespace)
 	}
-	// Regex path with narrowing via longest word token
+	sqlq += " ORDER BY e.created_at DESC LIMIT ?"
+	args = append(args, limit)
+	rows, err := s.db.QueryContext(ctx, sqlq, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
+func (s *sqliteStore) searchRegex(ctx context.Context, q api.SearchQuery, limit int) ([]string, error) {
 	token := longestWord(q.Query)
 	var rows *sql.Rows
 	var err error
+	ids := make([]string, 0, limit)
 	// Optional tag candidate set
 	var tagAllowed map[string]struct{}
 	if len(q.All) > 0 || len(q.Any) > 0 {
@@ -326,13 +356,13 @@ WHERE f.entries_fts MATCH ?`
 			rows, err = s.db.QueryContext(ctx, `SELECT id FROM entries_fts WHERE entries_fts MATCH ? LIMIT ?`, token, limit)
 		}
 		if err != nil {
-			return nil, api.Page{}, err
+			return nil, err
 		}
 		defer rows.Close()
 		for rows.Next() {
 			var id string
 			if err := rows.Scan(&id); err != nil {
-				return nil, api.Page{}, err
+				return nil, err
 			}
 			if tagAllowed != nil {
 				if _, ok := tagAllowed[id]; ok {
@@ -346,7 +376,7 @@ WHERE f.entries_fts MATCH ?`
 		// fallback: list latest entries in namespace (bounded)
 		ents, _, err := s.ListEntries(ctx, api.ListQuery{Namespace: q.Namespace, Limit: limit})
 		if err != nil {
-			return nil, api.Page{}, err
+			return nil, err
 		}
 		for _, e := range ents {
 			if tagAllowed != nil {
@@ -361,20 +391,20 @@ WHERE f.entries_fts MATCH ?`
 	// Fetch and regex filter in Go
 	ents, _, err := s.fetchEntriesByIDs(ctx, ids)
 	if err != nil {
-		return nil, api.Page{}, err
+		return nil, err
 	}
 	re, err := compileRegex(q.Query)
 	if err != nil {
-		return nil, api.Page{}, err
+		return nil, err
 	}
-	out := make([]api.Entry, 0, len(ents))
+	out := make([]string, 0, len(ents))
 	for _, e := range ents {
 		hay := e.Title + "\n" + e.Body + "\n" + strings.Join(e.Tags, ",")
 		if re.MatchString(hay) {
-			out = append(out, e)
+			out = append(out, e.ID)
 		}
 	}
-	return out, api.Page{}, nil
+	return out, nil
 }
 
 // ListByTags implements filtering entries by tag sets (Any/All) with optional namespace.
@@ -497,18 +527,19 @@ func (s *sqliteStore) fetchEntriesByIDs(ctx context.Context, ids []string) ([]ap
 func longestWord(s string) string {
 	s = strings.ToLower(s)
 	best := ""
-	run := []rune{}
+	run := make([]rune, 0, 32)
+
 	flush := func() {
 		if len(run) >= 3 {
-			w := string(run)
-			if len(w) > len(best) {
-				best = w
+			if len(run) > len(best) {
+				best = string(run)
 			}
 		}
 		run = run[:0]
 	}
+
 	for _, r := range s {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
 			run = append(run, r)
 		} else {
 			flush()
