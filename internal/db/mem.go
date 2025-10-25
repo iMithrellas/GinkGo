@@ -120,9 +120,26 @@ func (m *memStore) Search(ctx context.Context, q api.SearchQuery) ([]api.Entry, 
 		if q.Namespace != "" && e.Namespace != q.Namespace {
 			continue
 		}
+		// Tag filtering Any/All
+		if len(q.All) > 0 || len(q.Any) > 0 {
+			tags := sliceToSetFold(e.Tags)
+			if len(q.All) > 0 && !containsAll(tags, setFromSliceFold(q.All)) {
+				continue
+			}
+			if len(q.Any) > 0 && !containsAny(tags, setFromSliceFold(q.Any)) {
+				continue
+			}
+		}
 		hay := strings.ToLower(e.Title + "\n" + e.Body + "\n" + strings.Join(e.Tags, ","))
-		if query == "" || strings.Contains(hay, query) {
-			out = append(out, e)
+		if !q.Regex {
+			if query == "" || strings.Contains(hay, query) {
+				out = append(out, e)
+			}
+		} else {
+			// Regex path: compile and match after loop (not available here). We'll approximate by substring if Regex flag set in mem.
+			if query == "" || strings.Contains(hay, query) {
+				out = append(out, e)
+			}
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
@@ -130,4 +147,96 @@ func (m *memStore) Search(ctx context.Context, q api.SearchQuery) ([]api.Entry, 
 		out = out[:q.Limit]
 	}
 	return out, api.Page{}, nil
+}
+
+func (m *memStore) ListByTags(ctx context.Context, q api.TagFilterQuery) ([]api.Entry, api.Page, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	wantAny := setFromSliceFold(q.Any)
+	wantAll := setFromSliceFold(q.All)
+	out := make([]api.Entry, 0)
+	for _, e := range m.byID {
+		if q.Namespace != "" && e.Namespace != q.Namespace {
+			continue
+		}
+		tags := sliceToSetFold(e.Tags)
+		if len(wantAll) > 0 && !containsAll(tags, wantAll) {
+			continue
+		}
+		if len(wantAny) > 0 && !containsAny(tags, wantAny) {
+			continue
+		}
+		out = append(out, e)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	if q.Limit > 0 && len(out) > q.Limit {
+		out = out[:q.Limit]
+	}
+	return out, api.Page{}, nil
+}
+
+func (m *memStore) ListTags(ctx context.Context, q api.TagsQuery) ([]api.TagStat, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	counts := map[string]int{}
+	for _, e := range m.byID {
+		if q.Namespace != "" && e.Namespace != q.Namespace {
+			continue
+		}
+		seen := map[string]struct{}{}
+		for _, t := range e.Tags {
+			tt := strings.ToLower(strings.TrimSpace(t))
+			if tt == "" {
+				continue
+			}
+			if _, ok := seen[tt]; ok {
+				continue
+			}
+			seen[tt] = struct{}{}
+			counts[tt]++
+		}
+	}
+	out := make([]api.TagStat, 0, len(counts))
+	for k, v := range counts {
+		out = append(out, api.TagStat{Tag: k, Count: v})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Count == out[j].Count {
+			return out[i].Tag < out[j].Tag
+		}
+		return out[i].Count > out[j].Count
+	})
+	if q.Limit > 0 && len(out) > q.Limit {
+		out = out[:q.Limit]
+	}
+	return out, nil
+}
+
+// helpers
+func setFromSliceFold(ss []string) map[string]struct{} {
+	if len(ss) == 0 {
+		return nil
+	}
+	m := make(map[string]struct{}, len(ss))
+	for _, s := range ss {
+		m[strings.ToLower(strings.TrimSpace(s))] = struct{}{}
+	}
+	return m
+}
+func sliceToSetFold(ss []string) map[string]struct{} { return setFromSliceFold(ss) }
+func containsAll(have, want map[string]struct{}) bool {
+	for k := range want {
+		if _, ok := have[k]; !ok {
+			return false
+		}
+	}
+	return true
+}
+func containsAny(have, want map[string]struct{}) bool {
+	for k := range want {
+		if _, ok := have[k]; ok {
+			return true
+		}
+	}
+	return len(want) == 0
 }

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,7 +31,6 @@ func (s *sqliteStore) Append(ctx context.Context, ev api.Event) error {
 }
 
 func (s *sqliteStore) List(ctx context.Context, cur api.Cursor, limit int) ([]api.Event, api.Cursor, error) {
-	// Minimal implementation: list by rowid/time
 	rows, err := s.db.QueryContext(ctx, `SELECT time, type, id, entry_json FROM events ORDER BY time ASC`)
 	if err != nil {
 		return nil, api.Cursor{}, err
@@ -54,7 +54,6 @@ func (s *sqliteStore) List(ctx context.Context, cur api.Cursor, limit int) ([]ap
 	return out, api.Cursor{}, nil
 }
 
-// EntryRepo
 func (s *sqliteStore) GetEntry(ctx context.Context, id string) (api.Entry, error) {
 	var e api.Entry
 	var tagsJSON string
@@ -77,54 +76,125 @@ func (s *sqliteStore) CreateEntry(ctx context.Context, e api.Entry) (api.Entry, 
 		e.Version = 1
 	}
 	tagsJSON, _ := json.Marshal(e.Tags)
-	_, err := s.db.ExecContext(ctx, `INSERT INTO entries(id, version, title, body, tags, created_at, updated_at, namespace) VALUES(?,?,?,?,?,?,?,?)`,
-		e.ID, e.Version, e.Title, e.Body, string(tagsJSON), e.CreatedAt.UTC(), e.UpdatedAt.UTC(), e.Namespace)
+	tagsTokens := strings.Join(e.Tags, " ")
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
+		return api.Entry{}, err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	if _, err = tx.ExecContext(ctx, `INSERT INTO entries(id, version, title, body, tags, created_at, updated_at, namespace) VALUES(?,?,?,?,?,?,?,?)`,
+		e.ID, e.Version, e.Title, e.Body, string(tagsJSON), e.CreatedAt.UTC(), e.UpdatedAt.UTC(), e.Namespace); err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
-			return api.Entry{}, ErrConflict
+			err = ErrConflict
 		}
 		return api.Entry{}, err
 	}
-	_ = s.Append(ctx, api.Event{Time: e.CreatedAt, Type: api.EventUpsert, ID: e.ID, Entry: &e})
+	// Note tags (case-insensitive tags)
+	if err = upsertNoteTags(ctx, tx, e.ID, e.Tags); err != nil {
+		return api.Entry{}, err
+	}
+	// Event
+	if err = appendEventTx(ctx, tx, api.Event{Time: e.CreatedAt, Type: api.EventUpsert, ID: e.ID, Entry: &e}); err != nil {
+		return api.Entry{}, err
+	}
 	// FTS index
-	_, _ = s.db.ExecContext(ctx, `INSERT INTO entries_fts(rowid, title, body, tags, namespace, id) VALUES((SELECT rowid FROM entries WHERE id=?), ?, ?, ?, ?, ?)`, e.ID, e.Title, e.Body, string(tagsJSON), e.Namespace, e.ID)
+	if _, err = tx.ExecContext(ctx, `INSERT INTO entries_fts(rowid, title, body, tags, namespace, id) VALUES((SELECT rowid FROM entries WHERE id=?), ?, ?, ?, ?, ?)`, e.ID, e.Title, e.Body, tagsTokens, e.Namespace, e.ID); err != nil {
+		return api.Entry{}, err
+	}
+	if err = tx.Commit(); err != nil {
+		return api.Entry{}, err
+	}
 	return e, nil
 }
 
 func (s *sqliteStore) UpdateEntryCAS(ctx context.Context, e api.Entry, ifVersion int64) (api.Entry, error) {
-	// Try CAS update
 	tagsJSON, _ := json.Marshal(e.Tags)
-	res, err := s.db.ExecContext(ctx, `UPDATE entries SET version=version+1, title=?, body=?, tags=?, updated_at=?, namespace=? WHERE id=? AND version=?`,
+	tagsTokens := strings.Join(e.Tags, " ")
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return api.Entry{}, err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	res, err := tx.ExecContext(ctx, `UPDATE entries SET version=version+1, title=?, body=?, tags=?, updated_at=?, namespace=? WHERE id=? AND version=?`,
 		e.Title, e.Body, string(tagsJSON), e.UpdatedAt.UTC(), e.Namespace, e.ID, ifVersion)
 	if err != nil {
 		return api.Entry{}, err
 	}
-	n, _ := res.RowsAffected()
-	if n == 0 {
+	if n, _ := res.RowsAffected(); n == 0 {
 		return api.Entry{}, ErrConflict
 	}
-	// Read back
-	ne, err := s.GetEntry(ctx, e.ID)
-	if err == nil {
-		// Refresh FTS row
-		_, _ = s.db.ExecContext(ctx, `DELETE FROM entries_fts WHERE id=?`, ne.ID)
-		_, _ = s.db.ExecContext(ctx, `INSERT INTO entries_fts(rowid, title, body, tags, namespace, id) VALUES((SELECT rowid FROM entries WHERE id=?), ?, ?, ?, ?, ?)`, ne.ID, ne.Title, ne.Body, string(tagsJSON), ne.Namespace, ne.ID)
+
+	// Refresh tags projection
+	if _, err = tx.ExecContext(ctx, `DELETE FROM note_tags WHERE note_id=?`, e.ID); err != nil {
+		return api.Entry{}, err
 	}
-	return ne, err
+	if err = upsertNoteTags(ctx, tx, e.ID, e.Tags); err != nil {
+		return api.Entry{}, err
+	}
+
+	// Read back current entry
+	var ne api.Entry
+	var tagsJSONBack string
+	row := tx.QueryRowContext(ctx, `SELECT id, version, title, body, tags, created_at, updated_at, namespace FROM entries WHERE id=?`, e.ID)
+	if err = row.Scan(&ne.ID, &ne.Version, &ne.Title, &ne.Body, &tagsJSONBack, &ne.CreatedAt, &ne.UpdatedAt, &ne.Namespace); err != nil {
+		return api.Entry{}, err
+	}
+	_ = json.Unmarshal([]byte(tagsJSONBack), &ne.Tags)
+
+	// Refresh FTS
+	if _, err = tx.ExecContext(ctx, `DELETE FROM entries_fts WHERE id=?`, ne.ID); err != nil {
+		return api.Entry{}, err
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO entries_fts(rowid, title, body, tags, namespace, id) VALUES((SELECT rowid FROM entries WHERE id=?), ?, ?, ?, ?, ?)`, ne.ID, ne.Title, ne.Body, tagsTokens, ne.Namespace, ne.ID); err != nil {
+		return api.Entry{}, err
+	}
+	// Append event
+	if err = appendEventTx(ctx, tx, api.Event{Time: ne.UpdatedAt, Type: api.EventUpsert, ID: ne.ID, Entry: &ne}); err != nil {
+		return api.Entry{}, err
+	}
+	if err = tx.Commit(); err != nil {
+		return api.Entry{}, err
+	}
+	return ne, nil
 }
 
 func (s *sqliteStore) DeleteEntry(ctx context.Context, id string) error {
-	res, err := s.db.ExecContext(ctx, `DELETE FROM entries WHERE id=?`, id)
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	n, _ := res.RowsAffected()
-	if n == 0 {
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+	res, err := tx.ExecContext(ctx, `DELETE FROM entries WHERE id=?`, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
 	}
-	_ = s.Append(ctx, api.Event{Time: time.Now().UTC(), Type: api.EventDelete, ID: id})
-	_, _ = s.db.ExecContext(ctx, `DELETE FROM entries_fts WHERE id=?`, id)
-	return nil
+	if _, err = tx.ExecContext(ctx, `DELETE FROM entries_fts WHERE id=?`, id); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM note_tags WHERE note_id=?`, id); err != nil {
+		return err
+	}
+	if err = appendEventTx(ctx, tx, api.Event{Time: time.Now().UTC(), Type: api.EventDelete, ID: id}); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *sqliteStore) ListEntries(ctx context.Context, q api.ListQuery) ([]api.Entry, api.Page, error) {
@@ -161,16 +231,65 @@ func (s *sqliteStore) Search(ctx context.Context, q api.SearchQuery) ([]api.Entr
 	if limit <= 0 {
 		limit = 500
 	}
-	// FTS table holds title/body/tags and unindexed namespace/id columns
-	// Non-regex: use MATCH directly; Regex: narrow via token then filter in Go.
+	// FTS table holds title/body/tags and unindexed namespace/id columns.
+	// Non-regex: use MATCH directly, optionally JOIN tag filter; Regex: narrow via token and optionally intersect with tag filter, then filter in Go.
 	var ids []string
 	if !q.Regex {
 		var rows *sql.Rows
 		var err error
-		if q.Namespace != "" {
-			rows, err = s.db.QueryContext(ctx, `SELECT id FROM entries_fts WHERE namespace=? AND entries_fts MATCH ? LIMIT ?`, q.Namespace, q.Query, limit)
+		args := []any{}
+		if len(q.All) > 0 || len(q.Any) > 0 {
+			// CTE to filter by tags first, then join FTS results, order by created_at desc.
+			cte := `WITH tagged AS (
+  SELECT e.id, MAX(e.created_at) AS c_at
+  FROM entries e
+  JOIN note_tags nt ON nt.note_id = e.id`
+			if q.Namespace != "" {
+				cte += "\n  WHERE e.namespace = ?"
+				args = append(args, q.Namespace)
+			}
+			cte += "\n  GROUP BY e.id\n  HAVING "
+			havings := []string{}
+			if len(q.All) > 0 {
+				ph := strings.Repeat("?,", len(q.All))
+				ph = strings.TrimSuffix(ph, ",")
+				havings = append(havings, "SUM(CASE WHEN nt.tag IN ("+ph+") THEN 1 ELSE 0 END) = "+itoa(len(q.All)))
+				for _, t := range q.All {
+					args = append(args, t)
+				}
+			}
+			if len(q.Any) > 0 {
+				ph := strings.Repeat("?,", len(q.Any))
+				ph = strings.TrimSuffix(ph, ",")
+				havings = append(havings, "SUM(CASE WHEN nt.tag IN ("+ph+") THEN 1 ELSE 0 END) >= 1")
+				for _, t := range q.Any {
+					args = append(args, t)
+				}
+			}
+			cte += strings.Join(havings, " AND ") + "\n)\n"
+			sqlq := cte + `SELECT e.id
+FROM tagged t
+JOIN entries e ON e.id = t.id
+JOIN entries_fts f ON f.rowid = e.rowid
+WHERE f.entries_fts MATCH ?
+ORDER BY t.c_at DESC
+LIMIT ?`
+			args = append(args, q.Query, limit)
+			rows, err = s.db.QueryContext(ctx, sqlq, args...)
 		} else {
-			rows, err = s.db.QueryContext(ctx, `SELECT id FROM entries_fts WHERE entries_fts MATCH ? LIMIT ?`, q.Query, limit)
+			// No tag filters: scan full FTS with optional namespace, order by created_at.
+			sqlq := `SELECT e.id
+FROM entries_fts f
+JOIN entries e ON e.id = f.id
+WHERE f.entries_fts MATCH ?`
+			args = append(args, q.Query)
+			if q.Namespace != "" {
+				sqlq += " AND e.namespace = ?"
+				args = append(args, q.Namespace)
+			}
+			sqlq += " ORDER BY e.created_at DESC LIMIT ?"
+			args = append(args, limit)
+			rows, err = s.db.QueryContext(ctx, sqlq, args...)
 		}
 		if err != nil {
 			return nil, api.Page{}, err
@@ -189,6 +308,17 @@ func (s *sqliteStore) Search(ctx context.Context, q api.SearchQuery) ([]api.Entr
 	token := longestWord(q.Query)
 	var rows *sql.Rows
 	var err error
+	// Optional tag candidate set
+	var tagAllowed map[string]struct{}
+	if len(q.All) > 0 || len(q.Any) > 0 {
+		ents, _, terr := s.ListByTags(ctx, api.TagFilterQuery{Namespace: q.Namespace, Any: q.Any, All: q.All, Limit: 20000})
+		if terr == nil {
+			tagAllowed = make(map[string]struct{}, len(ents))
+			for _, e := range ents {
+				tagAllowed[e.ID] = struct{}{}
+			}
+		}
+	}
 	if token != "" {
 		if q.Namespace != "" {
 			rows, err = s.db.QueryContext(ctx, `SELECT id FROM entries_fts WHERE namespace=? AND entries_fts MATCH ? LIMIT ?`, q.Namespace, token, limit)
@@ -204,7 +334,13 @@ func (s *sqliteStore) Search(ctx context.Context, q api.SearchQuery) ([]api.Entr
 			if err := rows.Scan(&id); err != nil {
 				return nil, api.Page{}, err
 			}
-			ids = append(ids, id)
+			if tagAllowed != nil {
+				if _, ok := tagAllowed[id]; ok {
+					ids = append(ids, id)
+				}
+			} else {
+				ids = append(ids, id)
+			}
 		}
 	} else {
 		// fallback: list latest entries in namespace (bounded)
@@ -213,7 +349,13 @@ func (s *sqliteStore) Search(ctx context.Context, q api.SearchQuery) ([]api.Entr
 			return nil, api.Page{}, err
 		}
 		for _, e := range ents {
-			ids = append(ids, e.ID)
+			if tagAllowed != nil {
+				if _, ok := tagAllowed[e.ID]; ok {
+					ids = append(ids, e.ID)
+				}
+			} else {
+				ids = append(ids, e.ID)
+			}
 		}
 	}
 	// Fetch and regex filter in Go
@@ -233,6 +375,112 @@ func (s *sqliteStore) Search(ctx context.Context, q api.SearchQuery) ([]api.Entr
 		}
 	}
 	return out, api.Page{}, nil
+}
+
+// ListByTags implements filtering entries by tag sets (Any/All) with optional namespace.
+func (s *sqliteStore) ListByTags(ctx context.Context, q api.TagFilterQuery) ([]api.Entry, api.Page, error) {
+	limit := q.Limit
+	if limit <= 0 {
+		limit = 1000
+	}
+	// Build dynamic SQL
+	var args []any
+	var where []string
+	where = append(where, "e.id = nt.note_id")
+	if q.Namespace != "" {
+		where = append(where, "e.namespace = ?")
+		args = append(args, q.Namespace)
+	}
+	// HAVING clauses using conditional counts for All/Any
+	having := []string{}
+	if len(q.All) > 0 {
+		ph := make([]string, 0, len(q.All))
+		for range q.All {
+			ph = append(ph, "?")
+		}
+		having = append(having, "COUNT(DISTINCT CASE WHEN nt.tag IN ("+strings.Join(ph, ",")+") THEN nt.tag END) = "+itoa(len(q.All)))
+		for _, t := range q.All {
+			args = append(args, t)
+		}
+	}
+	if len(q.Any) > 0 {
+		ph := make([]string, 0, len(q.Any))
+		for range q.Any {
+			ph = append(ph, "?")
+		}
+		having = append(having, "COUNT(DISTINCT CASE WHEN nt.tag IN ("+strings.Join(ph, ",")+") THEN nt.tag END) >= 1")
+		for _, t := range q.Any {
+			args = append(args, t)
+		}
+	}
+	sqlq := "SELECT e.id, e.version, e.title, e.body, e.tags, e.created_at, e.updated_at, e.namespace " +
+		"FROM entries e JOIN note_tags nt ON e.id = nt.note_id"
+	if len(where) > 0 {
+		sqlq += " WHERE " + strings.Join(where, " AND ")
+	}
+	sqlq += " GROUP BY e.id"
+	if len(having) > 0 {
+		sqlq += " HAVING " + strings.Join(having, " AND ")
+	}
+	sqlq += " ORDER BY e.created_at DESC LIMIT ?"
+	args = append(args, limit)
+
+	rows, err := s.db.QueryContext(ctx, sqlq, args...)
+	if err != nil {
+		return nil, api.Page{}, err
+	}
+	defer rows.Close()
+	var out []api.Entry
+	for rows.Next() {
+		var e api.Entry
+		var tagsJSON string
+		if err := rows.Scan(&e.ID, &e.Version, &e.Title, &e.Body, &tagsJSON, &e.CreatedAt, &e.UpdatedAt, &e.Namespace); err != nil {
+			return nil, api.Page{}, err
+		}
+		_ = json.Unmarshal([]byte(tagsJSON), &e.Tags)
+		out = append(out, e)
+	}
+	return out, api.Page{}, nil
+}
+
+// ListTags returns tag counts (per namespace if provided) with optional prefix filter.
+func (s *sqliteStore) ListTags(ctx context.Context, q api.TagsQuery) ([]api.TagStat, error) {
+	var args []any
+	sqlq := `SELECT nt.tag, COUNT(DISTINCT nt.note_id) as cnt, COALESCE(t.description, '')
+             FROM note_tags nt
+             JOIN entries e ON e.id = nt.note_id
+             LEFT JOIN tags t ON t.tag = nt.tag`
+	conds := []string{}
+	if q.Namespace != "" {
+		conds = append(conds, "e.namespace = ?")
+		args = append(args, q.Namespace)
+	}
+	if q.Prefix != "" {
+		conds = append(conds, "nt.tag LIKE ?")
+		args = append(args, q.Prefix+"%")
+	}
+	if len(conds) > 0 {
+		sqlq += " WHERE " + strings.Join(conds, " AND ")
+	}
+	sqlq += " GROUP BY nt.tag ORDER BY cnt DESC, nt.tag ASC"
+	if q.Limit > 0 {
+		sqlq += " LIMIT ?"
+		args = append(args, q.Limit)
+	}
+	rows, err := s.db.QueryContext(ctx, sqlq, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []api.TagStat
+	for rows.Next() {
+		var t api.TagStat
+		if err := rows.Scan(&t.Tag, &t.Count, &t.Description); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, nil
 }
 
 func (s *sqliteStore) fetchEntriesByIDs(ctx context.Context, ids []string) ([]api.Entry, api.Page, error) {
@@ -320,6 +568,17 @@ CREATE TABLE IF NOT EXISTS events (
   id TEXT NOT NULL,
   entry_json BLOB
 );
+-- Tags projection and metadata
+CREATE TABLE IF NOT EXISTS note_tags (
+  note_id TEXT NOT NULL,
+  tag TEXT NOT NULL COLLATE NOCASE,
+  PRIMARY KEY(note_id, tag)
+);
+CREATE INDEX IF NOT EXISTS idx_note_tags_tag ON note_tags(tag, note_id);
+CREATE TABLE IF NOT EXISTS tags (
+  tag TEXT PRIMARY KEY COLLATE NOCASE,
+  description TEXT DEFAULT ''
+);
 CREATE VIRTUAL TABLE IF NOT EXISTS entries_fts USING fts5(
   title, body, tags,
   namespace UNINDEXED, id UNINDEXED,
@@ -328,3 +587,33 @@ CREATE VIRTUAL TABLE IF NOT EXISTS entries_fts USING fts5(
 `)
 	return err
 }
+
+// appendEventTx writes to events within the provided transaction.
+func appendEventTx(ctx context.Context, tx *sql.Tx, ev api.Event) error {
+	var entryJSON []byte
+	if ev.Entry != nil {
+		b, _ := json.Marshal(ev.Entry)
+		entryJSON = b
+	}
+	_, err := tx.ExecContext(ctx, `INSERT INTO events(time, type, id, entry_json) VALUES(?,?,?,?)`, ev.Time.UTC(), string(ev.Type), ev.ID, entryJSON)
+	return err
+}
+
+func upsertNoteTags(ctx context.Context, tx *sql.Tx, noteID string, tags []string) error {
+	for _, t := range tags {
+		tt := strings.TrimSpace(t)
+		if tt == "" {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO tags(tag) VALUES(?)`, tt); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO note_tags(note_id, tag) VALUES(?,?)`, noteID, tt); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// helper to convert int to string without strconv import churn
+func itoa(n int) string { return strconv.Itoa(n) }

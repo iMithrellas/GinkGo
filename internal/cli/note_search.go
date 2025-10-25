@@ -8,6 +8,8 @@ import (
 )
 
 func newNoteSearchCmd() *cobra.Command {
+	var tagsAnyCSV string
+	var tagsAllCSV string
 	cmd := &cobra.Command{
 		Use:   "search",
 		Short: "Search notes (fts|regex)",
@@ -25,7 +27,9 @@ func newNoteSearchCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			resp, err := ipc.Request(cmd.Context(), sock, ipc.Message{Name: "note.search.fts", Title: q, Namespace: app.Cfg.Namespace})
+			any := splitCSV(tagsAnyCSV)
+			all := splitCSV(tagsAllCSV)
+			resp, err := ipc.Request(cmd.Context(), sock, ipc.Message{Name: "note.search.fts", Title: q, Namespace: app.Cfg.Namespace, TagsAny: any, TagsAll: all})
 			if err != nil {
 				return err
 			}
@@ -48,7 +52,9 @@ func newNoteSearchCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			resp, err := ipc.Request(cmd.Context(), sock, ipc.Message{Name: "note.search.regex", Title: pattern, Namespace: app.Cfg.Namespace})
+			any := splitCSV(tagsAnyCSV)
+			all := splitCSV(tagsAllCSV)
+			resp, err := ipc.Request(cmd.Context(), sock, ipc.Message{Name: "note.search.regex", Title: pattern, Namespace: app.Cfg.Namespace, TagsAny: any, TagsAll: all})
 			if err != nil {
 				return err
 			}
@@ -60,5 +66,7 @@ func newNoteSearchCmd() *cobra.Command {
 	}
 
 	cmd.AddCommand(fts, rx)
+	cmd.PersistentFlags().StringVar(&tagsAnyCSV, "tags-any", "", "comma-separated tags; match notes containing any")
+	cmd.PersistentFlags().StringVar(&tagsAllCSV, "tags-all", "", "comma-separated tags; match notes containing all")
 	return cmd
 }

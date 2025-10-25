@@ -116,7 +116,13 @@ func Main() error {
 				return ipc.Response{OK: true, Entry: &e}
 			case "note.list":
 				log.Printf("list notes")
-				entries, _, err := app.Store.Entries.ListEntries(ctx, api.ListQuery{Namespace: ns})
+				var entries []api.Entry
+				var err error
+				if len(m.TagsAny) > 0 || len(m.TagsAll) > 0 {
+					entries, _, err = app.Store.Entries.ListByTags(ctx, api.TagFilterQuery{Namespace: ns, Any: m.TagsAny, All: m.TagsAll})
+				} else {
+					entries, _, err = app.Store.Entries.ListEntries(ctx, api.ListQuery{Namespace: ns})
+				}
 				if err != nil {
 					return ipc.Response{OK: false, Msg: err.Error()}
 				}
@@ -124,7 +130,7 @@ func Main() error {
 				return ipc.Response{OK: true, Entries: entries}
 			case "note.search.fts":
 				q := strings.ToLower(strings.TrimSpace(m.Title))
-				entries, _, err := app.Store.Entries.Search(ctx, api.SearchQuery{Namespace: ns, Query: q, Regex: false})
+				entries, _, err := app.Store.Entries.Search(ctx, api.SearchQuery{Namespace: ns, Query: q, Regex: false, Any: m.TagsAny, All: m.TagsAll})
 				if err != nil {
 					return ipc.Response{OK: false, Msg: err.Error()}
 				}
@@ -134,7 +140,7 @@ func Main() error {
 				if _, err := regexp.Compile(pattern); err != nil {
 					return ipc.Response{OK: false, Msg: "bad regex"}
 				}
-				entries, _, err := app.Store.Entries.Search(ctx, api.SearchQuery{Namespace: ns, Query: pattern, Regex: true})
+				entries, _, err := app.Store.Entries.Search(ctx, api.SearchQuery{Namespace: ns, Query: pattern, Regex: true, Any: m.TagsAny, All: m.TagsAll})
 				if err != nil {
 					return ipc.Response{OK: false, Msg: err.Error()}
 				}

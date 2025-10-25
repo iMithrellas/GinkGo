@@ -40,13 +40,40 @@ type ListQuery struct {
 
 // SearchQuery models a query for entry search.
 type SearchQuery struct {
-	Namespace string `json:"namespace"`
-	Query     string `json:"query"`
-	Regex     bool   `json:"regex"`
-	Limit     int    `json:"limit"`
+	Namespace string   `json:"namespace"`
+	Query     string   `json:"query"`
+	Regex     bool     `json:"regex"`
+	Limit     int      `json:"limit"`
+	Any       []string `json:"any"`
+	All       []string `json:"all"`
 }
 
 // Page describes pagination cursors for list/search results.
 type Page struct {
 	Next string `json:"next"`
+}
+
+// TagStat reports a tag with the number of notes using it
+// and an optional human description.
+type TagStat struct {
+	Tag         string `json:"tag"`
+	Count       int    `json:"count"`
+	Description string `json:"description,omitempty"`
+}
+
+// TagsQuery filters tag listing.
+type TagsQuery struct {
+	Namespace string `json:"namespace"`
+	Limit     int    `json:"limit"`
+	Prefix    string `json:"prefix"`
+}
+
+// TagFilterQuery specifies tag-based filtering for entries.
+// Any: match if note contains at least one of these tags.
+// All: match if note contains all of these tags.
+type TagFilterQuery struct {
+	Namespace string   `json:"namespace"`
+	Any       []string `json:"any"`
+	All       []string `json:"all"`
+	Limit     int      `json:"limit"`
 }
