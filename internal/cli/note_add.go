@@ -40,7 +40,15 @@ func runNoteAdd(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("empty title")
 		}
 		tags, _ := cmd.Flags().GetStringSlice("tags")
-		resp, err := ipc.Request(cmd.Context(), sock, ipc.Message{Name: "note.add", Title: title, Tags: tags})
+		if len(tags) == 0 {
+			tags = app.Cfg.DefaultTags
+		}
+		resp, err := ipc.Request(cmd.Context(), sock, ipc.Message{
+			Name:      "note.add",
+			Title:     title,
+			Tags:      tags,
+			Namespace: app.Cfg.Namespace,
+		})
 		if err != nil {
 			return err
 		}
@@ -55,7 +63,10 @@ func runNoteAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	// Editor flow
-	resp, err := ipc.Request(cmd.Context(), sock, ipc.Message{Name: "note.add"})
+	resp, err := ipc.Request(cmd.Context(), sock, ipc.Message{
+		Name:      "note.add",
+		Namespace: app.Cfg.Namespace,
+	})
 	if err != nil {
 		return err
 	}
@@ -80,7 +91,11 @@ func runNoteAdd(cmd *cobra.Command, args []string) error {
 
 	if !changed {
 		if app.Cfg.Editor.DeleteEmpty {
-			_, _ = ipc.Request(cmd.Context(), sock, ipc.Message{Name: "note.delete", ID: e.ID})
+			_, _ = ipc.Request(cmd.Context(), sock, ipc.Message{
+				Name:      "note.delete",
+				ID:        e.ID,
+				Namespace: app.Cfg.Namespace,
+			})
 		}
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "No edits; note unchanged.")
 		return nil
@@ -89,7 +104,11 @@ func runNoteAdd(cmd *cobra.Command, args []string) error {
 	title, tags, body := parseEditedNote(string(out))
 	if title == "" && strings.TrimSpace(body) == "" {
 		if app.Cfg.Editor.DeleteEmpty {
-			_, _ = ipc.Request(cmd.Context(), sock, ipc.Message{Name: "note.delete", ID: e.ID})
+			_, _ = ipc.Request(cmd.Context(), sock, ipc.Message{
+				Name:      "note.delete",
+				ID:        e.ID,
+				Namespace: app.Cfg.Namespace,
+			})
 		}
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Note aborted: empty content.")
 		return nil
@@ -97,9 +116,17 @@ func runNoteAdd(cmd *cobra.Command, args []string) error {
 	if title == "" {
 		title = firstLine(body)
 	}
+	// Apply default tags if none provided
+	if len(tags) == 0 {
+		tags = append(tags, app.Cfg.DefaultTags...)
+	}
 	if title == "" {
 		if app.Cfg.Editor.DeleteEmpty {
-			_, _ = ipc.Request(cmd.Context(), sock, ipc.Message{Name: "note.delete", ID: e.ID})
+			_, _ = ipc.Request(cmd.Context(), sock, ipc.Message{
+				Name:      "note.delete",
+				ID:        e.ID,
+				Namespace: app.Cfg.Namespace,
+			})
 		}
 		return fmt.Errorf("note aborted: empty content")
 	}
@@ -111,6 +138,7 @@ func runNoteAdd(cmd *cobra.Command, args []string) error {
 		Title:     title,
 		Body:      body,
 		Tags:      tags,
+		Namespace: app.Cfg.Namespace,
 	})
 	if err != nil {
 		return err
