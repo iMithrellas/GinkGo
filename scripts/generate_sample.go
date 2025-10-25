@@ -1,18 +1,15 @@
 package main
 
 import (
-	crand "crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	mrand "math/rand"
 	"os"
-	"strconv"
 	"time"
 )
 
 type Entry struct {
-	ID        string    `json:"id"`
+	ID        string    `json:"id,omitempty"`
 	Version   int64     `json:"version"`
 	Title     string    `json:"title"`
 	Body      string    `json:"body"`
@@ -22,25 +19,15 @@ type Entry struct {
 	Namespace string    `json:"namespace"`
 }
 
-func newID() string {
-	now := time.Now().UnixNano()
-	ts := strconv.FormatInt(now, 36)
-	var buf [6]byte
-	_, _ = crand.Read(buf[:])
-	return ts + "-" + hex.EncodeToString(buf[:])
-}
-
 func main() {
 	// Deterministic seed for reproducible output
 	mr := mrand.New(mrand.NewSource(42))
 
-	// Tag pool
 	tags := make([]string, 20)
 	for i := 0; i < 20; i++ {
 		tags[i] = fmt.Sprintf("tag%02d", i+1)
 	}
 
-	// Namespaces: ns1 (80%), ns2 (20%)
 	const total = 500
 	out := make([]Entry, 0, total)
 	base := time.Now().UTC()
@@ -63,7 +50,6 @@ func main() {
 		}
 
 		n := Entry{
-			ID:        newID(),
 			Version:   1,
 			Title:     fmt.Sprintf("Sample Note %03d", i+1),
 			Body:      fmt.Sprintf("This is the body for sample note %03d.\n\nTags: %v\nNamespace: %s\n", i+1, chosen, ns),
