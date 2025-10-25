@@ -50,7 +50,8 @@ func Main() error {
 				// Create if no ID, otherwise CAS update.
 				now := time.Now().UTC()
 				if m.ID == "" {
-					e := api.Entry{ID: api.NewID(), Version: 1, Title: m.Title, Body: m.Body, Tags: m.Tags, CreatedAt: now, UpdatedAt: now, Namespace: ns}
+					tags := normalizeTags(m.Tags)
+					e := api.Entry{ID: api.NewID(), Version: 1, Title: m.Title, Body: m.Body, Tags: tags, CreatedAt: now, UpdatedAt: now, Namespace: ns}
 					e, err := app.Store.Entries.CreateEntry(ctx, e)
 					if err != nil {
 						return ipc.Response{OK: false, Msg: err.Error()}
@@ -73,7 +74,7 @@ func Main() error {
 					cur.Body = m.Body
 				}
 				if m.Tags != nil {
-					cur.Tags = m.Tags
+					cur.Tags = normalizeTags(m.Tags)
 				}
 				cur.UpdatedAt = now
 				ifv := m.IfVersion
@@ -162,6 +163,28 @@ func Main() error {
 	// Allow some time for IPC goroutine to exit cleanly
 	time.Sleep(100 * time.Millisecond)
 	return err
+}
+
+// normalizeTags lowercases and trims tags, removing empties and duplicates while
+// preserving first-seen order.
+func normalizeTags(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(in))
+	out := make([]string, 0, len(in))
+	for _, t := range in {
+		tt := strings.ToLower(strings.TrimSpace(t))
+		if tt == "" {
+			continue
+		}
+		if _, ok := seen[tt]; ok {
+			continue
+		}
+		seen[tt] = struct{}{}
+		out = append(out, tt)
+	}
+	return out
 }
 
 // Start launches the HTTP server on a provided listener (used by tests or CLI control).

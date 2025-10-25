@@ -13,6 +13,7 @@ import (
 // newNoteCmd defines the parent "note" command.
 // Running "ginkgo-cli note" without subcommands adds a note.
 func newNoteCmd() *cobra.Command {
+	var tagsFlag []string
 	cmd := &cobra.Command{
 		Use:   "note [title]",
 		Short: "Work with notes (default: add one-liner)",
@@ -29,7 +30,12 @@ func newNoteCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				resp, err := ipc.Request(cmd.Context(), sock, ipc.Message{Name: "note.add", Title: title, Tags: app.Cfg.DefaultTags, Namespace: app.Cfg.Namespace})
+				// Use provided tags if any; otherwise apply defaults
+				tags := tagsFlag
+				if len(tags) == 0 {
+					tags = app.Cfg.DefaultTags
+				}
+				resp, err := ipc.Request(cmd.Context(), sock, ipc.Message{Name: "note.add", Title: title, Tags: tags, Namespace: app.Cfg.Namespace})
 				if err != nil {
 					return err
 				}
@@ -118,6 +124,9 @@ func newNoteCmd() *cobra.Command {
 	cmd.AddCommand(newNoteListCmd())
 	cmd.AddCommand(newNoteSearchCmd())
 	cmd.AddCommand(newNoteSyncCmd())
+
+	// Flags: allow tags for one-liner adds
+	cmd.Flags().StringSliceVarP(&tagsFlag, "tags", "t", nil, "tags for one-liner add (comma-separated or repeated)")
 
 	return cmd
 }

@@ -632,7 +632,7 @@ func appendEventTx(ctx context.Context, tx *sql.Tx, ev api.Event) error {
 
 func upsertNoteTags(ctx context.Context, tx *sql.Tx, noteID string, tags []string) error {
 	for _, t := range tags {
-		tt := strings.TrimSpace(t)
+		tt := strings.ToLower(strings.TrimSpace(t))
 		if tt == "" {
 			continue
 		}

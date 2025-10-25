@@ -13,12 +13,15 @@ import (
 
 // newNoteAddCmd registers `note add`, but doesn't own wiring; parent calls it.
 func newNoteAddCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "add [title]",
 		Short: "Add a new note",
 		Args:  cobra.ArbitraryArgs,
 		RunE:  runNoteAdd, // shared with parent
 	}
+	// Tags only apply to one-liner usage of add
+	cmd.Flags().StringSliceP("tags", "t", nil, "tags for one-liner add (comma-separated or repeated)")
+	return cmd
 }
 
 // runNoteAdd is the default behavior used by both parent RunE and `note add`.
@@ -36,7 +39,8 @@ func runNoteAdd(cmd *cobra.Command, args []string) error {
 		if title == "" {
 			return fmt.Errorf("empty title")
 		}
-		resp, err := ipc.Request(cmd.Context(), sock, ipc.Message{Name: "note.add", Title: title})
+		tags, _ := cmd.Flags().GetStringSlice("tags")
+		resp, err := ipc.Request(cmd.Context(), sock, ipc.Message{Name: "note.add", Title: title, Tags: tags})
 		if err != nil {
 			return err
 		}
