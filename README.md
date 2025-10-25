@@ -62,7 +62,7 @@ Entries can be created as quick one-liners or rich Markdown notes via `$EDITOR`.
 
 ## Why the Name GinkGo
 
-The **Ginkgo tree** is a symbol of memory, resilience, and longevity — a natural metaphor for journaling. The capitalized “Go” highlights the language of implementation.  
+The **Ginkgo tree** is a symbol of memory, resilience, and longevity — a natural metaphor for journaling. The capitalized “Go” highlights the language of implementation.
 To avoid confusion with the Go testing framework of the same name, the binary/package is called **`ginkgo-cli`**, while the project identity remains **GinkGo**.
 
 ---

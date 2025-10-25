@@ -1,14 +1,15 @@
 package main
 
 import (
-    "log"
+	"fmt"
+	"os"
 
-    "github.com/mithrel/ginkgo/internal/cli"
+	"github.com/mithrel/ginkgo/internal/cli"
 )
 
 func main() {
-    if err := cli.Execute(); err != nil {
-        log.Fatal(err)
-    }
+	if err := cli.Execute(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }
-

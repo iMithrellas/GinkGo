@@ -1,39 +1,50 @@
 package cli
 
 import (
-    "os"
+	"fmt"
+	"os"
 
-    "github.com/spf13/cobra"
+	"github.com/spf13/cobra"
 )
 
 func newCompletionCmd() *cobra.Command {
-    cmd := &cobra.Command{
-        Use:   "completion",
-        Short: "Generate shell completion scripts",
-    }
+	cmd := &cobra.Command{
+		Use:   "completion",
+		Short: "Generate shell completion scripts",
+	}
 
-    cmd.AddCommand(&cobra.Command{
-        Use:   "generate bash",
-        Short: "Generate Bash completions",
-        RunE: func(cmd *cobra.Command, args []string) error {
-            return cmd.Root().GenBashCompletion(os.Stdout)
-        },
-    })
-    cmd.AddCommand(&cobra.Command{
-        Use:   "generate zsh",
-        Short: "Generate Zsh completions",
-        RunE: func(cmd *cobra.Command, args []string) error {
-            return cmd.Root().GenZshCompletion(os.Stdout)
-        },
-    })
-    cmd.AddCommand(&cobra.Command{
-        Use:   "generate fish",
-        Short: "Generate Fish completions",
-        RunE: func(cmd *cobra.Command, args []string) error {
-            return cmd.Root().GenFishCompletion(os.Stdout, true)
-        },
-    })
+	gen := &cobra.Command{
+		Use:   "generate [bash|zsh|fish]...",
+		Short: "Generate completion for specified shells",
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			for i, sh := range args {
+				if i > 0 {
+					// separate multiple outputs with a newline comment
+					_, _ = fmt.Fprintln(os.Stdout)
+					_, _ = fmt.Fprintf(os.Stdout, "# --- %s completion ---\n", sh)
+				}
+				switch sh {
+				case "bash":
+					if err := cmd.Root().GenBashCompletion(os.Stdout); err != nil {
+						return err
+					}
+				case "zsh":
+					if err := cmd.Root().GenZshCompletion(os.Stdout); err != nil {
+						return err
+					}
+				case "fish":
+					if err := cmd.Root().GenFishCompletion(os.Stdout, true); err != nil {
+						return err
+					}
+				default:
+					return fmt.Errorf("unknown shell: %s", sh)
+				}
+			}
+			return nil
+		},
+	}
 
-    return cmd
+	cmd.AddCommand(gen)
+	return cmd
 }
-

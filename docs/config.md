@@ -20,4 +20,3 @@ notifications:
   enabled: true
   every_days: 3
 ```
-

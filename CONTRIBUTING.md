@@ -36,4 +36,3 @@ Thanks for your interest in contributing! This repo aims for small, focused chan
 - Tag releases with semantic versions when the project matures.
 
 Thank you for helping improve GinkGo!
-

@@ -1,21 +1,21 @@
 package cli
 
 import (
-    "fmt"
+	"fmt"
 
-    "github.com/spf13/cobra"
-    "github.com/mithrel/ginkgo/internal/daemon"
+	"github.com/mithrel/ginkgo/internal/daemon"
+	"github.com/spf13/cobra"
 )
 
 func newDaemonCmd() *cobra.Command {
-    cmd := &cobra.Command{
-        Use:   "daemon",
-        Short: "Interact with the local daemon",
-        RunE: func(cmd *cobra.Command, args []string) error {
-            _ = getApp(cmd) // ensure app is initialized via PersistentPreRunE
-            _, _ = fmt.Fprintf(cmd.OutOrStdout(), "Starting ginkgo daemon...\n")
-            return daemon.Main()
-        },
-    }
-    return cmd
+	cmd := &cobra.Command{
+		Use:   "daemon",
+		Short: "Interact with the local daemon",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			_ = getApp(cmd) // ensure app is initialized via PersistentPreRunE
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Starting ginkgo daemon...\n")
+			return daemon.Main()
+		},
+	}
+	return cmd
 }

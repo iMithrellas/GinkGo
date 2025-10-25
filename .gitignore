@@ -9,6 +9,7 @@ build/
 *.dylib
 *.test
 *.out
+*.yaml
 coverage*.txt
 
 # Modules
@@ -29,4 +30,3 @@ Thumbs.db
 .env
 .env.*
 *.local
-

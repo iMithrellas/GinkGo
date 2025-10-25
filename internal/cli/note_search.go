@@ -1,0 +1,64 @@
+package cli
+
+import (
+	"fmt"
+
+	"github.com/mithrel/ginkgo/internal/ipc"
+	"github.com/spf13/cobra"
+)
+
+func newNoteSearchCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "search",
+		Short: "Search notes (fts|regex)",
+	}
+
+	// Full-text search
+	fts := &cobra.Command{
+		Use:   "fts <query>",
+		Short: "Full-text style search",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			app := getApp(cmd)
+			q := args[0]
+			sock, err := ipc.SocketPath()
+			if err != nil {
+				return err
+			}
+			resp, err := ipc.Request(cmd.Context(), sock, ipc.Message{Name: "note.search.fts", Title: q, Namespace: app.Cfg.Namespace})
+			if err != nil {
+				return err
+			}
+			for _, e := range resp.Entries {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\n", e.ID, e.Title)
+			}
+			return nil
+		},
+	}
+
+	// Regex search (narrowed via trigram-like prefilter in daemon)
+	rx := &cobra.Command{
+		Use:   "regex <pattern>",
+		Short: "Regex search (with FTS narrowing)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			app := getApp(cmd)
+			pattern := args[0]
+			sock, err := ipc.SocketPath()
+			if err != nil {
+				return err
+			}
+			resp, err := ipc.Request(cmd.Context(), sock, ipc.Message{Name: "note.search.regex", Title: pattern, Namespace: app.Cfg.Namespace})
+			if err != nil {
+				return err
+			}
+			for _, e := range resp.Entries {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\n", e.ID, e.Title)
+			}
+			return nil
+		},
+	}
+
+	cmd.AddCommand(fts, rx)
+	return cmd
+}

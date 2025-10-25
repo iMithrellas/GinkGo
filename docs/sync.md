@@ -14,4 +14,3 @@ GinkGo uses an event log to record immutable changes. The same log supports offl
 
 ## Daemon vs CLI
 The daemon handles background sync; the CLI can trigger `ginkgo-cli sync` for foreground runs.
-
