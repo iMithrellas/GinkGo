@@ -36,6 +36,7 @@ Entries can be created as quick one-liners or rich Markdown notes via `$EDITOR`.
 - Highlighted matches, context lines, count mode.
 - Pretty Markdown rendering directly in the terminal.
 - Export entries to Markdown, JSON, or NDJSON.
+- Optional interactive list table using Bubble Tea (`ginkgo-cli note list --bubble`, requires building with `-tags bubble`).
 
 ### Multi-User & Namespaces
 - Multiple accounts per server.
@@ -75,6 +76,18 @@ Completions can be generated to `$XDG_DATA_HOME/ginkgo/completions` (fallback: `
 ginkgo-cli completion generate bash
 ginkgo-cli completion generate zsh fish
 ```
+
+## Bubble UI
+
+`note list` supports an interactive table powered by Bubble Tea. It is enabled by default (no build tags required):
+
+```bash
+make build
+ginkgo-cli note list --bubble
+```
+
+- The first build will fetch Charmbracelet deps automatically via Go modules.
+- Use `--bubble` for the interactive UI, or omit it for plain tab-separated output.
 
 ## Contributing
 

@@ -5,26 +5,33 @@ import (
 	"strings"
 
 	"github.com/mithrel/ginkgo/internal/ipc"
+	"github.com/mithrel/ginkgo/internal/ui"
 	"github.com/spf13/cobra"
 )
 
 func newNoteListCmd() *cobra.Command {
 	var tagsAnyCSV string
 	var tagsAllCSV string
+	var useBubble bool
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List notes",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			app := getApp(cmd)
 			sock, err := ipc.SocketPath()
 			if err != nil {
 				return err
 			}
 			any := splitCSV(tagsAnyCSV)
 			all := splitCSV(tagsAllCSV)
-			resp, err := ipc.Request(cmd.Context(), sock, ipc.Message{Name: "note.list", Namespace: app.Cfg.Namespace, TagsAny: any, TagsAll: all})
+			resp, err := ipc.Request(cmd.Context(), sock, ipc.Message{Name: "note.list", Namespace: resolveNamespace(cmd), TagsAny: any, TagsAll: all})
 			if err != nil {
 				return err
+			}
+			if useBubble {
+				if err := ui.RenderEntriesTable(cmd.Context(), resp.Entries); err != nil {
+					return err
+				}
+				return nil
 			}
 			for _, e := range resp.Entries {
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\n", e.ID, e.Title)
@@ -34,6 +41,7 @@ func newNoteListCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&tagsAnyCSV, "tags-any", "", "comma-separated tags; match notes containing any")
 	cmd.Flags().StringVar(&tagsAllCSV, "tags-all", "", "comma-separated tags; match notes containing all")
+	cmd.Flags().BoolVar(&useBubble, "bubble", false, "render interactive table (requires build with -tags bubble)")
 	return cmd
 }
 

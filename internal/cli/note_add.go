@@ -47,7 +47,7 @@ func runNoteAdd(cmd *cobra.Command, args []string) error {
 			Name:      "note.add",
 			Title:     title,
 			Tags:      tags,
-			Namespace: app.Cfg.Namespace,
+			Namespace: resolveNamespace(cmd),
 		})
 		if err != nil {
 			return err
@@ -65,7 +65,7 @@ func runNoteAdd(cmd *cobra.Command, args []string) error {
 	// Editor flow
 	resp, err := ipc.Request(cmd.Context(), sock, ipc.Message{
 		Name:      "note.add",
-		Namespace: app.Cfg.Namespace,
+		Namespace: resolveNamespace(cmd),
 	})
 	if err != nil {
 		return err
@@ -94,7 +94,7 @@ func runNoteAdd(cmd *cobra.Command, args []string) error {
 			_, _ = ipc.Request(cmd.Context(), sock, ipc.Message{
 				Name:      "note.delete",
 				ID:        e.ID,
-				Namespace: app.Cfg.Namespace,
+				Namespace: resolveNamespace(cmd),
 			})
 		}
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "No edits; note unchanged.")
@@ -107,7 +107,7 @@ func runNoteAdd(cmd *cobra.Command, args []string) error {
 			_, _ = ipc.Request(cmd.Context(), sock, ipc.Message{
 				Name:      "note.delete",
 				ID:        e.ID,
-				Namespace: app.Cfg.Namespace,
+				Namespace: resolveNamespace(cmd),
 			})
 		}
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Note aborted: empty content.")
@@ -125,7 +125,7 @@ func runNoteAdd(cmd *cobra.Command, args []string) error {
 			_, _ = ipc.Request(cmd.Context(), sock, ipc.Message{
 				Name:      "note.delete",
 				ID:        e.ID,
-				Namespace: app.Cfg.Namespace,
+				Namespace: resolveNamespace(cmd),
 			})
 		}
 		return fmt.Errorf("note aborted: empty content")
@@ -138,7 +138,7 @@ func runNoteAdd(cmd *cobra.Command, args []string) error {
 		Title:     title,
 		Body:      body,
 		Tags:      tags,
-		Namespace: app.Cfg.Namespace,
+		Namespace: resolveNamespace(cmd),
 	})
 	if err != nil {
 		return err

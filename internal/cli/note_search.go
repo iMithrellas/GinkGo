@@ -21,7 +21,6 @@ func newNoteSearchCmd() *cobra.Command {
 		Short: "Full-text style search",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			app := getApp(cmd)
 			q := args[0]
 			sock, err := ipc.SocketPath()
 			if err != nil {
@@ -29,7 +28,7 @@ func newNoteSearchCmd() *cobra.Command {
 			}
 			any := splitCSV(tagsAnyCSV)
 			all := splitCSV(tagsAllCSV)
-			resp, err := ipc.Request(cmd.Context(), sock, ipc.Message{Name: "note.search.fts", Title: q, Namespace: app.Cfg.Namespace, TagsAny: any, TagsAll: all})
+			resp, err := ipc.Request(cmd.Context(), sock, ipc.Message{Name: "note.search.fts", Title: q, Namespace: resolveNamespace(cmd), TagsAny: any, TagsAll: all})
 			if err != nil {
 				return err
 			}
@@ -46,7 +45,6 @@ func newNoteSearchCmd() *cobra.Command {
 		Short: "Regex search (with FTS narrowing)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			app := getApp(cmd)
 			pattern := args[0]
 			sock, err := ipc.SocketPath()
 			if err != nil {
@@ -54,7 +52,7 @@ func newNoteSearchCmd() *cobra.Command {
 			}
 			any := splitCSV(tagsAnyCSV)
 			all := splitCSV(tagsAllCSV)
-			resp, err := ipc.Request(cmd.Context(), sock, ipc.Message{Name: "note.search.regex", Title: pattern, Namespace: app.Cfg.Namespace, TagsAny: any, TagsAll: all})
+			resp, err := ipc.Request(cmd.Context(), sock, ipc.Message{Name: "note.search.regex", Title: pattern, Namespace: resolveNamespace(cmd), TagsAny: any, TagsAll: all})
 			if err != nil {
 				return err
 			}

@@ -17,13 +17,12 @@ func newNoteShowCmd() *cobra.Command {
 		Short: "Display a note",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			app := getApp(cmd)
 			id := args[0]
 			sock, err := ipc.SocketPath()
 			if err != nil {
 				return err
 			}
-			resp, err := ipc.Request(cmd.Context(), sock, ipc.Message{Name: "note.show", ID: id, Namespace: app.Cfg.Namespace})
+			resp, err := ipc.Request(cmd.Context(), sock, ipc.Message{Name: "note.show", ID: id, Namespace: resolveNamespace(cmd)})
 			if err != nil {
 				return err
 			}

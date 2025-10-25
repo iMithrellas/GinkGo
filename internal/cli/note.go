@@ -1,6 +1,9 @@
 package cli
 
-import "github.com/spf13/cobra"
+import (
+	"github.com/spf13/cobra"
+	"strings"
+)
 
 // newNoteCmd defines the parent "note" command.
 // Running "ginkgo-cli note" without subcommands adds a note.
@@ -26,4 +29,14 @@ func newNoteCmd() *cobra.Command {
 	cmd.Flags().StringSliceVarP(&tagsFlag, "namespace", "n", nil, "override namespace for this command")
 
 	return cmd
+}
+
+// resolveNamespace checks for a --namespace flag; if not set, uses app config.
+func resolveNamespace(cmd *cobra.Command) string {
+	app := getApp(cmd)
+	ns, _ := cmd.Flags().GetString("namespace")
+	if strings.TrimSpace(ns) != "" {
+		return ns
+	}
+	return app.Cfg.Namespace
 }
