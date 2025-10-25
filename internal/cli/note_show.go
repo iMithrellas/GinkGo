@@ -3,11 +3,9 @@ package cli
 import (
 	"errors"
 	"fmt"
-	"strings"
-	"time"
 
 	"github.com/mithrel/ginkgo/internal/ipc"
-	"github.com/mithrel/ginkgo/internal/render"
+	"github.com/mithrel/ginkgo/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -32,13 +30,7 @@ func newNoteShowCmd() *cobra.Command {
 				}
 				return errors.New("not found")
 			}
-			e := resp.Entry
-			tags := ""
-			if len(e.Tags) > 0 {
-				tags = strings.Join(e.Tags, ", ")
-			}
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "ID: %s\nCreated: %s\nTitle: %s\nTags: %s\n---\n%s\n",
-				e.ID, e.CreatedAt.Local().Format(time.RFC3339), e.Title, tags, render.Markdown(e.Body))
+			_, _ = fmt.Fprint(cmd.OutOrStdout(), ui.FormatEntry(*resp.Entry))
 			return nil
 		},
 	}

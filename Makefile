@@ -6,9 +6,15 @@ BIN_SYMLINK := $(HOME)/.local/bin/ginkgo-cli
 SERVICE_DIR := $(HOME)/.config/systemd/user
 SERVICE_FILE := $(CURDIR)/systemd/ginkgo.service
 
+GO_TAGS ?=
+
 build:
 	mkdir -p $(BUILD_DIR)
-	go build -o $(BUILD_OUTPUT) ./cmd/ginkgo-cli
+	@if [ -n "$(GO_TAGS)" ]; then \
+		go build -tags '$(GO_TAGS)' -o $(BUILD_OUTPUT) ./cmd/ginkgo-cli; \
+	else \
+		go build -o $(BUILD_OUTPUT) ./cmd/ginkgo-cli; \
+	fi
 
 install-binary:
 	@echo "Creating $(HOME)/.local/bin if it doesn't exist..."

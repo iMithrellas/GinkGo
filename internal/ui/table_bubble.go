@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
@@ -50,13 +51,25 @@ func RenderEntriesTable(_ context.Context, entries []api.Entry) error {
 		Bold(false)
 	t.SetStyles(s)
 
-	m := model{table: t}
-	p := tea.NewProgram(m)
-	_, err := p.Run()
-	return err
+	m := model{table: t, entries: entries, showIdx: -1}
+	p := tea.NewProgram(m, tea.WithAltScreen())
+	final, err := p.Run()
+	if err != nil {
+		return err
+	}
+	if fm, ok := final.(model); ok {
+		if fm.showIdx >= 0 && fm.showIdx < len(entries) {
+			fmt.Print(FormatEntry(entries[fm.showIdx]))
+		}
+	}
+	return nil
 }
 
-type model struct{ table table.Model }
+type model struct {
+	table   table.Model
+	entries []api.Entry
+	showIdx int
+}
 
 func (m model) Init() tea.Cmd { return nil }
 
@@ -64,7 +77,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "q", "esc", "ctrl+c", "enter":
+		case "q", "esc", "ctrl+c":
+			return m, tea.Quit
+		case "enter":
+			// Mark selection to show after program exits, then quit.
+			idx := m.table.Cursor()
+			if idx >= 0 && idx < len(m.entries) {
+				m.showIdx = idx
+			}
 			return m, tea.Quit
 		}
 	}

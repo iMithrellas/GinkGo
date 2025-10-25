@@ -41,7 +41,7 @@ func newNoteListCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&tagsAnyCSV, "tags-any", "", "comma-separated tags; match notes containing any")
 	cmd.Flags().StringVar(&tagsAllCSV, "tags-all", "", "comma-separated tags; match notes containing all")
-	cmd.Flags().BoolVar(&useBubble, "bubble", false, "render interactive table (requires build with -tags bubble)")
+	cmd.Flags().BoolVar(&useBubble, "bubble", false, "render interactive table")
 	return cmd
 }
 
