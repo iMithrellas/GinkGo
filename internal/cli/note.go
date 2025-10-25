@@ -9,6 +9,7 @@ import (
 // Running "ginkgo-cli note" without subcommands adds a note.
 func newNoteCmd() *cobra.Command {
 	var tagsFlag []string
+	var nsFlag string
 	cmd := &cobra.Command{
 		Use:   "note [title]",
 		Short: "Work with notes (default: add one-liner)",
@@ -24,19 +25,19 @@ func newNoteCmd() *cobra.Command {
 	cmd.AddCommand(newNoteSearchCmd())
 	cmd.AddCommand(newNoteSyncCmd())
 
-	// Flags: allow tags for one-liner adds
+	// Flags: allow tags for one-liner adds and an optional namespace override
 	cmd.Flags().StringSliceVarP(&tagsFlag, "tags", "t", nil, "tags for one-liner add (comma-separated or repeated)")
-	cmd.Flags().StringSliceVarP(&tagsFlag, "namespace", "n", nil, "override namespace for this command")
+	cmd.PersistentFlags().StringVarP(&nsFlag, "namespace", "n", "", "override namespace for this command")
 
 	return cmd
 }
 
 // resolveNamespace checks for a --namespace flag; if not set, uses app config.
 func resolveNamespace(cmd *cobra.Command) string {
-	app := getApp(cmd)
 	ns, _ := cmd.Flags().GetString("namespace")
 	if strings.TrimSpace(ns) != "" {
 		return ns
 	}
+	app := getApp(cmd)
 	return app.Cfg.Namespace
 }
