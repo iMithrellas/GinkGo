@@ -8,8 +8,7 @@ import (
 )
 
 func newNoteSearchCmd() *cobra.Command {
-	var tagsAnyCSV string
-	var tagsAllCSV string
+	var filters FilterOpts
 	cmd := &cobra.Command{
 		Use:   "search",
 		Short: "Search notes (fts|regex)",
@@ -22,13 +21,30 @@ func newNoteSearchCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			q := args[0]
+			sinceStr, untilStr, err := normalizeTimeRange(filters.Since, filters.Until)
+			if err != nil {
+				return err
+			}
+			any := splitCSV(filters.TagsAny)
+			all := splitCSV(filters.TagsAll)
+
 			sock, err := ipc.SocketPath()
 			if err != nil {
 				return err
 			}
-			any := splitCSV(tagsAnyCSV)
-			all := splitCSV(tagsAllCSV)
-			resp, err := ipc.Request(cmd.Context(), sock, ipc.Message{Name: "note.search.fts", Title: q, Namespace: resolveNamespace(cmd), TagsAny: any, TagsAll: all})
+
+			req := ipc.Message{
+				Name:      "note.search.fts",
+				Title:     q,
+				Namespace: resolveNamespace(cmd),
+				TagsAny:   any,
+				TagsAll:   all,
+				Since:     sinceStr, // RFC3339 or ""
+				Until:     untilStr, // RFC3339 or ""
+			}
+
+			resp, err := ipc.Request(cmd.Context(), sock, req)
+
 			if err != nil {
 				return err
 			}
@@ -46,13 +62,27 @@ func newNoteSearchCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			pattern := args[0]
+			sinceStr, untilStr, err := normalizeTimeRange(filters.Since, filters.Until)
+			if err != nil {
+				return err
+			}
+			any := splitCSV(filters.TagsAny)
+			all := splitCSV(filters.TagsAll)
 			sock, err := ipc.SocketPath()
 			if err != nil {
 				return err
 			}
-			any := splitCSV(tagsAnyCSV)
-			all := splitCSV(tagsAllCSV)
-			resp, err := ipc.Request(cmd.Context(), sock, ipc.Message{Name: "note.search.regex", Title: pattern, Namespace: resolveNamespace(cmd), TagsAny: any, TagsAll: all})
+			req := ipc.Message{
+				Name:      "note.search.regex",
+				Title:     pattern,
+				Namespace: resolveNamespace(cmd),
+				TagsAny:   any,
+				TagsAll:   all,
+				Since:     sinceStr, // RFC3339 or ""
+				Until:     untilStr, // RFC3339 or ""
+			}
+
+			resp, err := ipc.Request(cmd.Context(), sock, req)
 			if err != nil {
 				return err
 			}
@@ -64,7 +94,6 @@ func newNoteSearchCmd() *cobra.Command {
 	}
 
 	cmd.AddCommand(fts, rx)
-	cmd.PersistentFlags().StringVar(&tagsAnyCSV, "tags-any", "", "comma-separated tags; match notes containing any")
-	cmd.PersistentFlags().StringVar(&tagsAllCSV, "tags-all", "", "comma-separated tags; match notes containing all")
+	addFilterFlags(cmd, &filters)
 	return cmd
 }

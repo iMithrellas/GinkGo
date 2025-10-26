@@ -12,6 +12,8 @@ type Message struct {
 	Tags      []string `json:"tags,omitempty"`
 	IfVersion int64    `json:"if_version,omitempty"`
 	Namespace string   `json:"namespace,omitempty"`
+	Since     string   `json:"since,omitempty"`
+	Until     string   `json:"until,omitempty"`
 	TagsAny   []string `json:"tags_any,omitempty"`
 	TagsAll   []string `json:"tags_all,omitempty"`
 }

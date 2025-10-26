@@ -10,20 +10,34 @@ import (
 )
 
 func newNoteListCmd() *cobra.Command {
-	var tagsAnyCSV string
-	var tagsAllCSV string
+	var filters FilterOpts
 	var useBubble bool
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List notes",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			sinceStr, untilStr, err := normalizeTimeRange(filters.Since, filters.Until)
+			if err != nil {
+				return err
+			}
+			any := splitCSV(filters.TagsAny)
+			all := splitCSV(filters.TagsAll)
+
 			sock, err := ipc.SocketPath()
 			if err != nil {
 				return err
 			}
-			any := splitCSV(tagsAnyCSV)
-			all := splitCSV(tagsAllCSV)
-			resp, err := ipc.Request(cmd.Context(), sock, ipc.Message{Name: "note.list", Namespace: resolveNamespace(cmd), TagsAny: any, TagsAll: all})
+
+			req := ipc.Message{
+				Name:      "note.list",
+				Namespace: resolveNamespace(cmd),
+				TagsAny:   any,
+				TagsAll:   all,
+				Since:     sinceStr, // RFC3339 string or ""
+				Until:     untilStr, // RFC3339 string or ""
+			}
+
+			resp, err := ipc.Request(cmd.Context(), sock, req)
 			if err != nil {
 				return err
 			}
@@ -39,8 +53,7 @@ func newNoteListCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&tagsAnyCSV, "tags-any", "", "comma-separated tags; match notes containing any")
-	cmd.Flags().StringVar(&tagsAllCSV, "tags-all", "", "comma-separated tags; match notes containing all")
+	addFilterFlags(cmd, &filters)
 	cmd.Flags().BoolVar(&useBubble, "bubble", false, "render interactive table")
 	return cmd
 }

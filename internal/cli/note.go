@@ -5,6 +5,14 @@ import (
 	"strings"
 )
 
+// FilterOpts holds common filtering options for note commands.
+type FilterOpts struct {
+	TagsAny string
+	TagsAll string
+	Since   string
+	Until   string
+}
+
 // newNoteCmd defines the parent "note" command.
 // Running "ginkgo-cli note" without subcommands adds a note.
 func newNoteCmd() *cobra.Command {
@@ -40,4 +48,12 @@ func resolveNamespace(cmd *cobra.Command) string {
 	}
 	app := getApp(cmd)
 	return app.Cfg.Namespace
+}
+
+// addFilterFlags adds common filtering flags to a command.
+func addFilterFlags(cmd *cobra.Command, opts *FilterOpts) {
+	cmd.PersistentFlags().StringVar(&opts.TagsAny, "tags-any", "", "comma-separated tags; match notes containing any")
+	cmd.PersistentFlags().StringVar(&opts.TagsAll, "tags-all", "", "comma-separated tags; match notes containing all")
+	cmd.PersistentFlags().StringVarP(&opts.Since, "since", "s", "", "Show notes created since a time (absolute: '2025-10-26T14:30', relative: '2h', '3d')")
+	cmd.PersistentFlags().StringVarP(&opts.Until, "until", "u", "", "Show notes created until a time (absolute or relative; same formats as --since)")
 }
