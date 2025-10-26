@@ -102,6 +102,12 @@ func (m *memStore) ListEntries(ctx context.Context, q api.ListQuery) ([]api.Entr
 		if q.Namespace != "" && e.Namespace != q.Namespace {
 			continue
 		}
+		if !q.Since.IsZero() && e.CreatedAt.Before(q.Since) {
+			continue
+		}
+		if !q.Until.IsZero() && e.CreatedAt.After(q.Until) {
+			continue
+		}
 		out = append(out, e)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
@@ -118,6 +124,12 @@ func (m *memStore) Search(ctx context.Context, q api.SearchQuery) ([]api.Entry, 
 	query := strings.ToLower(q.Query)
 	for _, e := range m.byID {
 		if q.Namespace != "" && e.Namespace != q.Namespace {
+			continue
+		}
+		if !q.Since.IsZero() && e.CreatedAt.Before(q.Since) {
+			continue
+		}
+		if !q.Until.IsZero() && e.CreatedAt.After(q.Until) {
 			continue
 		}
 		// Tag filtering Any/All
@@ -157,6 +169,12 @@ func (m *memStore) ListByTags(ctx context.Context, q api.TagFilterQuery) ([]api.
 	out := make([]api.Entry, 0)
 	for _, e := range m.byID {
 		if q.Namespace != "" && e.Namespace != q.Namespace {
+			continue
+		}
+		if !q.Since.IsZero() && e.CreatedAt.Before(q.Since) {
+			continue
+		}
+		if !q.Until.IsZero() && e.CreatedAt.After(q.Until) {
 			continue
 		}
 		tags := sliceToSetFold(e.Tags)

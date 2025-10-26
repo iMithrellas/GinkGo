@@ -205,11 +205,27 @@ func (s *sqliteStore) ListEntries(ctx context.Context, q api.ListQuery) ([]api.E
 	if limit <= 0 {
 		limit = 1000
 	}
+	var args []any
+	sqlq := `SELECT id, version, title, body, tags, created_at, updated_at, namespace FROM entries`
+	where := []string{}
 	if q.Namespace != "" {
-		rows, err = s.db.QueryContext(ctx, `SELECT id, version, title, body, tags, created_at, updated_at, namespace FROM entries WHERE namespace=? ORDER BY created_at DESC LIMIT ?`, q.Namespace, limit)
-	} else {
-		rows, err = s.db.QueryContext(ctx, `SELECT id, version, title, body, tags, created_at, updated_at, namespace FROM entries ORDER BY created_at DESC LIMIT ?`, limit)
+		where = append(where, "namespace = ?")
+		args = append(args, q.Namespace)
 	}
+	if !q.Since.IsZero() {
+		where = append(where, "created_at >= ?")
+		args = append(args, q.Since.UTC())
+	}
+	if !q.Until.IsZero() {
+		where = append(where, "created_at <= ?")
+		args = append(args, q.Until.UTC())
+	}
+	if len(where) > 0 {
+		sqlq += " WHERE " + strings.Join(where, " AND ")
+	}
+	sqlq += " ORDER BY created_at DESC LIMIT ?"
+	args = append(args, limit)
+	rows, err = s.db.QueryContext(ctx, sqlq, args...)
 	if err != nil {
 		return nil, api.Page{}, err
 	}
@@ -261,6 +277,22 @@ func (s *sqliteStore) searchFTSWithTags(ctx context.Context, q api.SearchQuery, 
 	if q.Namespace != "" {
 		cte += "\n  WHERE e.namespace = ?"
 		args = append(args, q.Namespace)
+	}
+	if !q.Since.IsZero() {
+		if len(args) == 0 && q.Namespace == "" {
+			cte += "\n  WHERE e.created_at >= ?"
+		} else {
+			cte += "\n  AND e.created_at >= ?"
+		}
+		args = append(args, q.Since.UTC())
+	}
+	if !q.Until.IsZero() {
+		if len(args) == 0 && q.Namespace == "" && q.Since.IsZero() {
+			cte += "\n  WHERE e.created_at <= ?"
+		} else {
+			cte += "\n  AND e.created_at <= ?"
+		}
+		args = append(args, q.Until.UTC())
 	}
 	cte += "\n  GROUP BY e.id\n  HAVING "
 	havings := []string{}
@@ -314,6 +346,14 @@ WHERE f.entries_fts MATCH ?`
 	if q.Namespace != "" {
 		sqlq += " AND e.namespace = ?"
 		args = append(args, q.Namespace)
+	}
+	if !q.Since.IsZero() {
+		sqlq += " AND e.created_at >= ?"
+		args = append(args, q.Since.UTC())
+	}
+	if !q.Until.IsZero() {
+		sqlq += " AND e.created_at <= ?"
+		args = append(args, q.Until.UTC())
 	}
 	sqlq += " ORDER BY e.created_at DESC LIMIT ?"
 	args = append(args, limit)
@@ -374,7 +414,7 @@ func (s *sqliteStore) searchRegex(ctx context.Context, q api.SearchQuery, limit 
 		}
 	} else {
 		// fallback: list latest entries in namespace (bounded)
-		ents, _, err := s.ListEntries(ctx, api.ListQuery{Namespace: q.Namespace, Limit: limit})
+		ents, _, err := s.ListEntries(ctx, api.ListQuery{Namespace: q.Namespace, Limit: limit, Since: q.Since, Until: q.Until})
 		if err != nil {
 			return nil, err
 		}
@@ -388,7 +428,7 @@ func (s *sqliteStore) searchRegex(ctx context.Context, q api.SearchQuery, limit 
 			}
 		}
 	}
-	// Fetch and regex filter in Go
+	// Fetch and regex/time filter in Go
 	ents, _, err := s.fetchEntriesByIDs(ctx, ids)
 	if err != nil {
 		return nil, err
@@ -399,6 +439,12 @@ func (s *sqliteStore) searchRegex(ctx context.Context, q api.SearchQuery, limit 
 	}
 	out := make([]string, 0, len(ents))
 	for _, e := range ents {
+		if !q.Since.IsZero() && e.CreatedAt.Before(q.Since) {
+			continue
+		}
+		if !q.Until.IsZero() && e.CreatedAt.After(q.Until) {
+			continue
+		}
 		hay := e.Title + "\n" + e.Body + "\n" + strings.Join(e.Tags, ",")
 		if re.MatchString(hay) {
 			out = append(out, e.ID)
@@ -420,6 +466,14 @@ func (s *sqliteStore) ListByTags(ctx context.Context, q api.TagFilterQuery) ([]a
 	if q.Namespace != "" {
 		where = append(where, "e.namespace = ?")
 		args = append(args, q.Namespace)
+	}
+	if !q.Since.IsZero() {
+		where = append(where, "e.created_at >= ?")
+		args = append(args, q.Since.UTC())
+	}
+	if !q.Until.IsZero() {
+		where = append(where, "e.created_at <= ?")
+		args = append(args, q.Until.UTC())
 	}
 	// HAVING clauses using conditional counts for All/Any
 	having := []string{}

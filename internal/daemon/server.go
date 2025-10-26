@@ -119,10 +119,11 @@ func Main() error {
 				log.Printf("list notes")
 				var entries []api.Entry
 				var err error
+				since, until := parseBounds(m.Since, m.Until)
 				if len(m.TagsAny) > 0 || len(m.TagsAll) > 0 {
-					entries, _, err = app.Store.Entries.ListByTags(ctx, api.TagFilterQuery{Namespace: ns, Any: m.TagsAny, All: m.TagsAll})
+					entries, _, err = app.Store.Entries.ListByTags(ctx, api.TagFilterQuery{Namespace: ns, Any: m.TagsAny, All: m.TagsAll, Since: since, Until: until})
 				} else {
-					entries, _, err = app.Store.Entries.ListEntries(ctx, api.ListQuery{Namespace: ns})
+					entries, _, err = app.Store.Entries.ListEntries(ctx, api.ListQuery{Namespace: ns, Since: since, Until: until})
 				}
 				if err != nil {
 					return ipc.Response{OK: false, Msg: err.Error()}
@@ -131,17 +132,19 @@ func Main() error {
 				return ipc.Response{OK: true, Entries: entries}
 			case "note.search.fts":
 				q := strings.ToLower(strings.TrimSpace(m.Title))
-				entries, _, err := app.Store.Entries.Search(ctx, api.SearchQuery{Namespace: ns, Query: q, Regex: false, Any: m.TagsAny, All: m.TagsAll})
+				since, until := parseBounds(m.Since, m.Until)
+				entries, _, err := app.Store.Entries.Search(ctx, api.SearchQuery{Namespace: ns, Query: q, Regex: false, Any: m.TagsAny, All: m.TagsAll, Since: since, Until: until})
 				if err != nil {
 					return ipc.Response{OK: false, Msg: err.Error()}
 				}
 				return ipc.Response{OK: true, Entries: entries}
 			case "note.search.regex":
 				pattern := m.Title
+				since, until := parseBounds(m.Since, m.Until)
 				if _, err := regexp.Compile(pattern); err != nil {
 					return ipc.Response{OK: false, Msg: "bad regex"}
 				}
-				entries, _, err := app.Store.Entries.Search(ctx, api.SearchQuery{Namespace: ns, Query: pattern, Regex: true, Any: m.TagsAny, All: m.TagsAll})
+				entries, _, err := app.Store.Entries.Search(ctx, api.SearchQuery{Namespace: ns, Query: pattern, Regex: true, Any: m.TagsAny, All: m.TagsAll, Since: since, Until: until})
 				if err != nil {
 					return ipc.Response{OK: false, Msg: err.Error()}
 				}
@@ -224,4 +227,20 @@ func longestWord(s string) string {
 	}
 	flush()
 	return best
+}
+
+// parseBounds parses RFC3339 time strings, returns zero values when parsing fails.
+func parseBounds(since, until string) (time.Time, time.Time) {
+	var s, u time.Time
+	if ts := strings.TrimSpace(since); ts != "" {
+		if t, err := time.Parse(time.RFC3339, ts); err == nil {
+			s = t.UTC()
+		}
+	}
+	if ts := strings.TrimSpace(until); ts != "" {
+		if t, err := time.Parse(time.RFC3339, ts); err == nil {
+			u = t.UTC()
+		}
+	}
+	return s, u
 }
