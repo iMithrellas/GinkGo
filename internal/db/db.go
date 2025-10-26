@@ -22,8 +22,6 @@ type EntryRepo interface {
 	DeleteEntry(ctx context.Context, id string) error
 	ListEntries(ctx context.Context, q api.ListQuery) ([]api.Entry, api.Page, error)
 	Search(ctx context.Context, q api.SearchQuery) ([]api.Entry, api.Page, error)
-	// Tag-centric queries
-	ListByTags(ctx context.Context, q api.TagFilterQuery) ([]api.Entry, api.Page, error)
 	ListTags(ctx context.Context, q api.TagsQuery) ([]api.TagStat, error)
 }
 

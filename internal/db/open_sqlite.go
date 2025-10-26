@@ -20,6 +20,97 @@ import (
 
 type sqliteStore struct{ db *sql.DB }
 
+// filter and prefilter help compose a reusable CTE for namespace/time/tag constraints.
+type filter struct {
+	Namespace string
+	Since     time.Time
+	Until     time.Time
+	Any       []string
+	All       []string
+	Limit     int
+}
+
+type prefilter struct {
+	CTE  string
+	Args []any
+}
+
+func uniqueStrings(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(in))
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		s = strings.ToLower(strings.TrimSpace(s))
+		if s == "" {
+			continue
+		}
+		if _, ok := seen[s]; ok {
+			continue
+		}
+		seen[s] = struct{}{}
+		out = append(out, s)
+	}
+	return out
+}
+
+// buildPrefilter returns a CTE named "filtered" that selects candidate note ids
+// with created_at as c_at, applying namespace/time filters and prefiltering tags
+// using an IN-list. Callers may add HAVING with precise Any/All logic if needed.
+func buildPrefilter(f filter) prefilter {
+	args := []any{}
+	sql := "WITH filtered AS (\n  SELECT e.id, e.created_at AS c_at\n  FROM entries e"
+	all := uniqueStrings(f.All)
+	any := uniqueStrings(f.Any)
+	if len(all)+len(any) > 0 {
+		sql += "\n  JOIN note_tags nt ON nt.note_id = e.id"
+	}
+	conds := []string{}
+	if f.Namespace != "" {
+		conds = append(conds, "e.namespace = ?")
+		args = append(args, f.Namespace)
+	}
+	if !f.Since.IsZero() {
+		conds = append(conds, "e.created_at >= ?")
+		args = append(args, f.Since.UTC())
+	}
+	if !f.Until.IsZero() {
+		conds = append(conds, "e.created_at <= ?")
+		args = append(args, f.Until.UTC())
+	}
+	if len(conds) > 0 {
+		sql += "\n  WHERE " + strings.Join(conds, " AND ")
+	}
+	sql += "\n  GROUP BY e.id"
+	hav := []string{}
+	if l := len(all); l > 0 {
+		ph := make([]string, 0, l)
+		for range all {
+			ph = append(ph, "?")
+		}
+		hav = append(hav, "SUM(CASE WHEN nt.tag IN ("+strings.Join(ph, ",")+") THEN 1 ELSE 0 END) = "+itoa(l))
+		for _, t := range all {
+			args = append(args, t)
+		}
+	}
+	if l := len(any); l > 0 {
+		ph := make([]string, 0, l)
+		for range any {
+			ph = append(ph, "?")
+		}
+		hav = append(hav, "SUM(CASE WHEN nt.tag IN ("+strings.Join(ph, ",")+") THEN 1 ELSE 0 END) >= 1")
+		for _, t := range any {
+			args = append(args, t)
+		}
+	}
+	if len(hav) > 0 {
+		sql += "\n  HAVING " + strings.Join(hav, " AND ")
+	}
+	sql += "\n)\n"
+	return prefilter{CTE: sql, Args: args}
+}
+
 // EventLog
 func (s *sqliteStore) Append(ctx context.Context, ev api.Event) error {
 	var entryJSON []byte
@@ -198,38 +289,32 @@ func (s *sqliteStore) DeleteEntry(ctx context.Context, id string) error {
 	return tx.Commit()
 }
 
+// ListEntries retrieves entries based on provided filters, including namespace, time ranges, and tags.
 func (s *sqliteStore) ListEntries(ctx context.Context, q api.ListQuery) ([]api.Entry, api.Page, error) {
-	var rows *sql.Rows
-	var err error
 	limit := q.Limit
 	if limit <= 0 {
 		limit = 1000
 	}
-	var args []any
-	sqlq := `SELECT id, version, title, body, tags, created_at, updated_at, namespace FROM entries`
-	where := []string{}
-	if q.Namespace != "" {
-		where = append(where, "namespace = ?")
-		args = append(args, q.Namespace)
-	}
-	if !q.Since.IsZero() {
-		where = append(where, "created_at >= ?")
-		args = append(args, q.Since.UTC())
-	}
-	if !q.Until.IsZero() {
-		where = append(where, "created_at <= ?")
-		args = append(args, q.Until.UTC())
-	}
-	if len(where) > 0 {
-		sqlq += " WHERE " + strings.Join(where, " AND ")
-	}
-	sqlq += " ORDER BY created_at DESC LIMIT ?"
-	args = append(args, limit)
-	rows, err = s.db.QueryContext(ctx, sqlq, args...)
+	pf := buildPrefilter(filter{
+		Namespace: q.Namespace,
+		Since:     q.Since,
+		Until:     q.Until,
+		Any:       q.Any,
+		All:       q.All,
+	})
+	sqlq := pf.CTE + `SELECT e.id, e.version, e.title, e.body, e.tags, e.created_at, e.updated_at, e.namespace
+FROM filtered f
+JOIN entries e ON e.id = f.id
+ORDER BY f.c_at DESC
+LIMIT ?`
+	args := append(pf.Args, limit)
+
+	rows, err := s.db.QueryContext(ctx, sqlq, args...)
 	if err != nil {
 		return nil, api.Page{}, err
 	}
 	defer rows.Close()
+
 	var out []api.Entry
 	for rows.Next() {
 		var e api.Entry
@@ -262,100 +347,46 @@ func (s *sqliteStore) Search(ctx context.Context, q api.SearchQuery) ([]api.Entr
 }
 
 func (s *sqliteStore) searchFTS(ctx context.Context, q api.SearchQuery, limit int) ([]string, error) {
-	if len(q.All) > 0 || len(q.Any) > 0 {
-		return s.searchFTSWithTags(ctx, q, limit)
-	}
-	return s.searchFTSSimple(ctx, q, limit)
-}
-
-func (s *sqliteStore) searchFTSWithTags(ctx context.Context, q api.SearchQuery, limit int) ([]string, error) {
-	args := []any{}
-	cte := `WITH tagged AS (
-  SELECT e.id, MAX(e.created_at) AS c_at
-  FROM entries e
-  JOIN note_tags nt ON nt.note_id = e.id`
-	if q.Namespace != "" {
-		cte += "\n  WHERE e.namespace = ?"
-		args = append(args, q.Namespace)
-	}
-	if !q.Since.IsZero() {
-		if len(args) == 0 && q.Namespace == "" {
-			cte += "\n  WHERE e.created_at >= ?"
-		} else {
-			cte += "\n  AND e.created_at >= ?"
-		}
-		args = append(args, q.Since.UTC())
-	}
-	if !q.Until.IsZero() {
-		if len(args) == 0 && q.Namespace == "" && q.Since.IsZero() {
-			cte += "\n  WHERE e.created_at <= ?"
-		} else {
-			cte += "\n  AND e.created_at <= ?"
-		}
-		args = append(args, q.Until.UTC())
-	}
-	cte += "\n  GROUP BY e.id\n  HAVING "
-	havings := []string{}
-	if len(q.All) > 0 {
-		ph := strings.Repeat("?,", len(q.All))
-		ph = strings.TrimSuffix(ph, ",")
-		havings = append(havings, "SUM(CASE WHEN nt.tag IN ("+ph+") THEN 1 ELSE 0 END) = "+itoa(len(q.All)))
-		for _, t := range q.All {
-			args = append(args, t)
-		}
-	}
-	if len(q.Any) > 0 {
-		ph := strings.Repeat("?,", len(q.Any))
-		ph = strings.TrimSuffix(ph, ",")
-		havings = append(havings, "SUM(CASE WHEN nt.tag IN ("+ph+") THEN 1 ELSE 0 END) >= 1")
-		for _, t := range q.Any {
-			args = append(args, t)
-		}
-	}
-	cte += strings.Join(havings, " AND ") + "\n)\n"
-	sqlq := cte + `SELECT e.id
-FROM tagged t
-JOIN entries e ON e.id = t.id
-JOIN entries_fts f ON f.rowid = e.rowid
-WHERE f.entries_fts MATCH ?
-ORDER BY t.c_at DESC
-LIMIT ?`
-	args = append(args, q.Query, limit)
-	rows, err := s.db.QueryContext(ctx, sqlq, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var ids []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		ids = append(ids, id)
-	}
-	return ids, nil
-}
-
-func (s *sqliteStore) searchFTSSimple(ctx context.Context, q api.SearchQuery, limit int) ([]string, error) {
-	sqlq := `SELECT e.id
-FROM entries_fts f
+	pf := buildPrefilter(filter{Namespace: q.Namespace, Since: q.Since, Until: q.Until, Any: q.Any, All: q.All})
+	sqlq := pf.CTE + `SELECT e.id
+FROM filtered f
 JOIN entries e ON e.id = f.id
-WHERE f.entries_fts MATCH ?`
-	args := []any{q.Query}
-	if q.Namespace != "" {
-		sqlq += " AND e.namespace = ?"
-		args = append(args, q.Namespace)
+JOIN entries_fts x ON x.id = e.id
+`
+	// If tag constraints exist, enforce precise Any/All via HAVING over a fresh tag join.
+	needTags := len(q.All) > 0 || len(q.Any) > 0
+	if needTags {
+		sqlq += "JOIN note_tags nt2 ON nt2.note_id = e.id\n"
 	}
-	if !q.Since.IsZero() {
-		sqlq += " AND e.created_at >= ?"
-		args = append(args, q.Since.UTC())
+	sqlq += "WHERE x.entries_fts MATCH ?\n"
+	args := append([]any{}, pf.Args...)
+	args = append(args, q.Query)
+	if needTags {
+		sqlq += "GROUP BY e.id\nHAVING "
+		hav := []string{}
+		if l := len(q.All); l > 0 {
+			ph := make([]string, 0, l)
+			for range q.All {
+				ph = append(ph, "?")
+			}
+			hav = append(hav, "SUM(CASE WHEN nt2.tag IN ("+strings.Join(ph, ",")+") THEN 1 ELSE 0 END) = "+itoa(l))
+			for _, t := range q.All {
+				args = append(args, t)
+			}
+		}
+		if l := len(q.Any); l > 0 {
+			ph := make([]string, 0, l)
+			for range q.Any {
+				ph = append(ph, "?")
+			}
+			hav = append(hav, "SUM(CASE WHEN nt2.tag IN ("+strings.Join(ph, ",")+") THEN 1 ELSE 0 END) >= 1")
+			for _, t := range q.Any {
+				args = append(args, t)
+			}
+		}
+		sqlq += strings.Join(hav, " AND ") + "\n"
 	}
-	if !q.Until.IsZero() {
-		sqlq += " AND e.created_at <= ?"
-		args = append(args, q.Until.UTC())
-	}
-	sqlq += " ORDER BY e.created_at DESC LIMIT ?"
+	sqlq += "ORDER BY f.c_at DESC\nLIMIT ?"
 	args = append(args, limit)
 	rows, err := s.db.QueryContext(ctx, sqlq, args...)
 	if err != nil {
@@ -375,156 +406,48 @@ WHERE f.entries_fts MATCH ?`
 
 func (s *sqliteStore) searchRegex(ctx context.Context, q api.SearchQuery, limit int) ([]string, error) {
 	token := longestWord(q.Query)
-	var rows *sql.Rows
-	var err error
-	ids := make([]string, 0, limit)
-	// Optional tag candidate set
-	var tagAllowed map[string]struct{}
-	if len(q.All) > 0 || len(q.Any) > 0 {
-		ents, _, terr := s.ListByTags(ctx, api.TagFilterQuery{Namespace: q.Namespace, Any: q.Any, All: q.All, Limit: 20000})
-		if terr == nil {
-			tagAllowed = make(map[string]struct{}, len(ents))
-			for _, e := range ents {
-				tagAllowed[e.ID] = struct{}{}
-			}
-		}
+	pf := buildPrefilter(filter{Namespace: q.Namespace, Since: q.Since, Until: q.Until, Any: q.Any, All: q.All})
+	// Candidate cap to keep resource usage bounded
+	cand := limit * 20
+	if cand < limit {
+		cand = limit
 	}
+	sqlq := pf.CTE + `SELECT e.id, e.title, e.body, e.tags
+FROM filtered f
+JOIN entries e ON e.id = f.id`
+	args := append([]any{}, pf.Args...)
 	if token != "" {
-		if q.Namespace != "" {
-			rows, err = s.db.QueryContext(ctx, `SELECT id FROM entries_fts WHERE namespace=? AND entries_fts MATCH ? LIMIT ?`, q.Namespace, token, limit)
-		} else {
-			rows, err = s.db.QueryContext(ctx, `SELECT id FROM entries_fts WHERE entries_fts MATCH ? LIMIT ?`, token, limit)
-		}
-		if err != nil {
-			return nil, err
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var id string
-			if err := rows.Scan(&id); err != nil {
-				return nil, err
-			}
-			if tagAllowed != nil {
-				if _, ok := tagAllowed[id]; ok {
-					ids = append(ids, id)
-				}
-			} else {
-				ids = append(ids, id)
-			}
-		}
-	} else {
-		// fallback: list latest entries in namespace (bounded)
-		ents, _, err := s.ListEntries(ctx, api.ListQuery{Namespace: q.Namespace, Limit: limit, Since: q.Since, Until: q.Until})
-		if err != nil {
-			return nil, err
-		}
-		for _, e := range ents {
-			if tagAllowed != nil {
-				if _, ok := tagAllowed[e.ID]; ok {
-					ids = append(ids, e.ID)
-				}
-			} else {
-				ids = append(ids, e.ID)
-			}
-		}
+		sqlq += "\nJOIN entries_fts x ON x.id = e.id\nWHERE x.entries_fts MATCH ?"
+		args = append(args, token)
 	}
-	// Fetch and regex/time filter in Go
-	ents, _, err := s.fetchEntriesByIDs(ctx, ids)
+	sqlq += "\nORDER BY f.c_at DESC\nLIMIT ?"
+	args = append(args, cand)
+	rows, err := s.db.QueryContext(ctx, sqlq, args...)
 	if err != nil {
 		return nil, err
 	}
+	defer rows.Close()
 	re, err := compileRegex(q.Query)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]string, 0, len(ents))
-	for _, e := range ents {
-		if !q.Since.IsZero() && e.CreatedAt.Before(q.Since) {
-			continue
+	out := make([]string, 0, limit)
+	for rows.Next() {
+		var id, title, body, tagsJSON string
+		if err := rows.Scan(&id, &title, &body, &tagsJSON); err != nil {
+			return nil, err
 		}
-		if !q.Until.IsZero() && e.CreatedAt.After(q.Until) {
-			continue
-		}
-		hay := e.Title + "\n" + e.Body + "\n" + strings.Join(e.Tags, ",")
+		var tags []string
+		_ = json.Unmarshal([]byte(tagsJSON), &tags)
+		hay := title + "\n" + body + "\n" + strings.Join(tags, ",")
 		if re.MatchString(hay) {
-			out = append(out, e.ID)
+			out = append(out, id)
+			if len(out) >= limit {
+				break
+			}
 		}
 	}
 	return out, nil
-}
-
-// ListByTags implements filtering entries by tag sets (Any/All) with optional namespace.
-func (s *sqliteStore) ListByTags(ctx context.Context, q api.TagFilterQuery) ([]api.Entry, api.Page, error) {
-	limit := q.Limit
-	if limit <= 0 {
-		limit = 1000
-	}
-	// Build dynamic SQL
-	var args []any
-	var where []string
-	where = append(where, "e.id = nt.note_id")
-	if q.Namespace != "" {
-		where = append(where, "e.namespace = ?")
-		args = append(args, q.Namespace)
-	}
-	if !q.Since.IsZero() {
-		where = append(where, "e.created_at >= ?")
-		args = append(args, q.Since.UTC())
-	}
-	if !q.Until.IsZero() {
-		where = append(where, "e.created_at <= ?")
-		args = append(args, q.Until.UTC())
-	}
-	// HAVING clauses using conditional counts for All/Any
-	having := []string{}
-	if len(q.All) > 0 {
-		ph := make([]string, 0, len(q.All))
-		for range q.All {
-			ph = append(ph, "?")
-		}
-		having = append(having, "COUNT(DISTINCT CASE WHEN nt.tag IN ("+strings.Join(ph, ",")+") THEN nt.tag END) = "+itoa(len(q.All)))
-		for _, t := range q.All {
-			args = append(args, t)
-		}
-	}
-	if len(q.Any) > 0 {
-		ph := make([]string, 0, len(q.Any))
-		for range q.Any {
-			ph = append(ph, "?")
-		}
-		having = append(having, "COUNT(DISTINCT CASE WHEN nt.tag IN ("+strings.Join(ph, ",")+") THEN nt.tag END) >= 1")
-		for _, t := range q.Any {
-			args = append(args, t)
-		}
-	}
-	sqlq := "SELECT e.id, e.version, e.title, e.body, e.tags, e.created_at, e.updated_at, e.namespace " +
-		"FROM entries e JOIN note_tags nt ON e.id = nt.note_id"
-	if len(where) > 0 {
-		sqlq += " WHERE " + strings.Join(where, " AND ")
-	}
-	sqlq += " GROUP BY e.id"
-	if len(having) > 0 {
-		sqlq += " HAVING " + strings.Join(having, " AND ")
-	}
-	sqlq += " ORDER BY e.created_at DESC LIMIT ?"
-	args = append(args, limit)
-
-	rows, err := s.db.QueryContext(ctx, sqlq, args...)
-	if err != nil {
-		return nil, api.Page{}, err
-	}
-	defer rows.Close()
-	var out []api.Entry
-	for rows.Next() {
-		var e api.Entry
-		var tagsJSON string
-		if err := rows.Scan(&e.ID, &e.Version, &e.Title, &e.Body, &tagsJSON, &e.CreatedAt, &e.UpdatedAt, &e.Namespace); err != nil {
-			return nil, api.Page{}, err
-		}
-		_ = json.Unmarshal([]byte(tagsJSON), &e.Tags)
-		out = append(out, e)
-	}
-	return out, api.Page{}, nil
 }
 
 // ListTags returns tag counts (per namespace if provided) with optional prefix filter.
@@ -620,7 +543,13 @@ func openSQLite(ctx context.Context, dsn string) (*Store, io.Closer, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	// set WAL mode
 	if _, err := dbh.ExecContext(ctx, `PRAGMA journal_mode=WAL;`); err != nil {
+		_ = dbh.Close()
+		return nil, nil, err
+	}
+	// enforce foreign keys
+	if _, err := dbh.ExecContext(ctx, `PRAGMA foreign_keys=ON;`); err != nil {
 		_ = dbh.Close()
 		return nil, nil, err
 	}
@@ -645,7 +574,7 @@ CREATE TABLE IF NOT EXISTS entries (
   updated_at TIMESTAMP NOT NULL,
   namespace TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_entries_ns_created ON entries(namespace, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_entries_ns_created_id ON entries(namespace, created_at DESC, id);
 CREATE INDEX IF NOT EXISTS idx_entries_title ON entries(title);
 CREATE TABLE IF NOT EXISTS events (
   time TIMESTAMP NOT NULL,
@@ -657,9 +586,10 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE TABLE IF NOT EXISTS note_tags (
   note_id TEXT NOT NULL,
   tag TEXT NOT NULL COLLATE NOCASE,
-  PRIMARY KEY(note_id, tag)
+  PRIMARY KEY(note_id, tag),
+  FOREIGN KEY(note_id) REFERENCES entries(id) ON DELETE CASCADE
 );
-CREATE INDEX IF NOT EXISTS idx_note_tags_tag ON note_tags(tag, note_id);
+CREATE INDEX IF NOT EXISTS idx_note_tags_tag_note ON note_tags(tag, note_id);
 CREATE TABLE IF NOT EXISTS tags (
   tag TEXT PRIMARY KEY COLLATE NOCASE,
   description TEXT DEFAULT ''

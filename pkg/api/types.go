@@ -32,14 +32,6 @@ type Cursor struct {
 	After time.Time `json:"after"`
 }
 
-// ListQuery filters listing of entries.
-type ListQuery struct {
-	Namespace string    `json:"namespace"`
-	Limit     int       `json:"limit"`
-	Since     time.Time `json:"since"`
-	Until     time.Time `json:"until"`
-}
-
 // SearchQuery models a query for entry search.
 type SearchQuery struct {
 	Namespace string    `json:"namespace"`
@@ -72,14 +64,14 @@ type TagsQuery struct {
 	Prefix    string `json:"prefix"`
 }
 
-// TagFilterQuery specifies tag-based filtering for entries.
+// ListQuery specifies tag-based filtering for entries.
 // Any: match if note contains at least one of these tags.
 // All: match if note contains all of these tags.
-type TagFilterQuery struct {
+type ListQuery struct {
 	Namespace string    `json:"namespace"`
-	Any       []string  `json:"any"`
-	All       []string  `json:"all"`
+	Any       []string  `json:"any,omitempty"`
+	All       []string  `json:"all,omitempty"`
 	Limit     int       `json:"limit"`
-	Since     time.Time `json:"since"`
-	Until     time.Time `json:"until"`
+	Since     time.Time `json:"since,omitempty"`
+	Until     time.Time `json:"until,omitempty"`
 }

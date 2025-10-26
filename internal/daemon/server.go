@@ -120,11 +120,13 @@ func Main() error {
 				var entries []api.Entry
 				var err error
 				since, until := parseBounds(m.Since, m.Until)
-				if len(m.TagsAny) > 0 || len(m.TagsAll) > 0 {
-					entries, _, err = app.Store.Entries.ListByTags(ctx, api.TagFilterQuery{Namespace: ns, Any: m.TagsAny, All: m.TagsAll, Since: since, Until: until})
-				} else {
-					entries, _, err = app.Store.Entries.ListEntries(ctx, api.ListQuery{Namespace: ns, Since: since, Until: until})
-				}
+				entries, _, err = app.Store.Entries.ListEntries(ctx, api.ListQuery{
+					Namespace: ns,
+					Any:       m.TagsAny,
+					All:       m.TagsAll,
+					Since:     since,
+					Until:     until,
+				})
 				if err != nil {
 					return ipc.Response{OK: false, Msg: err.Error()}
 				}
