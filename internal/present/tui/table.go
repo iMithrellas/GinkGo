@@ -8,12 +8,13 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/mithrel/ginkgo/internal/ipc"
 	"github.com/mithrel/ginkgo/internal/present/format"
 	"github.com/mithrel/ginkgo/pkg/api"
 )
 
 // RenderTable opens an interactive Bubble Tea table to browse entries.
-func RenderTable(_ context.Context, entries []api.Entry) error {
+func RenderTable(ctx context.Context, entries []api.Entry) error {
 	m := model{entries: entries, showIdx: -1}
 	m.initTable()
 
@@ -24,7 +25,17 @@ func RenderTable(_ context.Context, entries []api.Entry) error {
 	}
 	if fm, ok := final.(model); ok {
 		if fm.showIdx >= 0 && fm.showIdx < len(entries) {
-			_ = format.WritePrettyEntry(os.Stdout, entries[fm.showIdx])
+			sel := entries[fm.showIdx]
+			if sock, err := ipc.SocketPath(); err == nil {
+				// Let daemon resolve namespace; only ID is required here.
+				if resp, err := ipc.Request(ctx, sock, ipc.Message{Name: "note.show", ID: sel.ID}); err == nil && resp.OK && resp.Entry != nil {
+					_ = format.WritePrettyEntry(os.Stdout, *resp.Entry)
+				} else {
+					_ = format.WritePrettyEntry(os.Stdout, sel)
+				}
+			} else {
+				_ = format.WritePrettyEntry(os.Stdout, sel)
+			}
 		}
 	}
 	return nil
