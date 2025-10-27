@@ -56,7 +56,7 @@ func newImportCmd() *cobra.Command {
 					e.UpdatedAt = e.CreatedAt
 				}
 				if e.Namespace == "" {
-					e.Namespace = app.Cfg.Namespace
+					e.Namespace = app.Cfg.GetString("namespace")
 				}
 			}
 

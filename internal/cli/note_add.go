@@ -41,7 +41,7 @@ func runNoteAdd(cmd *cobra.Command, args []string) error {
 		}
 		tags, _ := cmd.Flags().GetStringSlice("tags")
 		if len(tags) == 0 {
-			tags = app.Cfg.DefaultTags
+			tags = app.Cfg.GetStringSlice("default_tags")
 		}
 		resp, err := ipc.Request(cmd.Context(), sock, ipc.Message{
 			Name:      "note.add",
@@ -90,7 +90,7 @@ func runNoteAdd(cmd *cobra.Command, args []string) error {
 	_ = os.Remove(path)
 
 	if !changed {
-		if app.Cfg.Editor.DeleteEmpty {
+		if app.Cfg.GetBool("editor.delete_empty") {
 			_, _ = ipc.Request(cmd.Context(), sock, ipc.Message{
 				Name:      "note.delete",
 				ID:        e.ID,
@@ -103,7 +103,7 @@ func runNoteAdd(cmd *cobra.Command, args []string) error {
 
 	title, tags, body := parseEditedNote(string(out))
 	if title == "" && strings.TrimSpace(body) == "" {
-		if app.Cfg.Editor.DeleteEmpty {
+		if app.Cfg.GetBool("editor.delete_empty") {
 			_, _ = ipc.Request(cmd.Context(), sock, ipc.Message{
 				Name:      "note.delete",
 				ID:        e.ID,
@@ -118,10 +118,10 @@ func runNoteAdd(cmd *cobra.Command, args []string) error {
 	}
 	// Apply default tags if none provided
 	if len(tags) == 0 {
-		tags = append(tags, app.Cfg.DefaultTags...)
+		tags = append(tags, app.Cfg.GetStringSlice("default_tags")...)
 	}
 	if title == "" {
-		if app.Cfg.Editor.DeleteEmpty {
+		if app.Cfg.GetBool("editor.delete_empty") {
 			_, _ = ipc.Request(cmd.Context(), sock, ipc.Message{
 				Name:      "note.delete",
 				ID:        e.ID,

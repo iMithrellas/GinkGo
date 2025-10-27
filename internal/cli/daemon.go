@@ -12,9 +12,9 @@ func newDaemonCmd() *cobra.Command {
 		Use:   "daemon",
 		Short: "Interact with the local daemon",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_ = getApp(cmd) // ensure app is initialized via PersistentPreRunE
+			app := getApp(cmd) // initialized via PersistentPreRunE
 			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Starting ginkgo daemon...\n")
-			return daemon.Main()
+			return daemon.Run(cmd.Context(), app)
 		},
 	}
 	return cmd

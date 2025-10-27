@@ -40,12 +40,11 @@ func NewRootCmd() *cobra.Command {
 			if cfgPath != "" {
 				v.SetConfigFile(cfgPath)
 			}
-			c, err := config.Load(cmd.Context(), v)
-			if err != nil {
+			if err := config.Load(cmd.Context(), v); err != nil {
 				return err
 			}
 			// Wire up the app and stash it in context for subcommands.
-			app, err := wire.BuildApp(cmd.Context(), c)
+			app, err := wire.BuildApp(cmd.Context(), v)
 			if err != nil {
 				return err
 			}

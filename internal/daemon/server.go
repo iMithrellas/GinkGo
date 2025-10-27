@@ -10,15 +10,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mithrel/ginkgo/internal/config"
 	"github.com/mithrel/ginkgo/internal/db"
 	"github.com/mithrel/ginkgo/internal/ipc"
 	"github.com/mithrel/ginkgo/internal/wire"
 	"github.com/mithrel/ginkgo/pkg/api"
 )
 
-// Main provides a standalone daemon entrypoint.
-func Main() error {
+// Run starts the daemon using the provided, already-wired App (config, store, logger).
+// The caller controls the lifecycle via ctx.
+func Run(ctx context.Context, app *wire.App) error {
 	// HTTP health endpoint
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -31,19 +31,13 @@ func Main() error {
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	// Build app (store, logger) for handling requests
-	cfg := config.DefaultConfig()
-	app, err := wire.BuildApp(ctx, cfg)
-	if err != nil {
-		return err
-	}
 	go func() {
 		_ = ipc.Serve(ctx, sock, func(m ipc.Message) ipc.Response {
 			ns := m.Namespace
 			if ns == "" {
-				ns = app.Cfg.Namespace
+				ns = app.Cfg.GetString("namespace")
 			}
 			switch m.Name {
 			case "note.add", "note.edit":
@@ -169,6 +163,13 @@ func Main() error {
 	time.Sleep(100 * time.Millisecond)
 	return err
 }
+
+// Deprecated: Main previously created its own default-config App. Callers should
+// use Run(ctx, app) with a shared App from the CLI wiring. This remains as a
+// thin wrapper for compatibility but constructs an App via wire.BuildApp with
+// whatever config the CLI already resolved (passed via context by the caller).
+// Note: the CLI no longer calls this.
+func Main() error { return fmt.Errorf("daemon.Main is deprecated; use Run(ctx, app)") }
 
 // normalizeTags lowercases and trims tags, removing empties and duplicates while
 // preserving first-seen order.

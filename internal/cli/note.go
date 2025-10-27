@@ -1,8 +1,9 @@
 package cli
 
 import (
-	"github.com/spf13/cobra"
 	"strings"
+
+	"github.com/spf13/cobra"
 )
 
 // FilterOpts holds common filtering options for note commands.
@@ -47,7 +48,7 @@ func resolveNamespace(cmd *cobra.Command) string {
 		return ns
 	}
 	app := getApp(cmd)
-	return app.Cfg.Namespace
+	return app.Cfg.GetString("namespace")
 }
 
 // addFilterFlags adds common filtering flags to a command.
