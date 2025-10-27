@@ -290,6 +290,7 @@ func (s *sqliteStore) DeleteEntry(ctx context.Context, id string) error {
 }
 
 // ListEntries retrieves entries based on provided filters, including namespace, time ranges, and tags.
+// Note: For efficiency, this summary listing does NOT load the entry body; Body will be empty.
 func (s *sqliteStore) ListEntries(ctx context.Context, q api.ListQuery) ([]api.Entry, api.Page, error) {
 	limit := q.Limit
 	if limit <= 0 {
@@ -302,7 +303,7 @@ func (s *sqliteStore) ListEntries(ctx context.Context, q api.ListQuery) ([]api.E
 		Any:       q.Any,
 		All:       q.All,
 	})
-	sqlq := pf.CTE + `SELECT e.id, e.version, e.title, e.body, e.tags, e.created_at, e.updated_at, e.namespace
+	sqlq := pf.CTE + `SELECT e.id, e.version, e.title, '' AS body, e.tags, e.created_at, e.updated_at, e.namespace
 FROM filtered f
 JOIN entries e ON e.id = f.id
 ORDER BY f.c_at DESC
