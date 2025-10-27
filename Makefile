@@ -57,3 +57,10 @@ setup-precommit:
 		pip install --user pre-commit; \
 	fi
 	pre-commit install
+
+# --- Protobuf ---
+.PHONY: proto
+proto:
+	@command -v protoc >/dev/null 2>&1 || { echo "protoc not found"; exit 1; }
+	@command -v protoc-gen-go >/dev/null 2>&1 || { echo "protoc-gen-go not found"; exit 1; }
+	protoc --go_out=paths=source_relative:. internal/ipc/pb/ipc.proto

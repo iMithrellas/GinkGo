@@ -8,6 +8,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/spf13/cobra v1.8.0
 	github.com/spf13/viper v1.18.2
+	google.golang.org/protobuf v1.34.2
 	modernc.org/sqlite v1.39.1
 )
 

@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package ipc;
+
+option go_package = "github.com/mithrel/ginkgo/internal/ipc/pb";
+
+import "google/protobuf/timestamp.proto";
+
+message Entry {
+  string id = 1;
+  int64 version = 2;
+  string title = 3;
+  string body = 4;
+  repeated string tags = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
+  string namespace = 8;
+}
+
+message NoteAdd { string title = 1; string body = 2; repeated string tags = 3; string namespace = 4; }
+message NoteEdit { string id = 1; int64 if_version = 2; string title = 3; string body = 4; repeated string tags = 5; string namespace = 6; }
+message NoteDelete { string id = 1; string namespace = 2; }
+message NoteShow { string id = 1; string namespace = 2; }
+
+message ListFilter {
+  string namespace = 1;
+  repeated string tags_any = 2;
+  repeated string tags_all = 3;
+  google.protobuf.Timestamp since = 4;
+  google.protobuf.Timestamp until = 5;
+}
+
+message SearchFTS { string query = 1; ListFilter filter = 2; }
+message SearchRegex { string pattern = 1; ListFilter filter = 2; }
+
+message Request {
+  oneof cmd {
+    NoteAdd note_add = 1;
+    NoteEdit note_edit = 2;
+    NoteDelete note_delete = 3;
+    NoteShow note_show = 4;
+    ListFilter note_list = 5;
+    SearchFTS note_search_fts = 6;
+    SearchRegex note_search_regex = 7;
+  }
+}
+
+message Response {
+  bool ok = 1;
+  string msg = 2;
+  Entry entry = 3;
+  repeated Entry entries = 4;
+}

@@ -12,6 +12,7 @@ import (
 
 	"github.com/mithrel/ginkgo/internal/db"
 	"github.com/mithrel/ginkgo/internal/ipc"
+	"github.com/mithrel/ginkgo/internal/ipc/transport"
 	"github.com/mithrel/ginkgo/internal/wire"
 	"github.com/mithrel/ginkgo/pkg/api"
 )
@@ -26,130 +27,133 @@ func Run(ctx context.Context, app *wire.App) error {
 	})
 	srv := &http.Server{Addr: ":7465", Handler: mux}
 
-	// IPC server on Unix socket
+	// IPC server on Unix socket using protobuf transport
 	sock, err := ipc.SocketPath()
 	if err != nil {
 		return err
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	// Adapt CLI message handler to protobuf transport
+	handler := ipc.PBHandler(func(m ipc.Message) ipc.Response {
+		ns := m.Namespace
+		if ns == "" {
+			ns = app.Cfg.GetString("namespace")
+		}
+		switch m.Name {
+		case "note.add", "note.edit":
+			// Create if no ID, otherwise CAS update.
+			now := time.Now().UTC()
+			if m.ID == "" {
+				tags := normalizeTags(m.Tags)
+				e := api.Entry{ID: api.NewID(), Version: 1, Title: m.Title, Body: m.Body, Tags: tags, CreatedAt: now, UpdatedAt: now, Namespace: ns}
+				e, err := app.Store.Entries.CreateEntry(ctx, e)
+				if err != nil {
+					return ipc.Response{OK: false, Msg: err.Error()}
+				}
+				log.Printf("created note id=%s title=%q", e.ID, e.Title)
+				return ipc.Response{OK: true, Entry: &e}
+			}
+			// Update path
+			cur, err := app.Store.Entries.GetEntry(ctx, m.ID)
+			if err != nil {
+				return ipc.Response{OK: false, Msg: err.Error()}
+			}
+			if cur.Namespace != ns {
+				return ipc.Response{OK: false, Msg: "not found"}
+			}
+			if m.Title != "" {
+				cur.Title = m.Title
+			}
+			if m.Body != "" {
+				cur.Body = m.Body
+			}
+			if m.Tags != nil {
+				cur.Tags = normalizeTags(m.Tags)
+			}
+			cur.UpdatedAt = now
+			ifv := m.IfVersion
+			if ifv == 0 {
+				ifv = cur.Version
+			}
+			e, err := app.Store.Entries.UpdateEntryCAS(ctx, cur, ifv)
+			if err != nil {
+				if err == db.ErrConflict {
+					latest, _ := app.Store.Entries.GetEntry(ctx, m.ID)
+					return ipc.Response{OK: false, Msg: "conflict", Entry: &latest}
+				}
+				return ipc.Response{OK: false, Msg: err.Error()}
+			}
+			log.Printf("updated note id=%s title=%q", e.ID, e.Title)
+			return ipc.Response{OK: true, Entry: &e}
+		case "note.delete":
+			if m.ID == "" {
+				return ipc.Response{OK: false, Msg: "missing id"}
+			}
+			if err := app.Store.Entries.DeleteEntry(ctx, m.ID); err != nil {
+				log.Printf("delete note id=%s err=%v", m.ID, err)
+				return ipc.Response{OK: false, Msg: err.Error()}
+			}
+			log.Printf("deleted note id=%s", m.ID)
+			return ipc.Response{OK: true}
+		case "note.show":
+			if m.ID == "" {
+				return ipc.Response{OK: false, Msg: "missing id"}
+			}
+			e, err := app.Store.Entries.GetEntry(ctx, m.ID)
+			if err != nil {
+				log.Printf("show note id=%s err=%v", m.ID, err)
+				return ipc.Response{OK: false, Msg: err.Error()}
+			}
+			if e.Namespace != ns {
+				return ipc.Response{OK: false, Msg: "not found"}
+			}
+			log.Printf("show note id=%s", m.ID)
+			return ipc.Response{OK: true, Entry: &e}
+		case "note.list":
+			log.Printf("list notes")
+			var entries []api.Entry
+			var err error
+			since, until := parseBounds(m.Since, m.Until)
+			entries, _, err = app.Store.Entries.ListEntries(ctx, api.ListQuery{
+				Namespace: ns,
+				Any:       m.TagsAny,
+				All:       m.TagsAll,
+				Since:     since,
+				Until:     until,
+			})
+			if err != nil {
+				return ipc.Response{OK: false, Msg: err.Error()}
+			}
+			log.Printf("list notes count=%d", len(entries))
+			return ipc.Response{OK: true, Entries: entries}
+		case "note.search.fts":
+			q := strings.ToLower(strings.TrimSpace(m.Title))
+			since, until := parseBounds(m.Since, m.Until)
+			entries, _, err := app.Store.Entries.Search(ctx, api.SearchQuery{Namespace: ns, Query: q, Regex: false, Any: m.TagsAny, All: m.TagsAll, Since: since, Until: until})
+			if err != nil {
+				return ipc.Response{OK: false, Msg: err.Error()}
+			}
+			return ipc.Response{OK: true, Entries: entries}
+		case "note.search.regex":
+			pattern := m.Title
+			since, until := parseBounds(m.Since, m.Until)
+			if _, err := regexp.Compile(pattern); err != nil {
+				return ipc.Response{OK: false, Msg: "bad regex"}
+			}
+			entries, _, err := app.Store.Entries.Search(ctx, api.SearchQuery{Namespace: ns, Query: pattern, Regex: true, Any: m.TagsAny, All: m.TagsAll, Since: since, Until: until})
+			if err != nil {
+				return ipc.Response{OK: false, Msg: err.Error()}
+			}
+			return ipc.Response{OK: true, Entries: entries}
+		default:
+			log.Printf("unknown IPC cmd=%s", m.Name)
+			return ipc.Response{OK: false, Msg: "unknown command"}
+		}
+	})
 	go func() {
-		_ = ipc.Serve(ctx, sock, func(m ipc.Message) ipc.Response {
-			ns := m.Namespace
-			if ns == "" {
-				ns = app.Cfg.GetString("namespace")
-			}
-			switch m.Name {
-			case "note.add", "note.edit":
-				// Create if no ID, otherwise CAS update.
-				now := time.Now().UTC()
-				if m.ID == "" {
-					tags := normalizeTags(m.Tags)
-					e := api.Entry{ID: api.NewID(), Version: 1, Title: m.Title, Body: m.Body, Tags: tags, CreatedAt: now, UpdatedAt: now, Namespace: ns}
-					e, err := app.Store.Entries.CreateEntry(ctx, e)
-					if err != nil {
-						return ipc.Response{OK: false, Msg: err.Error()}
-					}
-					log.Printf("created note id=%s title=%q", e.ID, e.Title)
-					return ipc.Response{OK: true, Entry: &e}
-				}
-				// Update path
-				cur, err := app.Store.Entries.GetEntry(ctx, m.ID)
-				if err != nil {
-					return ipc.Response{OK: false, Msg: err.Error()}
-				}
-				if cur.Namespace != ns {
-					return ipc.Response{OK: false, Msg: "not found"}
-				}
-				if m.Title != "" {
-					cur.Title = m.Title
-				}
-				if m.Body != "" {
-					cur.Body = m.Body
-				}
-				if m.Tags != nil {
-					cur.Tags = normalizeTags(m.Tags)
-				}
-				cur.UpdatedAt = now
-				ifv := m.IfVersion
-				if ifv == 0 {
-					ifv = cur.Version
-				}
-				e, err := app.Store.Entries.UpdateEntryCAS(ctx, cur, ifv)
-				if err != nil {
-					if err == db.ErrConflict {
-						latest, _ := app.Store.Entries.GetEntry(ctx, m.ID)
-						return ipc.Response{OK: false, Msg: "conflict", Entry: &latest}
-					}
-					return ipc.Response{OK: false, Msg: err.Error()}
-				}
-				log.Printf("updated note id=%s title=%q", e.ID, e.Title)
-				return ipc.Response{OK: true, Entry: &e}
-			case "note.delete":
-				if m.ID == "" {
-					return ipc.Response{OK: false, Msg: "missing id"}
-				}
-				if err := app.Store.Entries.DeleteEntry(ctx, m.ID); err != nil {
-					log.Printf("delete note id=%s err=%v", m.ID, err)
-					return ipc.Response{OK: false, Msg: err.Error()}
-				}
-				log.Printf("deleted note id=%s", m.ID)
-				return ipc.Response{OK: true}
-			case "note.show":
-				if m.ID == "" {
-					return ipc.Response{OK: false, Msg: "missing id"}
-				}
-				e, err := app.Store.Entries.GetEntry(ctx, m.ID)
-				if err != nil {
-					log.Printf("show note id=%s err=%v", m.ID, err)
-					return ipc.Response{OK: false, Msg: err.Error()}
-				}
-				if e.Namespace != ns {
-					return ipc.Response{OK: false, Msg: "not found"}
-				}
-				log.Printf("show note id=%s", m.ID)
-				return ipc.Response{OK: true, Entry: &e}
-			case "note.list":
-				log.Printf("list notes")
-				var entries []api.Entry
-				var err error
-				since, until := parseBounds(m.Since, m.Until)
-				entries, _, err = app.Store.Entries.ListEntries(ctx, api.ListQuery{
-					Namespace: ns,
-					Any:       m.TagsAny,
-					All:       m.TagsAll,
-					Since:     since,
-					Until:     until,
-				})
-				if err != nil {
-					return ipc.Response{OK: false, Msg: err.Error()}
-				}
-				log.Printf("list notes count=%d", len(entries))
-				return ipc.Response{OK: true, Entries: entries}
-			case "note.search.fts":
-				q := strings.ToLower(strings.TrimSpace(m.Title))
-				since, until := parseBounds(m.Since, m.Until)
-				entries, _, err := app.Store.Entries.Search(ctx, api.SearchQuery{Namespace: ns, Query: q, Regex: false, Any: m.TagsAny, All: m.TagsAll, Since: since, Until: until})
-				if err != nil {
-					return ipc.Response{OK: false, Msg: err.Error()}
-				}
-				return ipc.Response{OK: true, Entries: entries}
-			case "note.search.regex":
-				pattern := m.Title
-				since, until := parseBounds(m.Since, m.Until)
-				if _, err := regexp.Compile(pattern); err != nil {
-					return ipc.Response{OK: false, Msg: "bad regex"}
-				}
-				entries, _, err := app.Store.Entries.Search(ctx, api.SearchQuery{Namespace: ns, Query: pattern, Regex: true, Any: m.TagsAny, All: m.TagsAll, Since: since, Until: until})
-				if err != nil {
-					return ipc.Response{OK: false, Msg: err.Error()}
-				}
-				return ipc.Response{OK: true, Entries: entries}
-			default:
-				log.Printf("unknown IPC cmd=%s", m.Name)
-				return ipc.Response{OK: false, Msg: "unknown command"}
-			}
-		})
+		srv := transport.NewUnixServer(transport.UnixListener{Path: sock})
+		_ = srv.Serve(ctx, handler)
 	}()
 
 	// Run HTTP server (optional for now). Shut down IPC when HTTP stops.
@@ -163,13 +167,6 @@ func Run(ctx context.Context, app *wire.App) error {
 	time.Sleep(100 * time.Millisecond)
 	return err
 }
-
-// Deprecated: Main previously created its own default-config App. Callers should
-// use Run(ctx, app) with a shared App from the CLI wiring. This remains as a
-// thin wrapper for compatibility but constructs an App via wire.BuildApp with
-// whatever config the CLI already resolved (passed via context by the caller).
-// Note: the CLI no longer calls this.
-func Main() error { return fmt.Errorf("daemon.Main is deprecated; use Run(ctx, app)") }
 
 // normalizeTags lowercases and trims tags, removing empties and duplicates while
 // preserving first-seen order.
