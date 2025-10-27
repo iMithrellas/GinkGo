@@ -2,13 +2,17 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/mithrel/ginkgo/internal/ipc"
+	"github.com/mithrel/ginkgo/internal/present"
 	"github.com/spf13/cobra"
 )
 
 func newNoteSearchCmd() *cobra.Command {
 	var filters FilterOpts
+	var outputMode string
+	var headers bool
 	cmd := &cobra.Command{
 		Use:   "search",
 		Short: "Search notes (fts|regex)",
@@ -44,14 +48,15 @@ func newNoteSearchCmd() *cobra.Command {
 			}
 
 			resp, err := ipc.Request(cmd.Context(), sock, req)
-
 			if err != nil {
 				return err
 			}
-			for _, e := range resp.Entries {
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\n", e.ID, e.Title)
+			mode, ok := present.ParseMode(strings.ToLower(outputMode))
+			if !ok || mode == present.ModeTUI {
+				return fmt.Errorf("invalid --output: %s", outputMode)
 			}
-			return nil
+			opts := present.Options{Mode: mode, JSONIndent: outputMode == "json+indent", Headers: headers}
+			return present.RenderEntries(cmd.Context(), cmd.OutOrStdout(), resp.Entries, opts)
 		},
 	}
 
@@ -86,14 +91,18 @@ func newNoteSearchCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			for _, e := range resp.Entries {
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\n", e.ID, e.Title)
+			mode, ok := present.ParseMode(strings.ToLower(outputMode))
+			if !ok || mode == present.ModeTUI {
+				return fmt.Errorf("invalid --output: %s", outputMode)
 			}
-			return nil
+			opts := present.Options{Mode: mode, JSONIndent: outputMode == "json+indent", Headers: headers}
+			return present.RenderEntries(cmd.Context(), cmd.OutOrStdout(), resp.Entries, opts)
 		},
 	}
 
 	cmd.AddCommand(fts, rx)
 	addFilterFlags(cmd, &filters)
+	cmd.PersistentFlags().StringVar(&outputMode, "output", "plain", "output mode: plain|pretty|json|json+indent")
+	cmd.PersistentFlags().BoolVar(&headers, "headers", false, "print header row in plain mode")
 	return cmd
 }

@@ -5,13 +5,14 @@ import (
 	"strings"
 
 	"github.com/mithrel/ginkgo/internal/ipc"
-	"github.com/mithrel/ginkgo/internal/ui"
+	"github.com/mithrel/ginkgo/internal/present"
 	"github.com/spf13/cobra"
 )
 
 func newNoteListCmd() *cobra.Command {
 	var filters FilterOpts
-	var useBubble bool
+	var outputMode string
+	var headers bool
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List notes",
@@ -41,20 +42,17 @@ func newNoteListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if useBubble {
-				if err := ui.RenderEntriesTable(cmd.Context(), resp.Entries); err != nil {
-					return err
-				}
-				return nil
+			mode, ok := present.ParseMode(strings.ToLower(outputMode))
+			if !ok {
+				return fmt.Errorf("invalid --output: %s", outputMode)
 			}
-			for _, e := range resp.Entries {
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\n", e.ID, e.Title)
-			}
-			return nil
+			opts := present.Options{Mode: mode, JSONIndent: outputMode == "json+indent", Headers: headers}
+			return present.RenderEntries(cmd.Context(), cmd.OutOrStdout(), resp.Entries, opts)
 		},
 	}
 	addFilterFlags(cmd, &filters)
-	cmd.Flags().BoolVar(&useBubble, "bubble", false, "render interactive table")
+	cmd.Flags().StringVar(&outputMode, "output", "plain", "output mode: plain|pretty|json|json+indent|tui")
+	cmd.Flags().BoolVar(&headers, "headers", false, "print header row in plain mode")
 	return cmd
 }
 

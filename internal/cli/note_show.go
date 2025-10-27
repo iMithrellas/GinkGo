@@ -3,13 +3,16 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/mithrel/ginkgo/internal/ipc"
-	"github.com/mithrel/ginkgo/internal/ui"
+	"github.com/mithrel/ginkgo/internal/present"
 	"github.com/spf13/cobra"
 )
 
 func newNoteShowCmd() *cobra.Command {
+	var outputMode string
+	var headers bool
 	cmd := &cobra.Command{
 		Use:   "show <id>",
 		Short: "Display a note",
@@ -30,9 +33,16 @@ func newNoteShowCmd() *cobra.Command {
 				}
 				return errors.New("not found")
 			}
-			_, _ = fmt.Fprint(cmd.OutOrStdout(), ui.FormatEntry(*resp.Entry))
-			return nil
+
+			mode, ok := present.ParseMode(strings.ToLower(outputMode))
+			if !ok || mode == present.ModeTUI { // tui not applicable
+				return fmt.Errorf("invalid --output: %s", outputMode)
+			}
+			opts := present.Options{Mode: mode, JSONIndent: outputMode == "json+indent", Headers: headers}
+			return present.RenderEntry(cmd.Context(), cmd.OutOrStdout(), *resp.Entry, opts)
 		},
 	}
+	cmd.Flags().StringVar(&outputMode, "output", "pretty", "output mode: plain|pretty|json|json+indent")
+	cmd.Flags().BoolVar(&headers, "headers", false, "print header row in plain mode")
 	return cmd
 }
