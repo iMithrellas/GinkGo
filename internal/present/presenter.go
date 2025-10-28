@@ -42,7 +42,7 @@ func ParseMode(s string) (Mode, bool) {
 	case "tui":
 		return ModeTUI, true
 	default:
-		return ModePlain, false
+		return ModeTUI, false
 	}
 }
 
@@ -57,7 +57,8 @@ func RenderEntries(ctx context.Context, w io.Writer, entries []api.Entry, opts O
 		// Pretty list currently falls back to plain list until glamour table is added.
 		return format.WritePlainEntries(w, entries, opts.Headers)
 	case ModeTUI:
-		return tui.RenderTable(ctx, entries, opts.InitialStatus, opts.InitialDuration)
+		// Pass headers flag through so the TUI can optionally hide column headers.
+		return tui.RenderTable(ctx, entries, opts.Headers, opts.InitialStatus, opts.InitialDuration)
 	default:
 		return format.WritePlainEntries(w, entries, opts.Headers)
 	}

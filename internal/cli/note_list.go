@@ -13,7 +13,7 @@ import (
 func newNoteListCmd() *cobra.Command {
 	var filters FilterOpts
 	var outputMode string
-	var headers bool
+	var noHeaders bool
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List notes",
@@ -52,7 +52,7 @@ func newNoteListCmd() *cobra.Command {
 			opts := present.Options{
 				Mode:            mode,
 				JSONIndent:      outputMode == "json+indent",
-				Headers:         headers,
+				Headers:         !noHeaders,
 				InitialStatus:   fmt.Sprintf("loaded successfully"),
 				InitialDuration: dur,
 			}
@@ -61,7 +61,7 @@ func newNoteListCmd() *cobra.Command {
 	}
 	addFilterFlags(cmd, &filters)
 	cmd.Flags().StringVar(&outputMode, "output", "plain", "output mode: plain|pretty|json|json+indent|tui")
-	cmd.Flags().BoolVar(&headers, "headers", false, "print header row in plain mode")
+	cmd.Flags().BoolVar(&noHeaders, "noheaders", false, "hide column headers (plain/tui)")
 	return cmd
 }
 

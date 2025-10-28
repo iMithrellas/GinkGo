@@ -17,12 +17,13 @@ import (
 )
 
 // RenderTable opens an interactive Bubble Tea table to browse entries.
-func RenderTable(ctx context.Context, entries []api.Entry, initialStatus string, initialDuration time.Duration) error {
+func RenderTable(ctx context.Context, entries []api.Entry, headers bool, initialStatus string, initialDuration time.Duration) error {
 	m := model{
 		ctx:          ctx,
 		entries:      entries,
 		showIdx:      -1,
 		deleteIdx:    -1,
+		headers:      headers,
 		status:       initialStatus,
 		lastDuration: initialDuration,
 	}
@@ -57,6 +58,7 @@ type model struct {
 	entries      []api.Entry
 	showIdx      int
 	deleteIdx    int
+	headers      bool
 	width        int
 	height       int
 	titleWidth   int
@@ -66,13 +68,8 @@ type model struct {
 }
 
 func (m *model) initTable() {
-	defaultCols := []table.Column{
-		{Title: "ID", Width: 12},
-		{Title: "Title", Width: 40},
-		{Title: "Tags", Width: 20},
-		{Title: "Created", Width: 19},
-	}
-	m.table = table.New(table.WithColumns(defaultCols), table.WithFocused(true))
+	cols := m.columnsFor(m.headers, 12, 40, 20, 19)
+	m.table = table.New(table.WithColumns(cols), table.WithFocused(true))
 	m.titleWidth = 40
 	m.tagsWidth = 20
 	m.updateRows()
@@ -248,22 +245,24 @@ func (m *model) applyLayout() {
 	}
 	m.titleWidth = titleW
 	m.tagsWidth = tagsW
-	cols := []table.Column{
-		{Title: "ID", Width: idW},
-		{Title: "Title", Width: titleW},
-		{Title: "Tags", Width: tagsW},
-		{Title: "Created", Width: createdW},
-	}
+	cols := m.columnsFor(m.headers, idW, titleW, tagsW, createdW)
 	m.table.SetColumns(cols)
 }
 
 func (m *model) applyStyles() {
 	s := table.DefaultStyles()
-	s.Header = s.Header.
-		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("240")).
-		BorderBottom(true).
-		Bold(true)
+	if m.headers {
+		s.Header = s.Header.
+			BorderStyle(lipgloss.NormalBorder()).
+			BorderForeground(lipgloss.Color("240")).
+			BorderBottom(true).
+			Bold(true)
+	} else {
+		// Minimize header prominence when disabled
+		s.Header = s.Header.
+			BorderBottom(false).
+			Bold(false)
+	}
 	s.Selected = s.Selected.
 		Foreground(lipgloss.Color("229")).
 		Background(lipgloss.Color("57")).
@@ -287,4 +286,22 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// columnsFor returns columns with or without titles based on headers flag.
+func (m *model) columnsFor(headers bool, idW, titleW, tagsW, createdW int) []table.Column {
+	if headers {
+		return []table.Column{
+			{Title: "ID", Width: idW},
+			{Title: "Title", Width: titleW},
+			{Title: "Tags", Width: tagsW},
+			{Title: "Created", Width: createdW},
+		}
+	}
+	return []table.Column{
+		{Title: "", Width: idW},
+		{Title: "", Width: titleW},
+		{Title: "", Width: tagsW},
+		{Title: "", Width: createdW},
+	}
 }
