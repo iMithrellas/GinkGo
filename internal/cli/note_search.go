@@ -55,7 +55,7 @@ func newNoteSearchCmd() *cobra.Command {
 			if !ok || mode == present.ModeTUI {
 				return fmt.Errorf("invalid --output: %s", outputMode)
 			}
-			opts := present.Options{Mode: mode, JSONIndent: outputMode == "json+indent", Headers: !noHeaders}
+			opts := present.Options{Mode: mode, JSONIndent: false, Headers: !noHeaders}
 			return present.RenderEntries(cmd.Context(), cmd.OutOrStdout(), resp.Entries, opts)
 		},
 	}
@@ -95,14 +95,14 @@ func newNoteSearchCmd() *cobra.Command {
 			if !ok || mode == present.ModeTUI {
 				return fmt.Errorf("invalid --output: %s", outputMode)
 			}
-			opts := present.Options{Mode: mode, JSONIndent: outputMode == "json+indent", Headers: !noHeaders}
+			opts := present.Options{Mode: mode, JSONIndent: false, Headers: !noHeaders}
 			return present.RenderEntries(cmd.Context(), cmd.OutOrStdout(), resp.Entries, opts)
 		},
 	}
 
 	cmd.AddCommand(fts, rx)
 	addFilterFlags(cmd, &filters)
-	cmd.PersistentFlags().StringVar(&outputMode, "output", "plain", "output mode: plain|pretty|json|json+indent")
+	cmd.PersistentFlags().StringVar(&outputMode, "output", "plain", "output mode: plain|pretty|json")
 	// Cobra supports only single-letter shorthand; using -H for --noheaders
 	cmd.PersistentFlags().BoolVarP(&noHeaders, "noheaders", "H", false, "hide column headers (plain)")
 	return cmd

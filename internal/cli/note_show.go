@@ -38,11 +38,11 @@ func newNoteShowCmd() *cobra.Command {
 			if !ok || mode == present.ModeTUI { // tui not applicable
 				return fmt.Errorf("invalid --output: %s", outputMode)
 			}
-			opts := present.Options{Mode: mode, JSONIndent: outputMode == "json+indent", Headers: headers}
+			opts := present.Options{Mode: mode, JSONIndent: false, Headers: headers}
 			return present.RenderEntry(cmd.Context(), cmd.OutOrStdout(), *resp.Entry, opts)
 		},
 	}
-	cmd.Flags().StringVar(&outputMode, "output", "pretty", "output mode: plain|pretty|json|json+indent")
+	cmd.Flags().StringVar(&outputMode, "output", "pretty", "output mode: plain|pretty|json")
 	cmd.Flags().BoolVar(&headers, "headers", false, "print header row in plain mode")
 	return cmd
 }

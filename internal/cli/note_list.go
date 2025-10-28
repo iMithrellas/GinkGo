@@ -51,7 +51,7 @@ func newNoteListCmd() *cobra.Command {
 			}
 			opts := present.Options{
 				Mode:            mode,
-				JSONIndent:      outputMode == "json+indent",
+				JSONIndent:      false, // pretty-print via external tools like jq
 				Headers:         !noHeaders,
 				InitialStatus:   fmt.Sprintf("loaded successfully"),
 				InitialDuration: dur,
@@ -60,7 +60,7 @@ func newNoteListCmd() *cobra.Command {
 		},
 	}
 	addFilterFlags(cmd, &filters)
-	cmd.Flags().StringVar(&outputMode, "output", "plain", "output mode: plain|pretty|json|json+indent|tui")
+	cmd.Flags().StringVar(&outputMode, "output", "plain", "output mode: plain|pretty|json|tui")
 	cmd.Flags().BoolVar(&noHeaders, "noheaders", false, "hide column headers (plain/tui)")
 	return cmd
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"text/tabwriter"
 	"time"
 
 	"github.com/mithrel/ginkgo/pkg/api"
@@ -34,8 +35,9 @@ func joinTags(tags []string) string {
 }
 
 func WritePlainEntries(w io.Writer, entries []api.Entry, headers bool) error {
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	if headers {
-		_, _ = io.WriteString(w, headerLine)
+		_, _ = io.WriteString(tw, headerLine)
 	}
 	for _, e := range entries {
 		createdMs := e.CreatedAt
@@ -45,20 +47,21 @@ func WritePlainEntries(w io.Writer, entries []api.Entry, headers bool) error {
 		ms := createdMs.UnixNano() / int64(time.Millisecond)
 		line := fmt.Sprintf("%s\t%s\t%s\t%d\t%s\n",
 			esc(e.ID), esc(e.Title), esc(e.Namespace), ms, esc(joinTags(e.Tags)))
-		_, _ = io.WriteString(w, line)
+		_, _ = io.WriteString(tw, line)
 	}
-	return nil
+	return tw.Flush()
 }
 
 func WritePlainEntry(w io.Writer, e api.Entry, headers bool) error {
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	if headers {
-		_, _ = io.WriteString(w, headerLine)
+		_, _ = io.WriteString(tw, headerLine)
 	}
 	ms := e.CreatedAt.UnixNano() / int64(time.Millisecond)
 	line := fmt.Sprintf("%s\t%s\t%s\t%d\t%s\n",
 		esc(e.ID), esc(e.Title), esc(e.Namespace), ms, esc(joinTags(e.Tags)))
-	_, _ = io.WriteString(w, line)
-	return nil
+	_, _ = io.WriteString(tw, line)
+	return tw.Flush()
 }
 
 // Pretty single-entry rendering delegates to existing UI formatting for now.

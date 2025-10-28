@@ -28,7 +28,7 @@ type Options struct {
 	InitialDuration time.Duration
 }
 
-// ParseMode parses a string like "plain", "pretty", "json", "json+indent", "tui".
+// ParseMode parses a string like "plain", "pretty", "json", "tui".
 func ParseMode(s string) (Mode, bool) {
 	switch s {
 	case "plain":
@@ -36,8 +36,6 @@ func ParseMode(s string) (Mode, bool) {
 	case "pretty":
 		return ModePretty, true
 	case "json":
-		return ModeJSON, true
-	case "json+indent":
 		return ModeJSON, true
 	case "tui":
 		return ModeTUI, true
