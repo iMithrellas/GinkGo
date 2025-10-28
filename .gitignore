@@ -31,3 +31,7 @@ Thumbs.db
 .env.*
 *.local
 .pre-commit-cache/
+
+# generated files
+docs/man/
+docs/markdown/

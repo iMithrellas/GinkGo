@@ -6,15 +6,38 @@ BIN_SYMLINK := $(HOME)/.local/bin/ginkgo-cli
 SERVICE_DIR := $(HOME)/.config/systemd/user
 SERVICE_FILE := $(CURDIR)/systemd/ginkgo.service
 
+# --- Docs / man ---
+PREFIX ?= $(HOME)/.local
+MANPREFIX ?= $(PREFIX)/share/man
+MANDIR := $(MANPREFIX)/man1
+DOCDIR := $(CURDIR)/docs
+MARKDOWNDIR := $(DOCDIR)/markdown
+MANOUT := $(DOCDIR)/man
+
 GO_TAGS ?=
 
-build:
-	mkdir -p $(BUILD_DIR)
-	@if [ -n "$(GO_TAGS)" ]; then \
-		go build -tags '$(GO_TAGS)' -o $(BUILD_OUTPUT) ./cmd/ginkgo-cli; \
-	else \
-		go build -o $(BUILD_OUTPUT) ./cmd/ginkgo-cli; \
+.PHONY: build install-binary install-service reload-service run setup-precommit \
+        docs install-man uninstall-man install
+
+# Generate Markdown + man pages from cmd/ginkgo-cli/doc_gen.go (build-tagged //go:build ignore)
+docs:
+	mkdir -p "$(MARKDOWNDIR)" "$(MANOUT)"
+	@if ! go list -m -f '{{.Path}}' github.com/cpuguy83/go-md2man/v2 >/dev/null 2>&1; then \
+		go get github.com/cpuguy83/go-md2man/v2@latest && go mod tidy; \
 	fi
+	go run ./cmd/ginkgo-cli/doc_gen.go
+	@echo "Docs generated into $(MARKDOWNDIR) and $(MANOUT)"
+
+install-man: docs
+	mkdir -p "$(MANDIR)"
+	install -m644 $(MANOUT)/*.1 "$(MANDIR)/"
+	gzip -f "$(MANDIR)"/*.1
+	-@command -v mandb >/dev/null 2>&1 && mandb -q || true
+	@echo "Man pages installed to $(MANDIR)"
+
+uninstall-man:
+	@rm -f "$(MANDIR)"/ginkgo-cli*.1.gz || true
+	@echo "Removed man pages from $(MANDIR)"
 
 install-binary:
 	@echo "Creating $(HOME)/.local/bin if it doesn't exist..."
@@ -36,9 +59,10 @@ reload-service:
 	@echo "Restarting ginkgo service..."
 	systemctl --user restart ginkgo.service
 
-run: build install-binary install-service reload-service
+# one-shot local install: binary + man
+install: build install-binary install-man
 
-.PHONY: build install-binary install-service reload-service run setup-precommit
+run: build install-binary install-service reload-service
 
 setup-precommit:
 	@if command -v pre-commit >/dev/null 2>&1; then \
