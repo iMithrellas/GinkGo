@@ -84,9 +84,9 @@ func (m *model) updateRows() {
 	for _, e := range m.entries {
 		created := e.CreatedAt.Local().Format("2006-01-02 15:04")
 		rows = append(rows, table.Row{
-			shortID(e.ID),
-			truncate(e.Title, m.titleWidth),
-			truncate(joinTags(e.Tags), m.tagsWidth),
+			e.ID,
+			e.Title,
+			joinTags(e.Tags),
 			created,
 		})
 	}
@@ -119,7 +119,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			newCur = 0
 		}
 		m.table.SetCursor(newCur)
-		m.status = fmt.Sprintf("Deleted %s", shortID(msg.id))
+		m.status = fmt.Sprintf("Deleted %s", msg.id)
 		m.lastDuration = msg.dur
 		m.deleteIdx = -1
 		return m, nil
@@ -144,7 +144,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if idx >= 0 && idx < len(m.entries) {
 				m.deleteIdx = idx
 				sel := m.entries[idx]
-				m.status = fmt.Sprintf("Deleting %s…", shortID(sel.ID))
+				m.status = fmt.Sprintf("Deleting %s…", sel.ID)
 				return m, deleteCmd(m.ctx, sel.ID, idx)
 			}
 			return m, nil
@@ -166,7 +166,7 @@ func (m model) renderFooter() string {
 			right = m.status + " • "
 		}
 	}
-	right += fmt.Sprintf("%d entries", len(m.entries))
+	right += fmt.Sprintf("%d entries ", len(m.entries))
 
 	width := m.table.Width()
 	space := width - lipgloss.Width(left) - lipgloss.Width(right)
@@ -179,7 +179,7 @@ func (m model) renderFooter() string {
 
 func (m model) View() string {
 	if m.table.Height() < 3 {
-		return "(no entries)\n"
+		return "(no entries) \n"
 	}
 
 	return m.table.View() + "\n" + m.renderFooter() + "\n"
@@ -227,7 +227,12 @@ func (m *model) applyLayout() {
 	if avail < 40 {
 		return
 	}
-	idW := 12
+	minIDWidth := 8
+	fullIDWidth := 26
+	idW := fullIDWidth
+	if avail < fullIDWidth+60 {
+		idW = minIDWidth
+	}
 	createdW := 19
 	rem := avail - idW - createdW
 	if rem < 20 {
@@ -275,27 +280,6 @@ func joinTags(tags []string) string {
 		s += ", " + tags[i]
 	}
 	return s
-}
-
-func truncate(s string, n int) string {
-	if n <= 3 || len(s) <= n {
-		if len(s) > n {
-			return s[:n]
-		}
-		return s
-	}
-	r := []rune(s)
-	if len(r) <= n {
-		return s
-	}
-	return string(r[:n-1]) + "…"
-}
-
-func shortID(id string) string {
-	if len(id) <= 12 {
-		return id
-	}
-	return id[:12]
 }
 
 func max(a, b int) int {
