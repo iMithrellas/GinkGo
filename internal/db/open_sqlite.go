@@ -173,11 +173,7 @@ func (s *sqliteStore) CreateEntry(ctx context.Context, e api.Entry) (api.Entry, 
 	if err != nil {
 		return api.Entry{}, err
 	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-		}
-	}()
+	defer tx.Rollback()
 
 	if _, err = tx.ExecContext(ctx, `INSERT INTO entries(id, version, title, body, tags, created_at, updated_at, namespace) VALUES(?,?,?,?,?,?,?,?)`,
 		e.ID, e.Version, e.Title, e.Body, string(tagsJSON), e.CreatedAt.UTC(), e.UpdatedAt.UTC(), e.Namespace); err != nil {
@@ -198,7 +194,7 @@ func (s *sqliteStore) CreateEntry(ctx context.Context, e api.Entry) (api.Entry, 
 	if _, err = tx.ExecContext(ctx, `INSERT INTO entries_fts(rowid, title, body, tags, namespace, id) VALUES((SELECT rowid FROM entries WHERE id=?), ?, ?, ?, ?, ?)`, e.ID, e.Title, e.Body, tagsTokens, e.Namespace, e.ID); err != nil {
 		return api.Entry{}, err
 	}
-	if err = tx.Commit(); err != nil {
+	if err := tx.Commit(); err != nil {
 		return api.Entry{}, err
 	}
 	return e, nil
@@ -211,11 +207,7 @@ func (s *sqliteStore) UpdateEntryCAS(ctx context.Context, e api.Entry, ifVersion
 	if err != nil {
 		return api.Entry{}, err
 	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-		}
-	}()
+	defer tx.Rollback()
 
 	res, err := tx.ExecContext(ctx, `UPDATE entries SET version=version+1, title=?, body=?, tags=?, updated_at=?, namespace=? WHERE id=? AND version=?`,
 		e.Title, e.Body, string(tagsJSON), e.UpdatedAt.UTC(), e.Namespace, e.ID, ifVersion)
@@ -254,7 +246,7 @@ func (s *sqliteStore) UpdateEntryCAS(ctx context.Context, e api.Entry, ifVersion
 	if err = appendEventTx(ctx, tx, api.Event{Time: ne.UpdatedAt, Type: api.EventUpsert, ID: ne.ID, Entry: &ne}); err != nil {
 		return api.Entry{}, err
 	}
-	if err = tx.Commit(); err != nil {
+	if err := tx.Commit(); err != nil {
 		return api.Entry{}, err
 	}
 	return ne, nil
@@ -265,11 +257,7 @@ func (s *sqliteStore) DeleteEntry(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-		}
-	}()
+	defer tx.Rollback()
 	res, err := tx.ExecContext(ctx, `DELETE FROM entries WHERE id=?`, id)
 	if err != nil {
 		return err
