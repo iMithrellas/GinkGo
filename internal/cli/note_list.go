@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/mithrel/ginkgo/internal/ipc"
 	"github.com/mithrel/ginkgo/internal/present"
@@ -38,7 +39,9 @@ func newNoteListCmd() *cobra.Command {
 				Until:     untilStr, // RFC3339 string or ""
 			}
 
+			start := time.Now()
 			resp, err := ipc.Request(cmd.Context(), sock, req)
+			dur := time.Since(start)
 			if err != nil {
 				return err
 			}
@@ -46,7 +49,13 @@ func newNoteListCmd() *cobra.Command {
 			if !ok {
 				return fmt.Errorf("invalid --output: %s", outputMode)
 			}
-			opts := present.Options{Mode: mode, JSONIndent: outputMode == "json+indent", Headers: headers}
+			opts := present.Options{
+				Mode:            mode,
+				JSONIndent:      outputMode == "json+indent",
+				Headers:         headers,
+				InitialStatus:   fmt.Sprintf("loaded successfully"),
+				InitialDuration: dur,
+			}
 			return present.RenderEntries(cmd.Context(), cmd.OutOrStdout(), resp.Entries, opts)
 		},
 	}

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
@@ -15,8 +17,15 @@ import (
 )
 
 // RenderTable opens an interactive Bubble Tea table to browse entries.
-func RenderTable(ctx context.Context, entries []api.Entry) error {
-	m := model{ctx: ctx, entries: entries, showIdx: -1, deleteIdx: -1}
+func RenderTable(ctx context.Context, entries []api.Entry, initialStatus string, initialDuration time.Duration) error {
+	m := model{
+		ctx:          ctx,
+		entries:      entries,
+		showIdx:      -1,
+		deleteIdx:    -1,
+		status:       initialStatus,
+		lastDuration: initialDuration,
+	}
 	m.initTable()
 
 	p := tea.NewProgram(m, tea.WithAltScreen())
@@ -43,16 +52,17 @@ func RenderTable(ctx context.Context, entries []api.Entry) error {
 }
 
 type model struct {
-	ctx        context.Context
-	table      table.Model
-	entries    []api.Entry
-	showIdx    int
-	deleteIdx  int
-	width      int
-	height     int
-	titleWidth int
-	tagsWidth  int
-	status     string
+	ctx          context.Context
+	table        table.Model
+	entries      []api.Entry
+	showIdx      int
+	deleteIdx    int
+	width        int
+	height       int
+	titleWidth   int
+	tagsWidth    int
+	status       string
+	lastDuration time.Duration
 }
 
 func (m *model) initTable() {
@@ -91,6 +101,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle delete completion
 		if msg.err != nil {
 			m.status = fmt.Sprintf("Delete failed: %v", msg.err)
+			m.lastDuration = msg.dur
 			m.deleteIdx = -1
 			return m, nil
 		}
@@ -109,6 +120,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.table.SetCursor(newCur)
 		m.status = fmt.Sprintf("Deleted %s", shortID(msg.id))
+		m.lastDuration = msg.dur
 		m.deleteIdx = -1
 		return m, nil
 	case tea.WindowSizeMsg:
@@ -119,7 +131,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "q", "esc", "ctrl+c":
+		case "q", "esc", "ctrl+c", "ctrl+q":
 			return m, tea.Quit
 		case "enter":
 			idx := m.table.Cursor()
@@ -143,15 +155,34 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m model) renderFooter() string {
+	left := "↑/↓ to navigate • enter=show • d=delete • q=exit"
+
+	var right string
+	if m.status != "" {
+		if m.lastDuration > 0 {
+			right = fmt.Sprintf("%s (%s) • ", m.status, m.lastDuration)
+		} else {
+			right = m.status + " • "
+		}
+	}
+	right += fmt.Sprintf("%d entries", len(m.entries))
+
+	width := m.table.Width()
+	space := width - lipgloss.Width(left) - lipgloss.Width(right)
+	if space < 1 {
+		space = 1
+	}
+
+	return left + strings.Repeat(" ", space) + right
+}
+
 func (m model) View() string {
 	if m.table.Height() < 3 {
 		return "(no entries)\n"
 	}
-	footer := "↑/↓ to navigate • enter=show • d=delete • q=exit"
-	if m.status != "" {
-		footer += " • " + m.status
-	}
-	return m.table.View() + "\n" + footer + "\n"
+
+	return m.table.View() + "\n" + m.renderFooter() + "\n"
 }
 
 // deleteResultMsg conveys the outcome of a delete operation back to Update.
@@ -159,26 +190,28 @@ type deleteResultMsg struct {
 	idx int
 	id  string
 	err error
+	dur time.Duration
 }
 
 // deleteCmd performs the IPC call to delete an entry and returns a deleteResultMsg.
 func deleteCmd(ctx context.Context, id string, idx int) tea.Cmd {
 	return func() tea.Msg {
+		start := time.Now()
 		sock, err := ipc.SocketPath()
 		if err != nil {
 			return deleteResultMsg{idx: idx, id: id, err: err}
 		}
 		resp, err := ipc.Request(ctx, sock, ipc.Message{Name: "note.delete", ID: id})
 		if err != nil {
-			return deleteResultMsg{idx: idx, id: id, err: err}
+			return deleteResultMsg{idx: idx, id: id, err: err, dur: time.Since(start)}
 		}
 		if !resp.OK {
 			if resp.Msg != "" {
-				return deleteResultMsg{idx: idx, id: id, err: fmt.Errorf("%s", resp.Msg)}
+				return deleteResultMsg{idx: idx, id: id, err: fmt.Errorf("%s", resp.Msg), dur: time.Since(start)}
 			}
-			return deleteResultMsg{idx: idx, id: id, err: fmt.Errorf("delete failed")}
+			return deleteResultMsg{idx: idx, id: id, err: fmt.Errorf("delete failed"), dur: time.Since(start)}
 		}
-		return deleteResultMsg{idx: idx, id: id, err: nil}
+		return deleteResultMsg{idx: idx, id: id, err: nil, dur: time.Since(start)}
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"time"
 
 	"github.com/mithrel/ginkgo/internal/present/format"
 	"github.com/mithrel/ginkgo/internal/present/tui"
@@ -20,9 +21,11 @@ const (
 )
 
 type Options struct {
-	Mode       Mode
-	JSONIndent bool
-	Headers    bool // for plain mode
+	Mode            Mode
+	JSONIndent      bool
+	Headers         bool
+	InitialStatus   string
+	InitialDuration time.Duration
 }
 
 // ParseMode parses a string like "plain", "pretty", "json", "json+indent", "tui".
@@ -54,7 +57,7 @@ func RenderEntries(ctx context.Context, w io.Writer, entries []api.Entry, opts O
 		// Pretty list currently falls back to plain list until glamour table is added.
 		return format.WritePlainEntries(w, entries, opts.Headers)
 	case ModeTUI:
-		return tui.RenderTable(ctx, entries)
+		return tui.RenderTable(ctx, entries, opts.InitialStatus, opts.InitialDuration)
 	default:
 		return format.WritePlainEntries(w, entries, opts.Headers)
 	}

@@ -29,7 +29,7 @@ func newNoteDeleteCmd() *cobra.Command {
 				}
 				return errors.New("not found")
 			}
-			fmt.Printf("Note ID %s deleted successfully.", id)
+			fmt.Printf("Note ID %s deleted successfully.\n", id)
 			return nil
 		},
 	}
