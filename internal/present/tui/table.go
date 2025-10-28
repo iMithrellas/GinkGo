@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"github.com/charmbracelet/bubbles/table"
@@ -15,7 +16,7 @@ import (
 
 // RenderTable opens an interactive Bubble Tea table to browse entries.
 func RenderTable(ctx context.Context, entries []api.Entry) error {
-	m := model{entries: entries, showIdx: -1}
+	m := model{ctx: ctx, entries: entries, showIdx: -1, deleteIdx: -1}
 	m.initTable()
 
 	p := tea.NewProgram(m, tea.WithAltScreen())
@@ -42,13 +43,16 @@ func RenderTable(ctx context.Context, entries []api.Entry) error {
 }
 
 type model struct {
+	ctx        context.Context
 	table      table.Model
 	entries    []api.Entry
 	showIdx    int
+	deleteIdx  int
 	width      int
 	height     int
 	titleWidth int
 	tagsWidth  int
+	status     string
 }
 
 func (m *model) initTable() {
@@ -83,6 +87,30 @@ func (m model) Init() tea.Cmd { return nil }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case deleteResultMsg:
+		// Handle delete completion
+		if msg.err != nil {
+			m.status = fmt.Sprintf("Delete failed: %v", msg.err)
+			m.deleteIdx = -1
+			return m, nil
+		}
+		// Remove from entries if still valid
+		if msg.idx >= 0 && msg.idx < len(m.entries) {
+			m.entries = append(m.entries[:msg.idx], m.entries[msg.idx+1:]...)
+		}
+		// Rebuild rows and clamp cursor
+		m.updateRows()
+		newCur := msg.idx
+		if newCur >= len(m.entries) {
+			newCur = len(m.entries) - 1
+		}
+		if newCur < 0 {
+			newCur = 0
+		}
+		m.table.SetCursor(newCur)
+		m.status = fmt.Sprintf("Deleted %s", shortID(msg.id))
+		m.deleteIdx = -1
+		return m, nil
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -99,6 +127,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.showIdx = idx
 			}
 			return m, tea.Quit
+		case "d":
+			idx := m.table.Cursor()
+			if idx >= 0 && idx < len(m.entries) {
+				m.deleteIdx = idx
+				sel := m.entries[idx]
+				m.status = fmt.Sprintf("Deleting %s…", shortID(sel.ID))
+				return m, deleteCmd(m.ctx, sel.ID, idx)
+			}
+			return m, nil
 		}
 	}
 	var cmd tea.Cmd
@@ -110,7 +147,39 @@ func (m model) View() string {
 	if m.table.Height() < 3 {
 		return "(no entries)\n"
 	}
-	return m.table.View() + "\n↑/↓ to navigate • enter/q to exit\n"
+	footer := "↑/↓ to navigate • enter=show • d=delete • q=exit"
+	if m.status != "" {
+		footer += " • " + m.status
+	}
+	return m.table.View() + "\n" + footer + "\n"
+}
+
+// deleteResultMsg conveys the outcome of a delete operation back to Update.
+type deleteResultMsg struct {
+	idx int
+	id  string
+	err error
+}
+
+// deleteCmd performs the IPC call to delete an entry and returns a deleteResultMsg.
+func deleteCmd(ctx context.Context, id string, idx int) tea.Cmd {
+	return func() tea.Msg {
+		sock, err := ipc.SocketPath()
+		if err != nil {
+			return deleteResultMsg{idx: idx, id: id, err: err}
+		}
+		resp, err := ipc.Request(ctx, sock, ipc.Message{Name: "note.delete", ID: id})
+		if err != nil {
+			return deleteResultMsg{idx: idx, id: id, err: err}
+		}
+		if !resp.OK {
+			if resp.Msg != "" {
+				return deleteResultMsg{idx: idx, id: id, err: fmt.Errorf("%s", resp.Msg)}
+			}
+			return deleteResultMsg{idx: idx, id: id, err: fmt.Errorf("delete failed")}
+		}
+		return deleteResultMsg{idx: idx, id: id, err: nil}
+	}
 }
 
 func (m *model) applyLayout() {
