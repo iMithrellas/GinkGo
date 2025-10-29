@@ -146,7 +146,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case editPrepMsg:
 		// Launch external editor and handle save on completion
 		mp := msg // capture for closure
-		cmd := exec.Command(mp.editorPath, mp.path)
+		var cmd *exec.Cmd
+		if mp.useShell {
+			cmd = exec.Command("sh", "-c", "$EDITORCMD \"$FILEPATH\"")
+			cmd.Env = append(os.Environ(), "EDITORCMD="+mp.shellCmd, "FILEPATH="+mp.path)
+		} else {
+			cmd = exec.Command(mp.editorPath, mp.path)
+		}
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -158,16 +164,26 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return res
 			}
 			out, rerr := os.ReadFile(mp.path)
-			_ = os.Remove(mp.path)
 			if rerr != nil {
 				res.err = rerr
 				res.dur = time.Since(mp.start)
 				return res
 			}
 			if bytes.Equal(out, mp.initial) {
-				res.dur = time.Since(mp.start)
+				// Editor returned without changes. If it returned very quickly,
+				// it's likely a GUI editor without a wait flag. Keep temp file
+				// so the user doesn't lose the buffer and show a helpful hint.
+				dur := time.Since(mp.start)
+				if dur < 500*time.Millisecond {
+					res.err = fmt.Errorf("editor exited immediately; set $VISUAL/$EDITOR to include a wait flag (e.g., 'code --wait'). Temp file kept at %s", mp.path)
+				} else {
+					_ = os.Remove(mp.path)
+				}
+				res.dur = dur
 				return res
 			}
+			// Changes detected; remove temp after reading
+			_ = os.Remove(mp.path)
 			title, tags, body := editor.ParseEditedNote(string(out))
 			if title == "" && strings.TrimSpace(body) == "" {
 				res.dur = time.Since(mp.start)
@@ -303,6 +319,8 @@ type editPrepMsg struct {
 	path       string
 	initial    []byte
 	editorPath string
+	useShell   bool
+	shellCmd   string
 	curID      string
 	curVersion int64
 	sock       string
@@ -359,6 +377,27 @@ func editCmd(ctx context.Context, id string, idx int) tea.Cmd {
 		initial := []byte(editor.ComposeContent(cur.Title, cur.Tags, cur.Body))
 		if err := editor.PrepareAt(path, initial); err != nil {
 			return editResultMsg{idx: idx, id: id, err: err, dur: time.Since(start)}
+		}
+		// Determine how to launch the editor. If VISUAL/EDITOR is set, use a shell
+		// so flags like "--wait" are honored. Otherwise, fallback to preferred editor.
+		vis := os.Getenv("VISUAL")
+		if vis == "" {
+			vis = os.Getenv("EDITOR")
+		}
+		if strings.TrimSpace(vis) != "" {
+			return editPrepMsg{
+				ctx:        ctx,
+				idx:        idx,
+				id:         id,
+				path:       path,
+				initial:    initial,
+				useShell:   true,
+				shellCmd:   vis,
+				curID:      cur.ID,
+				curVersion: cur.Version,
+				sock:       sock,
+				start:      start,
+			}
 		}
 		ed, err := editor.PreferredEditor()
 		if err != nil {

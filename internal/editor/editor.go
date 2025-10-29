@@ -81,11 +81,23 @@ func OpenAt(path string, initial []byte) (final []byte, changed bool, err error)
 	if err := writeFile0600(path, initial); err != nil {
 		return nil, false, err
 	}
-	ed, err := PreferredEditor()
-	if err != nil {
-		return nil, false, err
+	// Honor VISUAL/EDITOR including flags by running via a shell wrapper.
+	ed := os.Getenv("VISUAL")
+	if ed == "" {
+		ed = os.Getenv("EDITOR")
 	}
-	cmd := exec.Command(ed, path)
+	var cmd *exec.Cmd
+	if strings.TrimSpace(ed) != "" {
+		cmd = exec.Command("sh", "-c", "$EDITORCMD \"$FILEPATH\"")
+		cmd.Env = append(os.Environ(), "EDITORCMD="+ed, "FILEPATH="+path)
+	} else {
+		// Fallback to common terminal editors
+		prog, err := PreferredEditor()
+		if err != nil {
+			return nil, false, err
+		}
+		cmd = exec.Command(prog, path)
+	}
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
