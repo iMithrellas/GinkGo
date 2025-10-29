@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/mithrel/ginkgo/internal/db"
+	"github.com/mithrel/ginkgo/internal/editor"
 	"github.com/mithrel/ginkgo/internal/ipc"
 	"github.com/spf13/cobra"
 )
@@ -53,11 +54,11 @@ func newNoteEditCmd() *cobra.Command {
 				b.WriteString(cur.Body)
 			}
 
-			path, err := editorPathForID(id)
+			path, err := editor.PathForID(id)
 			if err != nil {
 				return err
 			}
-			out, changed, err := openEditorAt(path, []byte(b.String()))
+			out, changed, err := editor.OpenAt(path, []byte(b.String()))
 			if err != nil {
 				return err
 			}
@@ -68,12 +69,12 @@ func newNoteEditCmd() *cobra.Command {
 				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "No changes.")
 				return nil
 			}
-			title, tags, body := parseEditedNote(string(out))
+			title, tags, body := editor.ParseEditedNote(string(out))
 			if title == "" && strings.TrimSpace(body) == "" {
 				return fmt.Errorf("edit aborted: empty content")
 			}
 			if title == "" {
-				title = firstLine(body)
+				title = editor.FirstLine(body)
 				if title == "" {
 					return fmt.Errorf("edit aborted: empty content")
 				}
@@ -114,8 +115,8 @@ func newNoteEditCmd() *cobra.Command {
 			}
 
 			// Reopen against latest
-			reopen := composeEditorContent(latest.Title, latest.Tags, latest.Body)
-			out2, changed2, err := openEditorAt(path, []byte(reopen))
+			reopen := editor.ComposeContent(latest.Title, latest.Tags, latest.Body)
+			out2, changed2, err := editor.OpenAt(path, []byte(reopen))
 			if err != nil {
 				return err
 			}
@@ -126,12 +127,12 @@ func newNoteEditCmd() *cobra.Command {
 				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "No changes.")
 				return nil
 			}
-			t2, tg2, b2 := parseEditedNote(string(out2))
+			t2, tg2, b2 := editor.ParseEditedNote(string(out2))
 			if t2 == "" && strings.TrimSpace(b2) == "" {
 				return fmt.Errorf("edit aborted: empty content")
 			}
 			if t2 == "" {
-				t2 = firstLine(b2)
+				t2 = editor.FirstLine(b2)
 			}
 			latest.Title, latest.Tags, latest.Body = t2, tg2, b2
 			latest.UpdatedAt = time.Now().UTC()

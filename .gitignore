@@ -9,6 +9,7 @@ build/
 *.dylib
 *.test
 *.out
+.gocache/
 *.yaml
 coverage*.txt
 

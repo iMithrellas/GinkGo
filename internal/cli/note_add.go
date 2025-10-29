@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mithrel/ginkgo/internal/editor"
 	"github.com/mithrel/ginkgo/internal/ipc"
 )
 
@@ -78,12 +79,12 @@ func runNoteAdd(cmd *cobra.Command, args []string) error {
 	}
 	e := resp.Entry
 
-	path, err := editorPathForID(e.ID)
+	path, err := editor.PathForID(e.ID)
 	if err != nil {
 		return err
 	}
-	initial := []byte(composeEditorContent(e.Title, e.Tags, e.Body))
-	out, changed, err := openEditorAt(path, initial)
+	initial := []byte(editor.ComposeContent(e.Title, e.Tags, e.Body))
+	out, changed, err := editor.OpenAt(path, initial)
 	if err != nil {
 		return err
 	}
@@ -101,7 +102,7 @@ func runNoteAdd(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	title, tags, body := parseEditedNote(string(out))
+	title, tags, body := editor.ParseEditedNote(string(out))
 	if title == "" && strings.TrimSpace(body) == "" {
 		if app.Cfg.GetBool("editor.delete_empty") {
 			_, _ = ipc.Request(cmd.Context(), sock, ipc.Message{
@@ -114,7 +115,7 @@ func runNoteAdd(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 	if title == "" {
-		title = firstLine(body)
+		title = editor.FirstLine(body)
 	}
 	// Apply default tags if none provided
 	if len(tags) == 0 {

@@ -1,9 +1,11 @@
 package tui
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -11,6 +13,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/mithrel/ginkgo/internal/editor"
 	"github.com/mithrel/ginkgo/internal/ipc"
 	"github.com/mithrel/ginkgo/internal/present/format"
 	"github.com/mithrel/ginkgo/pkg/api"
@@ -58,6 +61,7 @@ type model struct {
 	entries      []api.Entry
 	showIdx      int
 	deleteIdx    int
+	editIdx      int
 	headers      bool
 	width        int
 	height       int
@@ -120,6 +124,85 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.lastDuration = msg.dur
 		m.deleteIdx = -1
 		return m, nil
+	case editResultMsg:
+		if msg.err != nil {
+			m.status = fmt.Sprintf("Edit failed: %v", msg.err)
+			m.lastDuration = msg.dur
+			m.editIdx = -1
+			return m, nil
+		}
+		// If updated is nil, consider it a no-op
+		if msg.updated != nil && msg.idx >= 0 && msg.idx < len(m.entries) {
+			m.entries[msg.idx] = *msg.updated
+			m.updateRows()
+			m.table.SetCursor(msg.idx)
+			m.status = fmt.Sprintf("Saved %s", msg.id)
+		} else {
+			m.status = "No changes."
+		}
+		m.lastDuration = msg.dur
+		m.editIdx = -1
+		return m, nil
+	case editPrepMsg:
+		// Launch external editor and handle save on completion
+		mp := msg // capture for closure
+		cmd := exec.Command(mp.editorPath, mp.path)
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
+			res := editResultMsg{idx: mp.idx, id: mp.id}
+			if err != nil {
+				res.err = err
+				res.dur = time.Since(mp.start)
+				return res
+			}
+			out, rerr := os.ReadFile(mp.path)
+			_ = os.Remove(mp.path)
+			if rerr != nil {
+				res.err = rerr
+				res.dur = time.Since(mp.start)
+				return res
+			}
+			if bytes.Equal(out, mp.initial) {
+				res.dur = time.Since(mp.start)
+				return res
+			}
+			title, tags, body := editor.ParseEditedNote(string(out))
+			if title == "" && strings.TrimSpace(body) == "" {
+				res.dur = time.Since(mp.start)
+				return res
+			}
+			if title == "" {
+				title = editor.FirstLine(body)
+			}
+			save, serr := ipc.Request(mp.ctx, mp.sock, ipc.Message{
+				Name:      "note.edit",
+				ID:        mp.curID,
+				IfVersion: mp.curVersion,
+				Title:     title,
+				Body:      body,
+				Tags:      tags,
+			})
+			if serr != nil {
+				res.err = serr
+				res.dur = time.Since(mp.start)
+				return res
+			}
+			if !save.OK || save.Entry == nil {
+				if save.Msg != "" {
+					res.err = fmt.Errorf("%s", save.Msg)
+				} else {
+					res.err = fmt.Errorf("edit failed")
+				}
+				res.dur = time.Since(mp.start)
+				return res
+			}
+			e := *save.Entry
+			res.updated = &e
+			res.dur = time.Since(mp.start)
+			return res
+		})
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -136,6 +219,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.showIdx = idx
 			}
 			return m, tea.Quit
+		case "e":
+			if m.editIdx >= 1 || m.deleteIdx >= 1 {
+				// another operation in progress
+				return m, nil
+			}
+			idx := m.table.Cursor()
+			if idx >= 0 && idx < len(m.entries) {
+				m.editIdx = idx
+				sel := m.entries[idx]
+				m.status = fmt.Sprintf("Editing %s…", sel.ID)
+				return m, editCmd(m.ctx, sel.ID, idx)
+			}
+			return m, nil
 		case "d":
 			idx := m.table.Cursor()
 			if idx >= 0 && idx < len(m.entries) {
@@ -153,7 +249,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) renderFooter() string {
-	left := "↑/↓ to navigate • enter=show • d=delete • q=exit"
+	left := "↑/↓ to navigate • enter=show • d=delete • q=exit • e=edit"
 
 	var right string
 	if m.status != "" {
@@ -190,6 +286,29 @@ type deleteResultMsg struct {
 	dur time.Duration
 }
 
+// editResultMsg conveys the outcome of an edit operation back to Update.
+type editResultMsg struct {
+	idx     int
+	id      string
+	updated *api.Entry
+	err     error
+	dur     time.Duration
+}
+
+// editPrepMsg signals that the editor should be launched.
+type editPrepMsg struct {
+	ctx        context.Context
+	idx        int
+	id         string
+	path       string
+	initial    []byte
+	editorPath string
+	curID      string
+	curVersion int64
+	sock       string
+	start      time.Time
+}
+
 // deleteCmd performs the IPC call to delete an entry and returns a deleteResultMsg.
 func deleteCmd(ctx context.Context, id string, idx int) tea.Cmd {
 	return func() tea.Msg {
@@ -209,6 +328,54 @@ func deleteCmd(ctx context.Context, id string, idx int) tea.Cmd {
 			return deleteResultMsg{idx: idx, id: id, err: fmt.Errorf("delete failed"), dur: time.Since(start)}
 		}
 		return deleteResultMsg{idx: idx, id: id, err: nil, dur: time.Since(start)}
+	}
+}
+
+// editCmd opens the editor suspended and saves changes via IPC.
+func editCmd(ctx context.Context, id string, idx int) tea.Cmd {
+	return func() tea.Msg {
+		start := time.Now()
+		// Resolve socket
+		sock, err := ipc.SocketPath()
+		if err != nil {
+			return editResultMsg{idx: idx, id: id, err: err, dur: time.Since(start)}
+		}
+		// Load latest entry
+		show, err := ipc.Request(ctx, sock, ipc.Message{Name: "note.show", ID: id})
+		if err != nil {
+			return editResultMsg{idx: idx, id: id, err: err, dur: time.Since(start)}
+		}
+		if !show.OK || show.Entry == nil {
+			if show.Msg != "" {
+				return editResultMsg{idx: idx, id: id, err: fmt.Errorf("%s", show.Msg), dur: time.Since(start)}
+			}
+			return editResultMsg{idx: idx, id: id, err: fmt.Errorf("not found"), dur: time.Since(start)}
+		}
+		cur := *show.Entry
+		path, err := editor.PathForID(cur.ID)
+		if err != nil {
+			return editResultMsg{idx: idx, id: id, err: err, dur: time.Since(start)}
+		}
+		initial := []byte(editor.ComposeContent(cur.Title, cur.Tags, cur.Body))
+		if err := editor.PrepareAt(path, initial); err != nil {
+			return editResultMsg{idx: idx, id: id, err: err, dur: time.Since(start)}
+		}
+		ed, err := editor.PreferredEditor()
+		if err != nil {
+			return editResultMsg{idx: idx, id: id, err: err, dur: time.Since(start)}
+		}
+		return editPrepMsg{
+			ctx:        ctx,
+			idx:        idx,
+			id:         id,
+			path:       path,
+			initial:    initial,
+			editorPath: ed,
+			curID:      cur.ID,
+			curVersion: cur.Version,
+			sock:       sock,
+			start:      start,
+		}
 	}
 }
 

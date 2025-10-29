@@ -1,4 +1,4 @@
-package cli
+package editor
 
 import (
 	"bytes"
@@ -10,8 +10,8 @@ import (
 	"strings"
 )
 
-// composeEditorContent creates the text presented to the editor.
-func composeEditorContent(title string, tags []string, body string) string {
+// ComposeContent creates the text presented to the editor.
+func ComposeContent(title string, tags []string, body string) string {
 	var b bytes.Buffer
 	b.WriteString("# GinkGo Note\n")
 	b.WriteString("# Lines starting with '#' are ignored.\n")
@@ -33,7 +33,8 @@ func composeEditorContent(title string, tags []string, body string) string {
 	return b.String()
 }
 
-func preferredEditor() (string, error) {
+// PreferredEditor finds a suitable editor from env or common defaults.
+func PreferredEditor() (string, error) {
 	if v := os.Getenv("VISUAL"); v != "" {
 		return v, nil
 	}
@@ -48,7 +49,8 @@ func preferredEditor() (string, error) {
 	return "", errors.New("no editor found; set $EDITOR or $VISUAL")
 }
 
-func editorPathForID(id string) (string, error) {
+// PathForID returns a temp file path for a note ID.
+func PathForID(id string) (string, error) {
 	if xdg := os.Getenv("XDG_RUNTIME_DIR"); xdg != "" {
 		return filepath.Join(xdg, "ginkgo", id+".md"), nil
 	}
@@ -74,12 +76,12 @@ func writeFile0600(path string, data []byte) error {
 	return os.WriteFile(path, data, fs.FileMode(0o600))
 }
 
-// openEditorAt opens the editor at path with initial content and returns final bytes and whether it changed.
-func openEditorAt(path string, initial []byte) (final []byte, changed bool, err error) {
+// OpenAt opens the editor at path with initial content and returns final bytes and whether it changed.
+func OpenAt(path string, initial []byte) (final []byte, changed bool, err error) {
 	if err := writeFile0600(path, initial); err != nil {
 		return nil, false, err
 	}
-	ed, err := preferredEditor()
+	ed, err := PreferredEditor()
 	if err != nil {
 		return nil, false, err
 	}
@@ -97,7 +99,13 @@ func openEditorAt(path string, initial []byte) (final []byte, changed bool, err 
 	return out, !bytes.Equal(out, initial), nil
 }
 
-func parseEditedNote(s string) (title string, tags []string, body string) {
+// PrepareAt writes the initial content to the given path with secure perms.
+func PrepareAt(path string, initial []byte) error {
+	return writeFile0600(path, initial)
+}
+
+// ParseEditedNote extracts title, tags and body from the editor output.
+func ParseEditedNote(s string) (title string, tags []string, body string) {
 	lines := strings.Split(s, "\n")
 	inBody := false
 	var bodyLines []string
@@ -135,7 +143,8 @@ func parseEditedNote(s string) (title string, tags []string, body string) {
 	return title, tags, strings.TrimSpace(body)
 }
 
-func firstLine(s string) string {
+// FirstLine returns the first trimmed line, squashed and truncated.
+func FirstLine(s string) string {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return ""

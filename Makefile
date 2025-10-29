@@ -28,6 +28,14 @@ docs:
 	go run ./cmd/ginkgo-cli/doc_gen.go
 	@echo "Docs generated into $(MARKDOWNDIR) and $(MANOUT)"
 
+build:
+	mkdir -p $(BUILD_DIR)
+	@if [ -n "$(GO_TAGS)" ]; then \
+		go build -tags '$(GO_TAGS)' -o $(BUILD_OUTPUT) ./cmd/ginkgo-cli; \
+	else \
+		go build -o $(BUILD_OUTPUT) ./cmd/ginkgo-cli; \
+	fi
+
 install-man: docs
 	mkdir -p "$(MANDIR)"
 	install -m644 $(MANOUT)/*.1 "$(MANDIR)/"
