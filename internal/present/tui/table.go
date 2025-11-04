@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/table"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	overlay "github.com/rmhubbert/bubbletea-overlay"
@@ -64,6 +65,7 @@ type model struct {
 	deleteIdx    int
 	editIdx      int
 	showModal    bool
+	modal        *noteModal
 	headers      bool
 	width        int
 	height       int
@@ -100,6 +102,22 @@ func (m model) Init() tea.Cmd { return nil }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case showNoteResultMsg:
+		// Full note fetch completed
+		if msg.err != nil {
+			if m.modal != nil {
+				m.modal.setContent("Failed to load note: " + msg.err.Error())
+			}
+			m.status = "Load failed"
+			m.lastDuration = msg.dur
+			return m, nil
+		}
+		if msg.entry != nil && m.modal != nil {
+			m.modal.setEntry(*msg.entry)
+			m.status = "Loaded note"
+			m.lastDuration = msg.dur
+		}
+		return m, nil
 	case deleteResultMsg:
 		// Handle delete completion
 		if msg.err != nil {
@@ -224,10 +242,26 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		if m.showModal && m.modal != nil {
+			var cmd tea.Cmd
+			m.modal, cmd = m.modal.update(msg)
+			_ = cmd
+		}
 		m.applyLayout()
 		m.updateRows()
 		return m, nil
 	case tea.KeyMsg:
+		if m.showModal && m.modal != nil {
+			switch msg.String() {
+			case "q", "esc", "enter", "i":
+				m.showModal = false
+				return m, nil
+			default:
+				var cmd tea.Cmd
+				m.modal, cmd = m.modal.update(msg)
+				return m, cmd
+			}
+		}
 		switch msg.String() {
 		case "q", "esc", "ctrl+c", "ctrl+q":
 			if m.showModal {
@@ -246,11 +280,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, tea.Quit
 		case "i":
-			// Toggle info modal for the selected entry
+			// Toggle content modal for the selected entry (rendered + scrollable)
 			if len(m.entries) == 0 {
 				return m, nil
 			}
-			m.showModal = !m.showModal
+			if !m.showModal {
+				idx := m.table.Cursor()
+				if idx < 0 || idx >= len(m.entries) {
+					idx = 0
+				}
+				sel := m.entries[idx]
+				m.modal = newNoteModal(sel, m.width, m.height)
+				m.showModal = true
+				m.status = "Loading note…"
+				m.lastDuration = 0
+				return m, showNoteCmd(m.ctx, sel.ID)
+			} else {
+				m.showModal = false
+			}
 			return m, nil
 		case "e":
 			if m.editIdx >= 1 || m.deleteIdx >= 1 {
@@ -282,7 +329,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) renderFooter() string {
-	left := "↑/↓ to navigate • enter=show • d=delete • q=exit • e=edit"
+	left := "↑/↓ to navigate • enter=show • d=delete • q=exit • e=edit • i=inspect"
 
 	var right string
 	if m.status != "" {
@@ -306,14 +353,14 @@ func (m model) renderFooter() string {
 func (m model) View() string {
 	if m.table.Height() < 3 {
 		base := "(no entries) \n"
-		if m.showModal {
+		if m.showModal && m.modal != nil {
 			return m.renderWithOverlay(base)
 		}
 		return base
 	}
 
 	base := m.table.View() + "\n" + m.renderFooter() + "\n"
-	if m.showModal {
+	if m.showModal && m.modal != nil {
 		return m.renderWithOverlay(base)
 	}
 	return base
@@ -323,13 +370,9 @@ func (m model) View() string {
 func (m model) renderWithOverlay(base string) string {
 	// Background model simply renders the current base string.
 	bg := simpleViewModel{view: base}
-	// Foreground modal renders selected entry metadata.
-	idx := m.table.Cursor()
-	if idx < 0 || idx >= len(m.entries) {
-		idx = 0
-	}
-	fg := infoModal{e: m.entries[idx], maxWidth: max(40, m.width/2)}
-	ov := overlay.New(&fg, &bg, overlay.Center, overlay.Center, 0, 0)
+	// Foreground modal renders selected entry content (scrollable)
+	fg := m.modal
+	ov := overlay.New(fg, &bg, overlay.Center, overlay.Center, 0, 0)
 	return ov.View()
 }
 
@@ -340,36 +383,132 @@ func (s *simpleViewModel) Init() tea.Cmd                           { return nil 
 func (s *simpleViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { return s, nil }
 func (s *simpleViewModel) View() string                            { return s.view }
 
-// infoModal is a minimal foreground modal model showing ID, title, tags.
-type infoModal struct {
-	e        api.Entry
-	maxWidth int
+// noteModal is a foreground modal showing the full rendered note
+// using Glamour inside a scrollable viewport.
+type noteModal struct {
+	e       api.Entry
+	vp      viewport.Model
+	width   int
+	height  int
+	padX    int
+	padY    int
+	box     lipgloss.Style
+	content string
 }
 
-func (i *infoModal) Init() tea.Cmd                           { return nil }
-func (i *infoModal) Update(msg tea.Msg) (tea.Model, tea.Cmd) { return i, nil }
-func (i *infoModal) View() string {
-	// Compose content
-	title := lipgloss.NewStyle().Bold(true).Render(i.e.Title)
-	id := i.e.ID
-	tags := joinTags(i.e.Tags)
-	body := title + "\n" + id
-	if tags != "" {
-		body += "\n#" + strings.ReplaceAll(tags, ",", " #")
+func newNoteModal(e api.Entry, termW, termH int) *noteModal {
+	m := &noteModal{e: e, padX: 2, padY: 1}
+	m.resizeForTerm(termW, termH)
+	m.setContent("Loading…")
+	return m
+}
+
+func (m *noteModal) resizeForTerm(termW, termH int) {
+	if termW <= 0 || termH <= 0 {
+		termW, termH = 80, 24
 	}
-	// Constrain width
-	w := i.maxWidth
+	// 60% width, or nearly full width if terminal is small (<80 cols)
+	w := int(float64(termW) * 0.6)
+	if termW < 80 {
+		w = termW - 4
+	}
 	if w < 40 {
-		w = 40
+		w = max(32, termW-2)
 	}
-	// Box styling
-	box := lipgloss.NewStyle().
+	h := int(float64(termH) * 0.7)
+	if termH < 20 {
+		h = termH - 2
+	}
+	if h < 10 {
+		h = max(8, termH-1)
+	}
+	m.width, m.height = w, h
+	m.box = lipgloss.NewStyle().
 		Width(w).
-		Padding(1, 2).
+		Height(h).
+		Padding(m.padY, m.padX).
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("63")).
-		Align(lipgloss.Center)
-	return box.Render(body)
+		BorderForeground(lipgloss.Color("63"))
+
+	innerW := w - 2 - m.padX*2 // borders + padding
+	innerH := h - 2 - m.padY*2
+	if innerW < 10 {
+		innerW = 10
+	}
+	if innerH < 5 {
+		innerH = 5
+	}
+	if m.vp.Width == 0 {
+		m.vp = viewport.New(innerW, innerH)
+	} else {
+		m.vp.Width = innerW
+		m.vp.Height = innerH
+	}
+	// Re-apply current content with new size
+	m.vp.SetContent(m.content)
+}
+
+// setEntry renders the entry using the shared pretty renderer and sets it.
+func (m *noteModal) setEntry(e api.Entry) {
+	m.e = e
+	var buf bytes.Buffer
+	// Use the project renderer to avoid duplicating styling
+	_ = format.WritePrettyEntry(&buf, e)
+	m.setContent(buf.String())
+}
+
+func (m *noteModal) setContent(s string) {
+	m.content = s
+	m.vp.SetContent(s)
+}
+
+func (m *noteModal) update(msg tea.Msg) (*noteModal, tea.Cmd) {
+	switch x := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.resizeForTerm(x.Width, x.Height)
+		return m, nil
+	case tea.KeyMsg:
+		var cmd tea.Cmd
+		m.vp, cmd = m.vp.Update(msg)
+		return m, cmd
+	default:
+		return m, nil
+	}
+}
+
+func (m *noteModal) Init() tea.Cmd                           { return nil }
+func (m *noteModal) Update(msg tea.Msg) (tea.Model, tea.Cmd) { return m.update(msg) }
+func (m *noteModal) View() string                            { return m.box.Render(m.vp.View()) }
+
+// showNoteResultMsg conveys the result of fetching a full note.
+type showNoteResultMsg struct {
+	entry *api.Entry
+	err   error
+	dur   time.Duration
+}
+
+// showNoteCmd fetches the full note via IPC and returns a result message.
+func showNoteCmd(ctx context.Context, id string) tea.Cmd {
+	return func() tea.Msg {
+		start := time.Now()
+		sock, err := ipc.SocketPath()
+		if err != nil {
+			return showNoteResultMsg{err: err}
+		}
+		resp, err := ipc.Request(ctx, sock, ipc.Message{Name: "note.show", ID: id})
+		dur := time.Since(start)
+		if err != nil {
+			return showNoteResultMsg{err: err, dur: dur}
+		}
+		if !resp.OK || resp.Entry == nil {
+			if resp.Msg != "" {
+				return showNoteResultMsg{err: fmt.Errorf("%s", resp.Msg), dur: dur}
+			}
+			return showNoteResultMsg{err: fmt.Errorf("not found"), dur: dur}
+		}
+		e := *resp.Entry
+		return showNoteResultMsg{entry: &e, dur: dur}
+	}
 }
 
 // deleteResultMsg conveys the outcome of a delete operation back to Update.
