@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	overlay "github.com/rmhubbert/bubbletea-overlay"
 
 	"github.com/mithrel/ginkgo/internal/editor"
 	"github.com/mithrel/ginkgo/internal/ipc"
@@ -62,6 +63,7 @@ type model struct {
 	showIdx      int
 	deleteIdx    int
 	editIdx      int
+	showModal    bool
 	headers      bool
 	width        int
 	height       int
@@ -228,13 +230,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "esc", "ctrl+c", "ctrl+q":
+			if m.showModal {
+				m.showModal = false
+				return m, nil
+			}
 			return m, tea.Quit
 		case "enter":
+			if m.showModal {
+				m.showModal = false
+				return m, nil
+			}
 			idx := m.table.Cursor()
 			if idx >= 0 && idx < len(m.entries) {
 				m.showIdx = idx
 			}
 			return m, tea.Quit
+		case "i":
+			// Toggle info modal for the selected entry
+			if len(m.entries) == 0 {
+				return m, nil
+			}
+			m.showModal = !m.showModal
+			return m, nil
 		case "e":
 			if m.editIdx >= 1 || m.deleteIdx >= 1 {
 				// another operation in progress
@@ -288,10 +305,71 @@ func (m model) renderFooter() string {
 
 func (m model) View() string {
 	if m.table.Height() < 3 {
-		return "(no entries) \n"
+		base := "(no entries) \n"
+		if m.showModal {
+			return m.renderWithOverlay(base)
+		}
+		return base
 	}
 
-	return m.table.View() + "\n" + m.renderFooter() + "\n"
+	base := m.table.View() + "\n" + m.renderFooter() + "\n"
+	if m.showModal {
+		return m.renderWithOverlay(base)
+	}
+	return base
+}
+
+// renderWithOverlay composes a centered modal on top of the given base view string.
+func (m model) renderWithOverlay(base string) string {
+	// Background model simply renders the current base string.
+	bg := simpleViewModel{view: base}
+	// Foreground modal renders selected entry metadata.
+	idx := m.table.Cursor()
+	if idx < 0 || idx >= len(m.entries) {
+		idx = 0
+	}
+	fg := infoModal{e: m.entries[idx], maxWidth: max(40, m.width/2)}
+	ov := overlay.New(&fg, &bg, overlay.Center, overlay.Center, 0, 0)
+	return ov.View()
+}
+
+// simpleViewModel adapts a raw string to a tea.Model to act as overlay background.
+type simpleViewModel struct{ view string }
+
+func (s *simpleViewModel) Init() tea.Cmd                           { return nil }
+func (s *simpleViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { return s, nil }
+func (s *simpleViewModel) View() string                            { return s.view }
+
+// infoModal is a minimal foreground modal model showing ID, title, tags.
+type infoModal struct {
+	e        api.Entry
+	maxWidth int
+}
+
+func (i *infoModal) Init() tea.Cmd                           { return nil }
+func (i *infoModal) Update(msg tea.Msg) (tea.Model, tea.Cmd) { return i, nil }
+func (i *infoModal) View() string {
+	// Compose content
+	title := lipgloss.NewStyle().Bold(true).Render(i.e.Title)
+	id := i.e.ID
+	tags := joinTags(i.e.Tags)
+	body := title + "\n" + id
+	if tags != "" {
+		body += "\n#" + strings.ReplaceAll(tags, ",", " #")
+	}
+	// Constrain width
+	w := i.maxWidth
+	if w < 40 {
+		w = 40
+	}
+	// Box styling
+	box := lipgloss.NewStyle().
+		Width(w).
+		Padding(1, 2).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("63")).
+		Align(lipgloss.Center)
+	return box.Render(body)
 }
 
 // deleteResultMsg conveys the outcome of a delete operation back to Update.
