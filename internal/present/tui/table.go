@@ -389,7 +389,9 @@ func (m model) renderWithOverlay(base string) string {
 	if y < 0 {
 		y = 0
 	}
-	return overlayAt(base, fg, x, y, termW, termH)
+	// Whole-view dim of the background
+	dimBase := lipgloss.NewStyle().Faint(true).Render(base)
+	return overlayAt(dimBase, fg, x, y, termW, termH)
 }
 
 // overlayAt overlays fg onto base at x,y within a terminal area of w,h.
