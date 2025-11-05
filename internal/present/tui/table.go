@@ -13,7 +13,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	overlay "github.com/rmhubbert/bubbletea-overlay"
+	lipglossv2 "github.com/charmbracelet/lipgloss/v2"
 
 	"github.com/mithrel/ginkgo/internal/editor"
 	"github.com/mithrel/ginkgo/internal/ipc"
@@ -253,7 +253,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		if m.showModal && m.modal != nil {
 			switch msg.String() {
-			case "q", "esc", "enter", "i":
+			case "q", "esc", "enter", "i", "I":
 				m.showModal = false
 				return m, nil
 			default:
@@ -279,7 +279,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.showIdx = idx
 			}
 			return m, tea.Quit
-		case "i":
+		case "i", "I":
 			// Toggle content modal for the selected entry (rendered + scrollable)
 			if len(m.entries) == 0 {
 				return m, nil
@@ -368,20 +368,75 @@ func (m model) View() string {
 
 // renderWithOverlay composes a centered modal on top of the given base view string.
 func (m model) renderWithOverlay(base string) string {
-	// Background model simply renders the current base string.
-	bg := simpleViewModel{view: base}
-	// Foreground modal renders selected entry content (scrollable)
-	fg := m.modal
-	ov := overlay.New(fg, &bg, overlay.Center, overlay.Center, 0, 0)
-	return ov.View()
+	fg := ""
+	if m.modal != nil {
+		fg = m.modal.View()
+	}
+	// Compute terminal size with fallbacks.
+	termW, termH := m.width, m.height
+	if termW <= 0 {
+		termW = 80
+	}
+	if termH <= 0 {
+		termH = 24
+	}
+	// Center target position.
+	x := (termW - m.modal.width) / 2
+	y := (termH - m.modal.height) / 2
+	if x < 0 {
+		x = 0
+	}
+	if y < 0 {
+		y = 0
+	}
+	return overlayAt(base, fg, x, y, termW, termH)
 }
 
-// simpleViewModel adapts a raw string to a tea.Model to act as overlay background.
-type simpleViewModel struct{ view string }
-
-func (s *simpleViewModel) Init() tea.Cmd                           { return nil }
-func (s *simpleViewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) { return s, nil }
-func (s *simpleViewModel) View() string                            { return s.view }
+// overlayAt overlays fg onto base at x,y within a terminal area of w,h.
+// It naively splices bytes; for our ASCII-heavy UI this is acceptable.
+func overlayAt(base, fg string, x, y, w, h int) string {
+	// Ensure base has at least h lines and each line padded to width w.
+	baseLines := strings.Split(base, "\n")
+	if len(baseLines) < h {
+		pad := make([]string, h-len(baseLines))
+		for i := range pad {
+			pad[i] = ""
+		}
+		baseLines = append(baseLines, pad...)
+	}
+	for i := range baseLines {
+		if lipgloss.Width(baseLines[i]) < w {
+			baseLines[i] += strings.Repeat(" ", w-lipgloss.Width(baseLines[i]))
+		}
+	}
+	// Apply overlay line by line.
+	fgLines := strings.Split(fg, "\n")
+	for i, line := range fgLines {
+		row := y + i
+		if row < 0 || row >= len(baseLines) {
+			continue
+		}
+		// Pad left if needed
+		if lipgloss.Width(baseLines[row]) < x {
+			baseLines[row] += strings.Repeat(" ", x-lipgloss.Width(baseLines[row]))
+		}
+		bl := baseLines[row]
+		if x > len(bl) {
+			bl = bl + strings.Repeat(" ", x-len(bl))
+		}
+		left := bl
+		if x < len(bl) {
+			left = bl[:x]
+		}
+		rightStart := x + len(line)
+		right := ""
+		if rightStart < len(bl) {
+			right = bl[rightStart:]
+		}
+		baseLines[row] = left + line + right
+	}
+	return strings.Join(baseLines, "\n")
+}
 
 // noteModal is a foreground modal showing the full rendered note
 // using Glamour inside a scrollable viewport.
@@ -392,7 +447,7 @@ type noteModal struct {
 	height  int
 	padX    int
 	padY    int
-	box     lipgloss.Style
+	box     lipglossv2.Style
 	content string
 }
 
@@ -423,12 +478,12 @@ func (m *noteModal) resizeForTerm(termW, termH int) {
 		h = max(8, termH-1)
 	}
 	m.width, m.height = w, h
-	m.box = lipgloss.NewStyle().
+	m.box = lipglossv2.NewStyle().
 		Width(w).
 		Height(h).
 		Padding(m.padY, m.padX).
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("63"))
+		Border(lipglossv2.RoundedBorder()).
+		BorderForeground(lipglossv2.Color("63"))
 
 	innerW := w - 2 - m.padX*2 // borders + padding
 	innerH := h - 2 - m.padY*2
@@ -452,7 +507,7 @@ func (m *noteModal) resizeForTerm(termW, termH int) {
 func (m *noteModal) setEntry(e api.Entry) {
 	m.e = e
 	var buf bytes.Buffer
-	// Use the project renderer to avoid duplicating styling
+
 	_ = format.WritePrettyEntry(&buf, e)
 	m.setContent(buf.String())
 }
