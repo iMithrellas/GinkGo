@@ -18,3 +18,10 @@ repos:
         entry: bash -lc 'test -d cmd || exit 0; go vet ./...'
         language: system
         pass_filenames: false
+      # Run tests before pushing
+      - id: go-test-all
+        name: go test (pre-push)
+        entry: bash -lc 'test -d cmd || exit 0; go test -v ./...'
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
