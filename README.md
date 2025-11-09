@@ -117,6 +117,29 @@ Notes:
 - ACME HTTP-01 requires `:80` reachable for the configured domain (or a reverse proxy).
 - Non–Let’s Encrypt ACME providers and the ZeroSSL API path are currently untested.
 
+### Docker
+
+Build and run the QUIC server with ACME (Let’s Encrypt) using Docker:
+
+```bash
+# Build image
+docker build -t ginkgo-quic .
+
+# Run: map host 80 -> container 8080 for HTTP-01, and expose QUIC UDP 7845
+docker run --rm \
+  -p 80:8080/tcp \
+  -p 7845:7845/udp \
+  -v ginkgo-data:/data \
+  ginkgo-quic \
+  --domain sync.example.com \
+  --email you@example.com \
+  --addr :7845 \
+  --http-addr :8080
+```
+
+- Volume `ginkgo-data` persists CertMagic certificate storage (`$XDG_CACHE_HOME`, default `/data/cache`).
+- Adjust `--acme-ca`, `--storage-dir`, or use `--zerossl-api-key` as needed.
+
 ## Bubble UI
 
 `note list` supports an interactive table powered by Bubble Tea. It is enabled by default (no build tags required):
