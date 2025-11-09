@@ -36,6 +36,7 @@ func startTestDaemon(t *testing.T) (context.CancelFunc, string, string) {
 	v := viper.New()
 	v.Set("data_dir", dataDir)
 	v.Set("default_namespace", "testcli")
+	v.Set("http_addr", "127.0.0.1:0") // avoid port collisions across packages
 	if err := config.Load(context.Background(), v); err != nil {
 		t.Fatalf("config load: %v", err)
 	}
@@ -76,7 +77,6 @@ default_namespace = "testcli"
 }
 
 func TestCLIAddShowDeleteJSON(t *testing.T) {
-	t.Parallel()
 	cancel, _, dataDir := startTestDaemon(t)
 	defer cancel()
 
@@ -130,7 +130,13 @@ func TestCLIAddShowDeleteJSON(t *testing.T) {
 	if err := root3.Execute(); err != nil {
 		t.Fatalf("delete execute: %v\n%s", err, out3.String())
 	}
-	if !strings.Contains(out3.String(), "deleted successfully") {
-		t.Fatalf("unexpected delete output: %q", out3.String())
+	// Verify deletion by attempting to show again - should error
+	root4 := NewRootCmd()
+	var out4 bytes.Buffer
+	root4.SetOut(&out4)
+	root4.SetErr(&out4)
+	root4.SetArgs([]string{"--config", cfgPath, "note", "show", id})
+	if err := root4.Execute(); err == nil {
+		t.Fatalf("expected show to fail after delete, output=%q", out4.String())
 	}
 }

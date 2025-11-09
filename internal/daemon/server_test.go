@@ -33,6 +33,7 @@ func newTestApp(t *testing.T, dataDir string) *wire.App {
 	v := viper.New()
 	v.Set("data_dir", dataDir)
 	v.Set("default_namespace", "test")
+	v.Set("http_addr", "127.0.0.1:0")
 	// Load applies defaults and env semantics; ignore file discovery in tests.
 	if err := config.Load(context.Background(), v); err != nil {
 		t.Fatalf("config load: %v", err)
@@ -45,7 +46,6 @@ func newTestApp(t *testing.T, dataDir string) *wire.App {
 }
 
 func TestDaemonNoteLifecycle(t *testing.T) {
-	t.Parallel()
 	// Temp runtime and data dirs
 	tmp := t.TempDir()
 	runtimeDir := filepath.Join(tmp, "run")

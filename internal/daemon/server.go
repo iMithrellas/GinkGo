@@ -25,7 +25,11 @@ func Run(ctx context.Context, app *wire.App) error {
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("ok"))
 	})
-	srv := &http.Server{Addr: ":7465", Handler: mux}
+	addr := app.Cfg.GetString("http_addr")
+	if strings.TrimSpace(addr) == "" {
+		addr = ":7465"
+	}
+	srv := &http.Server{Addr: addr, Handler: mux}
 
 	// IPC server on Unix socket using protobuf transport
 	sock, err := ipc.SocketPath()
