@@ -71,6 +71,52 @@ ginkgo-cli completion generate bash
 ginkgo-cli completion generate zsh fish
 ```
 
+## QUIC (Experimental)
+
+An experimental QUIC endpoint and ping utility are available to explore remote connectivity and future sync transport.
+
+Start a QUIC server (TLS required; choose one method):
+
+```bash
+# 1) ACME via CertMagic (Let's Encrypt by default)
+ginkgo-cli quic serve \
+  --domain sync.example.com \
+  --email you@example.com \
+  --http-addr :80                   # serve HTTP-01 challenge
+
+# Options:
+#   --acme-ca <dirURL>              # custom ACME directory URL
+#   --storage-dir <path>            # cert storage (default XDG cache)
+#   --enable-tls-alpn --alpn-port 443  # enable TLS-ALPN-01 challenge
+
+# 2) ZeroSSL API (no ACME challenge)
+ginkgo-cli quic serve \
+  --domain sync.example.com \
+  --zerossl-api-key <API_KEY>
+
+# 3) Bring-your-own certificate
+ginkgo-cli quic serve \
+  --cert /etc/ginkgo/tls/fullchain.pem \
+  --key  /etc/ginkgo/tls/privkey.pem
+
+# 4) Self-signed (testing only; not recommended)
+ginkgo-cli quic serve --insecure-self-signed
+```
+
+Ping a server and check RTT:
+
+```bash
+ginkgo-cli quic ping 127.0.0.1:7845                 # skip verify (no SNI)
+ginkgo-cli quic ping sync.example.com:7845 \
+  --server-name sync.example.com                    # verify cert
+```
+
+Notes:
+
+- QUIC server listens on `--addr` (default `:7845`).
+- ACME HTTP-01 requires `:80` reachable for the configured domain (or a reverse proxy).
+- Non–Let’s Encrypt ACME providers and the ZeroSSL API path are currently untested.
+
 ## Bubble UI
 
 `note list` supports an interactive table powered by Bubble Tea. It is enabled by default (no build tags required):
