@@ -11,9 +11,13 @@ import (
 )
 
 // Ping connects to addr, sends "ping" and waits for "pong". Returns RTT.
-func Ping(ctx context.Context, addr string) (time.Duration, error) {
-	// For MVP we skip verification; in production supply roots/pins.
-	tlsConf := &tls.Config{InsecureSkipVerify: true, NextProtos: []string{alpn}}
+func Ping(ctx context.Context, addr string, serverName string, insecure bool) (time.Duration, error) {
+	tlsConf := &tls.Config{NextProtos: []string{alpn}}
+	if insecure || serverName == "" {
+		tlsConf.InsecureSkipVerify = true
+	} else {
+		tlsConf.ServerName = serverName
+	}
 	start := time.Now()
 	conn, err := quic.DialAddr(ctx, addr, tlsConf, &quic.Config{})
 	if err != nil {

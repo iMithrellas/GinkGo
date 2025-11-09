@@ -7,7 +7,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
-	"fmt"
+	"errors"
 	"io"
 	"math/big"
 	"time"
@@ -17,14 +17,24 @@ import (
 
 const alpn = "ginkgo-quic/1"
 
-// Serve starts a minimal QUIC server that replies "pong" to a single-line
-// message equal to "ping" on the first stream of each connection.
-func Serve(ctx context.Context, addr string) error {
-	tlsConf, err := selfSignedTLS()
-	if err != nil {
-		return err
+// Serve starts a minimal QUIC server with the provided TLS config. It replies
+// "pong" to a single-line message equal to "ping" on the first stream of each
+// connection.
+func Serve(ctx context.Context, addr string, tlsConf *tls.Config) error {
+	if tlsConf == nil {
+		return ErrMissingTLS
 	}
-	tlsConf.NextProtos = []string{alpn}
+	// Ensure ALPN includes our protocol
+	has := false
+	for _, p := range tlsConf.NextProtos {
+		if p == alpn {
+			has = true
+			break
+		}
+	}
+	if !has {
+		tlsConf.NextProtos = append(tlsConf.NextProtos, alpn)
+	}
 
 	l, err := quic.ListenAddr(addr, tlsConf, &quic.Config{})
 	if err != nil {
@@ -46,15 +56,14 @@ func Serve(ctx context.Context, addr string) error {
 
 	select {
 	case <-ctx.Done():
-		l.Close()
-		return ctx.Err()
+		_ = l.Close()
+		return nil
 	case err := <-errc:
 		return err
 	}
 }
 
 func handleConn(ctx context.Context, conn quic.Connection) {
-	defer conn.CloseWithError(0, "bye")
 
 	s, err := conn.AcceptStream(ctx)
 	if err != nil {
@@ -67,14 +76,13 @@ func handleConn(ctx context.Context, conn quic.Connection) {
 	if err != nil && err != io.ErrUnexpectedEOF {
 		return
 	}
-
 	if string(buf[:n]) == "ping" {
-		fmt.Println("Received ping, sending pong")
-		s.Write([]byte("pong"))
+		_, _ = s.Write([]byte("pong"))
 	}
 }
 
-func selfSignedTLS() (*tls.Config, error) {
+// SelfSignedTLS is for testing only. Prefer trusted certs in production.
+func SelfSignedTLS() (*tls.Config, error) {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		return nil, err
@@ -103,3 +111,5 @@ func selfSignedTLS() (*tls.Config, error) {
 	}
 	return &tls.Config{Certificates: []tls.Certificate{tlsCert}}, nil
 }
+
+var ErrMissingTLS = errors.New("missing TLS configuration")
