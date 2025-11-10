@@ -208,31 +208,6 @@ func Start(ctx context.Context, l net.Listener) error {
 	return srv.Serve(l)
 }
 
-// longestWord returns the longest alphanumeric token (>=3 chars) in s, lowercased.
-func longestWord(s string) string {
-	s = strings.ToLower(s)
-	best := ""
-	run := []rune{}
-	flush := func() {
-		if len(run) >= 3 {
-			w := string(run)
-			if len(w) > len(best) {
-				best = w
-			}
-		}
-		run = run[:0]
-	}
-	for _, r := range s {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
-			run = append(run, r)
-		} else {
-			flush()
-		}
-	}
-	flush()
-	return best
-}
-
 // parseBounds parses RFC3339 time strings, returns zero values when parsing fails.
 func parseBounds(since, until string) (time.Time, time.Time) {
 	var s, u time.Time
