@@ -49,11 +49,10 @@ func (s *UnixServer) Serve(ctx context.Context, h Handler) error {
 			}
 			go func(conn net.Conn) {
 				defer conn.Close()
-				// The handler expects pb.Request/Response but the interface is any.
-				// Callers will wrap this Server with a typed adaptor.
-				// Here we just operate on proto.Message.
-				// Read generic request
-				// The typed adaptor will provide concrete messages via Handler.
+				// Read and write length‑prefixed protobuf messages. Concrete
+				// request/response types are provided by a typed adaptor that
+				// implements both Handler and ProtoTypes (e.g., pb.Request /
+				// pb.Response). This transport only deals with proto.Message.
 				reqMsg, respMsg, err := dispatchProto(conn, h)
 				if err != nil {
 					return
@@ -76,15 +75,12 @@ func (s *UnixServer) Serve(ctx context.Context, h Handler) error {
 	}
 }
 
-// dispatchProto reads a proto message, hands it to Handler, returns response.
+// dispatchProto reads a protobuf request, invokes the Handler, and returns the
+// typed request and response messages.
 func dispatchProto(conn net.Conn, h Handler) (proto.Message, proto.Message, error) {
-	// We don't know concrete types here; a typed adaptor should wrap Handler to
-	// construct the right Request/Response types. To keep this generic, we rely
-	// on the Handler to signal which types it expects via a small convention:
-	// the Handler must accept and return proto.Message values.
-	// We call Handle with a nil request to obtain a zero value, then fill it.
-	// If the handler returns a non-nil proto.Message alongside a nil error as a template,
-	// use it. Otherwise, we cannot proceed.
+	// We don't know concrete types here. Callers provide a typed adaptor that
+	// implements ProtoTypes to supply zero values for the request/response
+	// protobuf messages (e.g., &pb.Request{}, &pb.Response{}).
 	tmplReq, _, err := prototype(h)
 	if err != nil {
 		return nil, nil, err
@@ -100,8 +96,9 @@ func dispatchProto(conn net.Conn, h Handler) (proto.Message, proto.Message, erro
 	return tmplReq, pm, nil
 }
 
-// prototype asks the handler for zero-value messages by passing a special nil.
-// If the handler implements the optional ProtoTypes interface, use it.
+// prototype asks the handler for zero-value request/response messages via the
+// optional ProtoTypes interface. Handlers that don't implement ProtoTypes
+// cannot be used with this generic transport.
 type ProtoTypes interface {
 	ProtoTypes() (req proto.Message, resp proto.Message)
 }
@@ -111,7 +108,7 @@ func prototype(h Handler) (proto.Message, proto.Message, error) {
 		req, resp := pt.ProtoTypes()
 		return req, resp, nil
 	}
-	// Fallback: time out quickly to avoid hanging if handler can't provide types
+	// No ProtoTypes available: signal invalid usage of the transport.
 	return nil, nil, os.ErrInvalid
 }
 
@@ -134,9 +131,8 @@ func (c *UnixClient) Do(ctx context.Context, req any) (any, error) {
 	if err := writeProto(conn, pmReq); err != nil {
 		return nil, err
 	}
-	// The caller should provide a concrete response to unmarshal into via context?
-	// For simplicity, we require the caller to pass a pointer to the response type in ctx
-	// under key respTypeKey.
+	// The caller must provide a zero response instance to unmarshal into via
+	// context using WithResp(ctx, &pb.Response{}).
 	rt := ctx.Value(respTypeKey{})
 	pmResp, ok := rt.(proto.Message)
 	if !ok || pmResp == nil {
@@ -160,3 +156,15 @@ type respTypeKey struct{}
 func WithResp(ctx context.Context, resp proto.Message) context.Context {
 	return context.WithValue(ctx, respTypeKey{}, resp)
 }
+
+// Example typed adaptor (sketch):
+//
+//  type pbHandler struct{}
+//  func (pbHandler) ProtoTypes() (proto.Message, proto.Message) {
+//      return &pb.Request{}, &pb.Response{}
+//  }
+//  func (pbHandler) Handle(ctx context.Context, req any) (any, error) {
+//      r := req.(*pb.Request)
+//      // ... build response ...
+//      return &pb.Response{Ok: true}, nil
+//  }
