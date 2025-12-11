@@ -38,6 +38,8 @@ func Run(ctx context.Context, app *wire.App) error {
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	// Start continuous background sync loop
+	go app.Syncer.RunBackground(ctx)
 	// Adapt CLI message handler to protobuf transport
 	handler := ipc.PBHandler(func(m ipc.Message) ipc.Response {
 		ns := m.Namespace
@@ -56,6 +58,7 @@ func Run(ctx context.Context, app *wire.App) error {
 					return ipc.Response{OK: false, Msg: err.Error()}
 				}
 				log.Printf("created note id=%s title=%q", e.ID, e.Title)
+				go app.Syncer.SyncNow(ctx)
 				return ipc.Response{OK: true, Entry: &e}
 			}
 			// Update path
@@ -89,6 +92,7 @@ func Run(ctx context.Context, app *wire.App) error {
 				return ipc.Response{OK: false, Msg: err.Error()}
 			}
 			log.Printf("updated note id=%s title=%q", e.ID, e.Title)
+			go app.Syncer.SyncNow(ctx)
 			return ipc.Response{OK: true, Entry: &e}
 		case "note.delete":
 			if m.ID == "" {
@@ -99,6 +103,7 @@ func Run(ctx context.Context, app *wire.App) error {
 				return ipc.Response{OK: false, Msg: err.Error()}
 			}
 			log.Printf("deleted note id=%s", m.ID)
+			go app.Syncer.SyncNow(ctx)
 			return ipc.Response{OK: true}
 		case "note.show":
 			if m.ID == "" {
