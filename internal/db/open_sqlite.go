@@ -204,8 +204,10 @@ func (s *sqliteStore) CreateEntry(ctx context.Context, e api.Entry) (api.Entry, 
 		return api.Entry{}, err
 	}
 	// Event
-	if err = appendEventTx(ctx, tx, api.Event{Time: e.CreatedAt, Type: api.EventUpsert, ID: e.ID, Entry: &e}); err != nil {
-		return api.Entry{}, err
+	if shouldLog(ctx) {
+		if err = appendEventTx(ctx, tx, api.Event{Time: time.Now().UTC(), Type: api.EventUpsert, ID: e.ID, Entry: &e}); err != nil {
+			return api.Entry{}, err
+		}
 	}
 	// FTS index
 	if _, err = tx.ExecContext(ctx, `INSERT INTO entries_fts(rowid, title, body, tags, namespace, id) VALUES((SELECT rowid FROM entries WHERE id=?), ?, ?, ?, ?, ?)`, e.ID, e.Title, e.Body, tagsTokens, e.Namespace, e.ID); err != nil {
@@ -260,8 +262,10 @@ func (s *sqliteStore) UpdateEntryCAS(ctx context.Context, e api.Entry, ifVersion
 		return api.Entry{}, err
 	}
 	// Append event
-	if err = appendEventTx(ctx, tx, api.Event{Time: ne.UpdatedAt, Type: api.EventUpsert, ID: ne.ID, Entry: &ne}); err != nil {
-		return api.Entry{}, err
+	if shouldLog(ctx) {
+		if err = appendEventTx(ctx, tx, api.Event{Time: time.Now().UTC(), Type: api.EventUpsert, ID: ne.ID, Entry: &ne}); err != nil {
+			return api.Entry{}, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return api.Entry{}, err
@@ -288,8 +292,10 @@ func (s *sqliteStore) DeleteEntry(ctx context.Context, id string) error {
 	if _, err = tx.ExecContext(ctx, `DELETE FROM note_tags WHERE note_id=?`, id); err != nil {
 		return err
 	}
-	if err = appendEventTx(ctx, tx, api.Event{Time: time.Now().UTC(), Type: api.EventDelete, ID: id}); err != nil {
-		return err
+	if shouldLog(ctx) {
+		if err = appendEventTx(ctx, tx, api.Event{Time: time.Now().UTC(), Type: api.EventDelete, ID: id}); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }

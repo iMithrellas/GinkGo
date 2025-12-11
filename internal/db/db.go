@@ -44,3 +44,49 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 	s.Closer = closer
 	return s, nil
 }
+
+// noEventLogKey marks contexts where event-log appends should be skipped.
+type noEventLogKey struct{}
+
+// WithNoEventLog returns a context that instructs the DB layer to skip
+// appending to the local events log (used for replication apply).
+func WithNoEventLog(ctx context.Context) context.Context {
+	return context.WithValue(ctx, noEventLogKey{}, true)
+}
+
+// shouldLog reports whether event-log appends should occur for this context.
+func shouldLog(ctx context.Context) bool {
+	v, _ := ctx.Value(noEventLogKey{}).(bool)
+	return !v
+}
+
+// ApplyReplication applies an incoming event from a remote without appending
+// a new local event log entry. This prevents echoing pulled changes back out.
+func (s *Store) ApplyReplication(ctx context.Context, ev api.Event) error {
+	ctx = WithNoEventLog(ctx)
+	switch ev.Type {
+	case api.EventUpsert:
+		if ev.Entry == nil {
+			return nil
+		}
+		if _, err := s.Entries.CreateEntry(ctx, *ev.Entry); err != nil {
+			if err == ErrConflict {
+				cur, err := s.Entries.GetEntry(ctx, ev.Entry.ID)
+				if err != nil {
+					return err
+				}
+				_, err = s.Entries.UpdateEntryCAS(ctx, *ev.Entry, cur.Version)
+				return err
+			}
+			return err
+		}
+		return nil
+	case api.EventDelete:
+		if err := s.Entries.DeleteEntry(ctx, ev.ID); err != nil && err != ErrNotFound {
+			return err
+		}
+		return nil
+	default:
+		return nil
+	}
+}

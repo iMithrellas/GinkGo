@@ -6,10 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,6 +32,13 @@ type Service struct {
 	httpClient *http.Client
 }
 
+type remoteConfig struct {
+	Name      string
+	URL       string
+	Token     string
+	BatchSize int
+}
+
 func New(cfg *viper.Viper, store *db.Store) *Service {
 	return &Service{
 		cfg:   cfg,
@@ -37,25 +47,6 @@ func New(cfg *viper.Viper, store *db.Store) *Service {
 			Timeout: 20 * time.Second,
 		},
 	}
-}
-
-func (s *Service) SyncNow(ctx context.Context) error {
-	remotes := s.cfg.GetStringMap("remotes")
-	if len(remotes) == 0 {
-		return nil
-	}
-	var firstErr error
-	for name := range remotes {
-		if !s.remoteEnabled(name) {
-			continue
-		}
-		if err := s.pushRemote(ctx, name); err != nil {
-			if firstErr == nil {
-				firstErr = err
-			}
-		}
-	}
-	return firstErr
 }
 
 func (s *Service) remoteEnabled(name string) bool {
@@ -68,28 +59,177 @@ func (s *Service) remoteEnabled(name string) bool {
 	return url != ""
 }
 
-func (s *Service) pushRemote(ctx context.Context, name string) error {
+func (s *Service) SyncNow(ctx context.Context) error {
+	remotes := s.cfg.GetStringMap("remotes")
+	if len(remotes) == 0 {
+		return nil
+	}
+	var firstErr error
+
+	for name := range remotes {
+		if !s.remoteEnabled(name) {
+			continue
+		}
+
+		// Load config once per remote
+		rc, err := s.getRemoteConfig(name)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+
+		pushAfter, pullAfter := s.loadCursors(name)
+		log.Printf("sync: %s starting. pushAfter=%v pullAfter=%v", name, pushAfter, pullAfter)
+
+		if err := s.pushRemote(ctx, rc, pushAfter); err != nil {
+			log.Printf("sync: %s push failed: %v", name, err)
+			if firstErr == nil {
+				firstErr = err
+			}
+		}
+		if err := s.pullRemote(ctx, rc, pullAfter); err != nil {
+			log.Printf("sync: %s pull failed: %v", name, err)
+			if firstErr == nil {
+				firstErr = err
+			}
+		}
+	}
+	return firstErr
+}
+
+func (s *Service) getRemoteConfig(name string) (remoteConfig, error) {
 	base := "remotes." + name + "."
-	url := strings.TrimRight(s.cfg.GetString(base+"url"), "/")
+	u := strings.TrimRight(s.cfg.GetString(base+"url"), "/")
 	token := s.cfg.GetString(base + "token")
-	if url == "" {
-		return fmt.Errorf("remote %s missing url", name)
+
+	if u == "" {
+		return remoteConfig{}, fmt.Errorf("remote %s missing url", name)
 	}
 	if strings.TrimSpace(token) == "" {
-		return fmt.Errorf("remote %s missing token", name)
+		return remoteConfig{}, fmt.Errorf("remote %s missing token", name)
 	}
-	pushAfter, pullAfter := s.loadCursors(name)
+
 	batchSize := s.cfg.GetInt("sync.batch_size")
 	if batchSize <= 0 {
 		batchSize = 256
 	}
-	evs, nextCur, err := s.store.Events.List(ctx, api.Cursor{After: pushAfter}, batchSize)
+
+	return remoteConfig{
+		Name:      name,
+		URL:       u,
+		Token:     token,
+		BatchSize: batchSize,
+	}, nil
+}
+
+func (s *Service) execRequest(ctx context.Context, method, url, token, contentType string, body []byte) ([]byte, int, error) {
+	var r io.Reader
+	if body != nil {
+		r = bytes.NewReader(body)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, url, r)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+token)
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	return respBody, resp.StatusCode, nil
+}
+
+func (s *Service) pushRemote(ctx context.Context, rc remoteConfig, pushAfter time.Time) error {
+	evs, nextCur, err := s.store.Events.List(ctx, api.Cursor{After: pushAfter}, rc.BatchSize)
 	if err != nil {
 		return fmt.Errorf("list events: %w", err)
 	}
 	if len(evs) == 0 {
 		return nil
 	}
+
+	pbBatch := s.eventsToProto(evs)
+	body, _ := proto.Marshal(pbBatch)
+
+	respBody, code, err := s.execRequest(ctx, http.MethodPost, rc.URL+"/v1/replicate/push", rc.Token, "application/x-protobuf", body)
+	if err != nil {
+		return err
+	}
+	if code >= 300 {
+		return fmt.Errorf("remote %s push failed: %s", rc.Name, strings.TrimSpace(string(respBody)))
+	}
+
+	newPush := nextCur.After
+	if newPush.IsZero() && len(evs) > 0 {
+		newPush = evs[len(evs)-1].Time
+	}
+	s.savePushAfter(rc.Name, newPush)
+	return nil
+}
+
+func (s *Service) pullRemote(ctx context.Context, rc remoteConfig, pullAfter time.Time) error {
+	q := url.Values{}
+	q.Set("limit", strconv.Itoa(rc.BatchSize))
+	if !pullAfter.IsZero() {
+		q.Set("after", pullAfter.UTC().Format(time.RFC3339Nano))
+	}
+
+	pullURL := rc.URL + "/v1/replicate/pull?" + q.Encode()
+	log.Printf("sync: pulling %s", pullURL)
+
+	respBody, code, err := s.execRequest(ctx, http.MethodGet, pullURL, rc.Token, "", nil)
+	if err != nil {
+		return err
+	}
+
+	if code == http.StatusNotImplemented {
+		return nil
+	}
+	if code >= 300 {
+		return fmt.Errorf("remote %s pull failed: %s", rc.Name, strings.TrimSpace(string(respBody)))
+	}
+
+	var pr pbmsg.PullResult
+	if err := proto.Unmarshal(respBody, &pr); err != nil {
+		return err
+	}
+	log.Printf("sync: pulled %d events from %s", len(pr.Events), rc.Name)
+	if len(pr.Events) == 0 {
+		return nil
+	}
+	if err := s.applyPullBatch(ctx, pr.Events); err != nil {
+		return err
+	}
+
+	// Determine next cursor
+	cur := pullAfter
+	if pr.Next != nil && pr.Next.After != nil {
+		cur = pr.Next.After.AsTime()
+	} else if len(pr.Events) > 0 {
+		if t := pr.Events[len(pr.Events)-1].GetTime(); t != nil {
+			cur = t.AsTime()
+		}
+	}
+
+	if !cur.IsZero() {
+		s.savePullAfter(rc.Name, cur)
+	}
+	return nil
+}
+
+// eventsToProto handles verbose mapping logic
+func (s *Service) eventsToProto(evs []api.Event) *pbmsg.PushBatch {
 	pbBatch := &pbmsg.PushBatch{Events: make([]*pbmsg.RepEvent, 0, len(evs))}
 	for _, e := range evs {
 		var pe *pbmsg.Entry
@@ -112,31 +252,40 @@ func (s *Service) pushRemote(ctx context.Context, name string) error {
 			Entry: pe,
 		})
 	}
-	body, _ := proto.Marshal(pbBatch)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url+"/v1/replicate/push", bytes.NewReader(body))
-	if err != nil {
-		return err
+	return pbBatch
+}
+
+// repEventToAPI converts a pulled RepEvent into a local api.Event.
+func (s *Service) repEventToAPI(pev *pbmsg.RepEvent) api.Event {
+	var e *api.Entry
+	if pev.Entry != nil {
+		ee := api.Entry{
+			ID: pev.Entry.GetId(), Version: pev.Entry.GetVersion(), Title: pev.Entry.GetTitle(), Body: pev.Entry.GetBody(),
+			Tags: append([]string(nil), pev.Entry.GetTags()...), Namespace: pev.Entry.GetNamespace(),
+		}
+		if pev.Entry.GetCreatedAt() != nil {
+			ee.CreatedAt = pev.Entry.GetCreatedAt().AsTime()
+		}
+		if pev.Entry.GetUpdatedAt() != nil {
+			ee.UpdatedAt = pev.Entry.GetUpdatedAt().AsTime()
+		}
+		e = &ee
 	}
-	req.Header.Set("Content-Type", "application/x-protobuf")
-	req.Header.Set("Authorization", "Bearer "+token)
-	resp, err := s.httpClient.Do(req)
-	if err != nil {
-		return err
+	ev := api.Event{ID: pev.GetId(), Type: api.EventType(strings.ToLower(pev.GetType())), Entry: e}
+	if pev.GetTime() != nil {
+		ev.Time = pev.GetTime().AsTime()
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("remote %s push failed: %s", name, strings.TrimSpace(string(b)))
+	return ev
+}
+
+// applyPullBatch applies pulled events without re-logging them locally.
+func (s *Service) applyPullBatch(ctx context.Context, in []*pbmsg.RepEvent) error {
+	for _, pev := range in {
+		ev := s.repEventToAPI(pev)
+		if err := s.store.ApplyReplication(ctx, ev); err != nil && err != db.ErrConflict && err != db.ErrNotFound {
+			return err
+		}
 	}
-	var pr pbmsg.PushResult
-	if data, err := io.ReadAll(resp.Body); err == nil && len(data) > 0 {
-		_ = proto.Unmarshal(data, &pr)
-	}
-	newPush := nextCur.After
-	if newPush.IsZero() && len(evs) > 0 {
-		newPush = evs[len(evs)-1].Time
-	}
-	s.saveCursors(name, newPush, pullAfter)
 	return nil
 }
 
@@ -180,15 +329,29 @@ func (s *Service) loadCursors(name string) (time.Time, time.Time) {
 	return push, pull
 }
 
-func (s *Service) saveCursors(name string, pushAfter, pullAfter time.Time) {
+func (s *Service) savePushAfter(name string, t time.Time) {
+	if t.IsZero() {
+		return
+	}
 	p := s.cursorPath(name)
-	cf := cursorsFile{}
-	if !pushAfter.IsZero() {
-		cf.PushAfter = pushAfter.UTC().Format(time.RFC3339Nano)
+	var cf cursorsFile
+	if b, err := os.ReadFile(p); err == nil {
+		_ = json.Unmarshal(b, &cf)
 	}
-	if !pullAfter.IsZero() {
-		cf.PullAfter = pullAfter.UTC().Format(time.RFC3339Nano)
+	cf.PushAfter = t.UTC().Format(time.RFC3339Nano)
+	b, _ := json.Marshal(cf)
+	_ = os.WriteFile(p, b, 0o600)
+}
+func (s *Service) savePullAfter(name string, t time.Time) {
+	if t.IsZero() {
+		return
 	}
+	p := s.cursorPath(name)
+	var cf cursorsFile
+	if b, err := os.ReadFile(p); err == nil {
+		_ = json.Unmarshal(b, &cf)
+	}
+	cf.PullAfter = t.UTC().Format(time.RFC3339Nano)
 	b, _ := json.Marshal(cf)
 	_ = os.WriteFile(p, b, 0o600)
 }

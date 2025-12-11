@@ -89,8 +89,12 @@ func (s *Server) handlePush(w http.ResponseWriter, r *http.Request) {
 			}
 		case string(api.EventDelete):
 			if err := s.store.Entries.DeleteEntry(r.Context(), pev.GetId()); err != nil {
-				st.Ok = false
-				st.Msg = err.Error()
+				if !errors.Is(err, db.ErrNotFound) {
+					st.Ok = false
+					st.Msg = err.Error()
+				}
+			} else {
+				log.Printf("replicate: deleted id=%s", pev.GetId())
 			}
 		default:
 			st.Ok = false
