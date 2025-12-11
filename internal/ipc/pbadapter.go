@@ -90,6 +90,14 @@ func (h pbHandler) Handle(ctx context.Context, req any) (any, error) {
 				}
 			}
 		}
+	case *pb.Request_SyncRun:
+		m.Name = "sync.run"
+	case *pb.Request_QueueList:
+		m.Name = "sync.queue"
+		if x.QueueList != nil {
+			m.Limit = int(x.QueueList.Limit)
+			m.Remote = x.QueueList.Remote
+		}
 	}
 
 	r := h.fn(m)
@@ -104,6 +112,19 @@ func (h pbHandler) Handle(ctx context.Context, req any) (any, error) {
 		for _, e := range r.Entries {
 			ee := toPbEntry(e)
 			presp.Entries = append(presp.Entries, &ee)
+		}
+	}
+	if len(r.Queue) > 0 {
+		presp.Queue = make([]*pb.QueueRemote, 0, len(r.Queue))
+		for _, qr := range r.Queue {
+			pqr := &pb.QueueRemote{Name: qr.Name, Url: qr.URL, Pending: qr.Pending}
+			if len(qr.Events) > 0 {
+				pqr.Events = make([]*pb.QueueEvent, 0, len(qr.Events))
+				for _, ev := range qr.Events {
+					pqr.Events = append(pqr.Events, &pb.QueueEvent{Time: timestamppb.New(ev.Time), Type: ev.Type, Id: ev.ID})
+				}
+			}
+			presp.Queue = append(presp.Queue, pqr)
 		}
 	}
 	return presp, nil

@@ -52,6 +52,10 @@ func Request(ctx context.Context, path string, m Message) (Response, error) {
 			lf.Until = timestamppb.New(ts)
 		}
 		preq.Cmd = &pb.Request_NoteSearchRegex{NoteSearchRegex: &pb.SearchRegex{Pattern: m.Title, Filter: lf}}
+	case "sync.run":
+		preq.Cmd = &pb.Request_SyncRun{SyncRun: &pb.SyncRun{}}
+	case "sync.queue":
+		preq.Cmd = &pb.Request_QueueList{QueueList: &pb.QueueRequest{Limit: int32(m.Limit), Remote: m.Remote}}
 	}
 
 	c := transport.NewUnixClient(path)
@@ -71,6 +75,23 @@ func Request(ctx context.Context, path string, m Message) (Response, error) {
 		r.Entries = make([]api.Entry, 0, len(presp.Entries))
 		for _, e := range presp.Entries {
 			r.Entries = append(r.Entries, *fromPbEntry(e))
+		}
+	}
+	if len(presp.Queue) > 0 {
+		r.Queue = make([]QueueRemote, 0, len(presp.Queue))
+		for _, q := range presp.Queue {
+			qr := QueueRemote{Name: q.GetName(), URL: q.GetUrl(), Pending: q.GetPending()}
+			if len(q.Events) > 0 {
+				qr.Events = make([]QueueEvent, 0, len(q.Events))
+				for _, ev := range q.Events {
+					var t time.Time
+					if ev.GetTime() != nil {
+						t = ev.GetTime().AsTime()
+					}
+					qr.Events = append(qr.Events, QueueEvent{Time: t, Type: ev.GetType(), ID: ev.GetId()})
+				}
+			}
+			r.Queue = append(r.Queue, qr)
 		}
 	}
 	return r, nil

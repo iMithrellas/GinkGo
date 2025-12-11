@@ -2,9 +2,12 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/spf13/cobra"
+
+	"github.com/mithrel/ginkgo/internal/ipc"
 )
 
 func newNoteSyncCmd() *cobra.Command {
@@ -12,11 +15,18 @@ func newNoteSyncCmd() *cobra.Command {
 		Use:   "sync",
 		Short: "Replicate local note changes to remotes",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			app := getApp(cmd)
-			if err := app.Syncer.SyncNow(context.Background()); err != nil {
+			sock, err := ipc.SocketPath()
+			if err != nil {
 				return err
 			}
-			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "sync: completed push to remotes")
+			resp, err := ipc.Request(context.Background(), sock, ipc.Message{Name: "sync.run"})
+			if err != nil {
+				return err
+			}
+			if !resp.OK {
+				return errors.New(resp.Msg)
+			}
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "sync: triggered")
 			return nil
 		},
 	}

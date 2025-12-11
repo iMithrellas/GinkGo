@@ -155,6 +155,29 @@ func Run(ctx context.Context, app *wire.App) error {
 				return ipc.Response{OK: false, Msg: err.Error()}
 			}
 			return ipc.Response{OK: true, Entries: entries}
+		case "sync.queue":
+			limit := m.Limit
+			qs, err := app.Syncer.Queue(ctx, limit, m.Remote)
+			if err != nil {
+				return ipc.Response{OK: false, Msg: err.Error()}
+			}
+			out := make([]ipc.QueueRemote, 0, len(qs))
+			for _, qr := range qs {
+				r := ipc.QueueRemote{Name: qr.Name, URL: qr.URL, Pending: int64(qr.Pending)}
+				if len(qr.Events) > 0 {
+					r.Events = make([]ipc.QueueEvent, 0, len(qr.Events))
+					for _, ev := range qr.Events {
+						r.Events = append(r.Events, ipc.QueueEvent{Time: ev.Time, Type: ev.Type, ID: ev.ID})
+					}
+				}
+				out = append(out, r)
+			}
+			return ipc.Response{OK: true, Queue: out}
+		case "sync.run":
+			if err := app.Syncer.SyncNow(ctx); err != nil {
+				return ipc.Response{OK: false, Msg: err.Error()}
+			}
+			return ipc.Response{OK: true, Msg: "sync triggered"}
 		default:
 			log.Printf("unknown IPC cmd=%s", m.Name)
 			return ipc.Response{OK: false, Msg: "unknown command"}

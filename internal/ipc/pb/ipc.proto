@@ -42,6 +42,8 @@ message Request {
     ListFilter note_list = 5;
     SearchFTS note_search_fts = 6;
     SearchRegex note_search_regex = 7;
+    SyncRun sync_run = 8;
+    QueueRequest queue_list = 9;
   }
 }
 
@@ -50,6 +52,7 @@ message Response {
   string msg = 2;
   Entry entry = 3;
   repeated Entry entries = 4;
+  repeated QueueRemote queue = 5;
 }
 
 message RepEvent {
@@ -81,4 +84,21 @@ message PushResult {
 message PullResult {
   repeated RepEvent events = 1;
   Cursor next = 2;
+}
+
+message SyncRun {}
+
+message QueueRequest { int32 limit = 1; string remote = 2; }
+
+message QueueEvent {
+  google.protobuf.Timestamp time = 1;
+  string type = 2;
+  string id = 3;
+}
+
+message QueueRemote {
+  string name = 1;
+  string url = 2;
+  int64 pending = 3;
+  repeated QueueEvent events = 4;
 }

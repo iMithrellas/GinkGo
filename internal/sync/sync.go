@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -223,4 +224,69 @@ func (s *Service) RunBackground(ctx context.Context) {
 		case <-time.After(next):
 		}
 	}
+}
+
+type qEvent struct {
+	Time time.Time
+	Type string
+	ID   string
+}
+
+type qRemote struct {
+	Name    string
+	URL     string
+	Pending int
+	Events  []qEvent
+}
+
+func (s *Service) Queue(ctx context.Context, limit int, onlyRemote string) ([]qRemote, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	remotes := s.cfg.GetStringMap("remotes")
+	out := make([]qRemote, 0, len(remotes))
+	names := make([]string, 0, len(remotes))
+	for name := range remotes {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if onlyRemote != "" && name != onlyRemote {
+			continue
+		}
+		if !s.remoteEnabled(name) {
+			continue
+		}
+		base := "remotes." + name + "."
+		url := strings.TrimSpace(s.cfg.GetString(base + "url"))
+		pushAfter, _ := s.loadCursors(name)
+		total := 0
+		const page = 500
+		cur := api.Cursor{After: pushAfter}
+		var sample []qEvent
+		for {
+			evs, next, err := s.store.Events.List(ctx, cur, page)
+			if err != nil {
+				return nil, err
+			}
+			total += len(evs)
+			if len(sample) == 0 && len(evs) > 0 {
+				// take the first 'limit' items from the head
+				n := limit
+				if n > len(evs) {
+					n = len(evs)
+				}
+				sample = make([]qEvent, 0, n)
+				for i := 0; i < n; i++ {
+					sample = append(sample, qEvent{Time: evs[i].Time, Type: string(evs[i].Type), ID: evs[i].ID})
+				}
+			}
+			if len(evs) < page {
+				break
+			}
+			cur = next
+		}
+		out = append(out, qRemote{Name: name, URL: url, Pending: total, Events: sample})
+	}
+	return out, nil
 }

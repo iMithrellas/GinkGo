@@ -1,6 +1,10 @@
 package ipc
 
-import "github.com/mithrel/ginkgo/pkg/api"
+import (
+	"time"
+
+	"github.com/mithrel/ginkgo/pkg/api"
+)
 
 // Message is a minimal command payload sent from CLI to daemon.
 type Message struct {
@@ -16,12 +20,28 @@ type Message struct {
 	Until     string   `json:"until,omitempty"`
 	TagsAny   []string `json:"tags_any,omitempty"`
 	TagsAll   []string `json:"tags_all,omitempty"`
+	Limit     int      `json:"limit,omitempty"`
+	Remote    string   `json:"remote,omitempty"`
 }
 
 // Response is a minimal daemon reply.
 type Response struct {
-	OK      bool        `json:"ok"`
-	Msg     string      `json:"msg,omitempty"`
-	Entry   *api.Entry  `json:"entry,omitempty"`
-	Entries []api.Entry `json:"entries,omitempty"`
+	OK      bool          `json:"ok"`
+	Msg     string        `json:"msg,omitempty"`
+	Entry   *api.Entry    `json:"entry,omitempty"`
+	Entries []api.Entry   `json:"entries,omitempty"`
+	Queue   []QueueRemote `json:"queue,omitempty"`
+}
+
+type QueueEvent struct {
+	Time time.Time `json:"time"`
+	Type string    `json:"type"`
+	ID   string    `json:"id"`
+}
+
+type QueueRemote struct {
+	Name    string       `json:"name"`
+	URL     string       `json:"url"`
+	Pending int64        `json:"pending"`
+	Events  []QueueEvent `json:"events"`
 }

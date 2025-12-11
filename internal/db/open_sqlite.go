@@ -131,7 +131,7 @@ func (s *sqliteStore) List(ctx context.Context, cur api.Cursor, limit int) ([]ap
 		args = append(args, cur.After.UTC())
 	}
 	q += ` ORDER BY time ASC`
-	limit = 200000
+	limit = 2000
 	if limit > 0 {
 		q += ` LIMIT ?`
 		args = append(args, limit)
