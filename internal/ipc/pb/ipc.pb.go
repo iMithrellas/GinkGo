@@ -791,9 +791,9 @@ func (x *Response) GetEntries() []*Entry {
 type RepEvent struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Time          *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=time,proto3" json:"time,omitempty"`
-	Type          string                 `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"` // "upsert" | "delete"
+	Type          string                 `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"`
 	Id            string                 `protobuf:"bytes,3,opt,name=id,proto3" json:"id,omitempty"`
-	Entry         *Entry                 `protobuf:"bytes,4,opt,name=entry,proto3" json:"entry,omitempty"` // optional for delete
+	Entry         *Entry                 `protobuf:"bytes,4,opt,name=entry,proto3" json:"entry,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1056,6 +1056,58 @@ func (x *PushResult) GetNext() *Cursor {
 	return nil
 }
 
+type PullResult struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Events        []*RepEvent            `protobuf:"bytes,1,rep,name=events,proto3" json:"events,omitempty"`
+	Next          *Cursor                `protobuf:"bytes,2,opt,name=next,proto3" json:"next,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PullResult) Reset() {
+	*x = PullResult{}
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PullResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PullResult) ProtoMessage() {}
+
+func (x *PullResult) ProtoReflect() protoreflect.Message {
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PullResult.ProtoReflect.Descriptor instead.
+func (*PullResult) Descriptor() ([]byte, []int) {
+	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *PullResult) GetEvents() []*RepEvent {
+	if x != nil {
+		return x.Events
+	}
+	return nil
+}
+
+func (x *PullResult) GetNext() *Cursor {
+	if x != nil {
+		return x.Next
+	}
+	return nil
+}
+
 var File_internal_ipc_pb_ipc_proto protoreflect.FileDescriptor
 
 const file_internal_ipc_pb_ipc_proto_rawDesc = "" +
@@ -1140,6 +1192,10 @@ const file_internal_ipc_pb_ipc_proto_rawDesc = "" +
 	"\n" +
 	"PushResult\x12%\n" +
 	"\x05items\x18\x01 \x03(\v2\x0f.ipc.ItemStatusR\x05items\x12\x1f\n" +
+	"\x04next\x18\x02 \x01(\v2\v.ipc.CursorR\x04next\"T\n" +
+	"\n" +
+	"PullResult\x12%\n" +
+	"\x06events\x18\x01 \x03(\v2\r.ipc.RepEventR\x06events\x12\x1f\n" +
 	"\x04next\x18\x02 \x01(\v2\v.ipc.CursorR\x04nextB+Z)github.com/mithrel/ginkgo/internal/ipc/pbb\x06proto3"
 
 var (
@@ -1154,7 +1210,7 @@ func file_internal_ipc_pb_ipc_proto_rawDescGZIP() []byte {
 	return file_internal_ipc_pb_ipc_proto_rawDescData
 }
 
-var file_internal_ipc_pb_ipc_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_internal_ipc_pb_ipc_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_internal_ipc_pb_ipc_proto_goTypes = []any{
 	(*Entry)(nil),                 // 0: ipc.Entry
 	(*NoteAdd)(nil),               // 1: ipc.NoteAdd
@@ -1171,13 +1227,14 @@ var file_internal_ipc_pb_ipc_proto_goTypes = []any{
 	(*ItemStatus)(nil),            // 12: ipc.ItemStatus
 	(*Cursor)(nil),                // 13: ipc.Cursor
 	(*PushResult)(nil),            // 14: ipc.PushResult
-	(*timestamppb.Timestamp)(nil), // 15: google.protobuf.Timestamp
+	(*PullResult)(nil),            // 15: ipc.PullResult
+	(*timestamppb.Timestamp)(nil), // 16: google.protobuf.Timestamp
 }
 var file_internal_ipc_pb_ipc_proto_depIdxs = []int32{
-	15, // 0: ipc.Entry.created_at:type_name -> google.protobuf.Timestamp
-	15, // 1: ipc.Entry.updated_at:type_name -> google.protobuf.Timestamp
-	15, // 2: ipc.ListFilter.since:type_name -> google.protobuf.Timestamp
-	15, // 3: ipc.ListFilter.until:type_name -> google.protobuf.Timestamp
+	16, // 0: ipc.Entry.created_at:type_name -> google.protobuf.Timestamp
+	16, // 1: ipc.Entry.updated_at:type_name -> google.protobuf.Timestamp
+	16, // 2: ipc.ListFilter.since:type_name -> google.protobuf.Timestamp
+	16, // 3: ipc.ListFilter.until:type_name -> google.protobuf.Timestamp
 	5,  // 4: ipc.SearchFTS.filter:type_name -> ipc.ListFilter
 	5,  // 5: ipc.SearchRegex.filter:type_name -> ipc.ListFilter
 	1,  // 6: ipc.Request.note_add:type_name -> ipc.NoteAdd
@@ -1189,17 +1246,19 @@ var file_internal_ipc_pb_ipc_proto_depIdxs = []int32{
 	7,  // 12: ipc.Request.note_search_regex:type_name -> ipc.SearchRegex
 	0,  // 13: ipc.Response.entry:type_name -> ipc.Entry
 	0,  // 14: ipc.Response.entries:type_name -> ipc.Entry
-	15, // 15: ipc.RepEvent.time:type_name -> google.protobuf.Timestamp
+	16, // 15: ipc.RepEvent.time:type_name -> google.protobuf.Timestamp
 	0,  // 16: ipc.RepEvent.entry:type_name -> ipc.Entry
 	10, // 17: ipc.PushBatch.events:type_name -> ipc.RepEvent
-	15, // 18: ipc.Cursor.after:type_name -> google.protobuf.Timestamp
+	16, // 18: ipc.Cursor.after:type_name -> google.protobuf.Timestamp
 	12, // 19: ipc.PushResult.items:type_name -> ipc.ItemStatus
 	13, // 20: ipc.PushResult.next:type_name -> ipc.Cursor
-	21, // [21:21] is the sub-list for method output_type
-	21, // [21:21] is the sub-list for method input_type
-	21, // [21:21] is the sub-list for extension type_name
-	21, // [21:21] is the sub-list for extension extendee
-	0,  // [0:21] is the sub-list for field type_name
+	10, // 21: ipc.PullResult.events:type_name -> ipc.RepEvent
+	13, // 22: ipc.PullResult.next:type_name -> ipc.Cursor
+	23, // [23:23] is the sub-list for method output_type
+	23, // [23:23] is the sub-list for method input_type
+	23, // [23:23] is the sub-list for extension type_name
+	23, // [23:23] is the sub-list for extension extendee
+	0,  // [0:23] is the sub-list for field type_name
 }
 
 func init() { file_internal_ipc_pb_ipc_proto_init() }
@@ -1222,7 +1281,7 @@ func file_internal_ipc_pb_ipc_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_internal_ipc_pb_ipc_proto_rawDesc), len(file_internal_ipc_pb_ipc_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   15,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

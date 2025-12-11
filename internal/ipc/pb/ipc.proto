@@ -77,3 +77,8 @@ message PushResult {
   repeated ItemStatus items = 1;
   Cursor next = 2;
 }
+
+message PullResult {
+  repeated RepEvent events = 1;
+  Cursor next = 2;
+}

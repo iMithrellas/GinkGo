@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -127,7 +128,62 @@ func (s *Server) applyUpsert(ctx context.Context, e api.Entry) error {
 }
 
 func (s *Server) handlePull(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "pull not implemented", http.StatusNotImplemented)
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	q := r.URL.Query()
+	var after time.Time
+	if a := strings.TrimSpace(q.Get("after")); a != "" {
+		if t, err := time.Parse(time.RFC3339Nano, a); err == nil {
+			after = t
+		} else if t, err := time.Parse(time.RFC3339, a); err == nil {
+			after = t
+		} else {
+			http.Error(w, "bad after", http.StatusBadRequest)
+			return
+		}
+	}
+	limit := 256
+	if ls := strings.TrimSpace(q.Get("limit")); ls != "" {
+		if n, err := strconv.Atoi(ls); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	evs, nextCur, err := s.store.Events.List(r.Context(), api.Cursor{After: after}, limit)
+	if err != nil {
+		http.Error(w, "list failed", http.StatusInternalServerError)
+		return
+	}
+	out := make([]*pbmsg.RepEvent, 0, len(evs))
+	for _, e := range evs {
+		var pe *pbmsg.Entry
+		if e.Entry != nil {
+			pe = &pbmsg.Entry{
+				Id:        e.Entry.ID,
+				Version:   e.Entry.Version,
+				Title:     e.Entry.Title,
+				Body:      e.Entry.Body,
+				Tags:      append([]string(nil), e.Entry.Tags...),
+				CreatedAt: timestamppb.New(e.Entry.CreatedAt),
+				UpdatedAt: timestamppb.New(e.Entry.UpdatedAt),
+				Namespace: e.Entry.Namespace,
+			}
+		}
+		out = append(out, &pbmsg.RepEvent{
+			Time:  timestamppb.New(e.Time),
+			Type:  string(e.Type),
+			Id:    e.ID,
+			Entry: pe,
+		})
+	}
+	resp := &pbmsg.PullResult{Events: out}
+	if !nextCur.After.IsZero() {
+		resp.Next = &pbmsg.Cursor{After: timestamppb.New(nextCur.After)}
+	}
+	w.Header().Set("Content-Type", "application/x-protobuf")
+	b, _ := proto.Marshal(resp)
+	_, _ = w.Write(b)
 }
 
 func fromPbEntry(in *pbmsg.Entry) api.Entry {
