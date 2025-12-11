@@ -77,12 +77,12 @@ func (s *Service) pushRemote(ctx context.Context, name string) error {
 	if strings.TrimSpace(token) == "" {
 		return fmt.Errorf("remote %s missing token", name)
 	}
-	after := s.loadCursor(name)
+	pushAfter, pullAfter := s.loadCursors(name)
 	batchSize := s.cfg.GetInt("sync.batch_size")
 	if batchSize <= 0 {
 		batchSize = 256
 	}
-	evs, nextCur, err := s.store.Events.List(ctx, api.Cursor{After: after}, batchSize)
+	evs, nextCur, err := s.store.Events.List(ctx, api.Cursor{After: pushAfter}, batchSize)
 	if err != nil {
 		return fmt.Errorf("list events: %w", err)
 	}
@@ -131,11 +131,11 @@ func (s *Service) pushRemote(ctx context.Context, name string) error {
 	if data, err := io.ReadAll(resp.Body); err == nil && len(data) > 0 {
 		_ = proto.Unmarshal(data, &pr)
 	}
-	newAfter := nextCur.After
-	if newAfter.IsZero() && len(evs) > 0 {
-		newAfter = evs[len(evs)-1].Time
+	newPush := nextCur.After
+	if newPush.IsZero() && len(evs) > 0 {
+		newPush = evs[len(evs)-1].Time
 	}
-	s.saveCursor(name, newAfter)
+	s.saveCursors(name, newPush, pullAfter)
 	return nil
 }
 
@@ -146,36 +146,49 @@ func (s *Service) cursorPath(name string) string {
 	return filepath.Join(p, "cursor_"+name+".json")
 }
 
-func (s *Service) loadCursor(name string) time.Time {
-	p := s.cursorPath(name)
-	b, err := os.ReadFile(p)
-	if err != nil {
+type cursorsFile struct {
+	PushAfter string `json:"push_after"`
+	PullAfter string `json:"pull_after"`
+}
+
+func parseTS(s string) time.Time {
+	if s == "" {
 		return time.Time{}
 	}
-	var m struct {
-		Last string `json:"last_after"`
-	}
-	if err := json.Unmarshal(b, &m); err != nil {
-		return time.Time{}
-	}
-	if m.Last == "" {
-		return time.Time{}
-	}
-	if t, err := time.Parse(time.RFC3339Nano, m.Last); err == nil {
+	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
 		return t
 	}
-	if t, err := time.Parse(time.RFC3339, m.Last); err == nil {
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
 		return t
 	}
 	return time.Time{}
 }
 
-func (s *Service) saveCursor(name string, t time.Time) {
+func (s *Service) loadCursors(name string) (time.Time, time.Time) {
 	p := s.cursorPath(name)
-	m := struct {
-		Last string `json:"last_after"`
-	}{Last: t.UTC().Format(time.RFC3339Nano)}
-	b, _ := json.Marshal(m)
+	b, err := os.ReadFile(p)
+	if err != nil {
+		return time.Time{}, time.Time{}
+	}
+	var cf cursorsFile
+	if err := json.Unmarshal(b, &cf); err != nil {
+		return time.Time{}, time.Time{}
+	}
+	push := parseTS(cf.PushAfter)
+	pull := parseTS(cf.PullAfter)
+	return push, pull
+}
+
+func (s *Service) saveCursors(name string, pushAfter, pullAfter time.Time) {
+	p := s.cursorPath(name)
+	cf := cursorsFile{}
+	if !pushAfter.IsZero() {
+		cf.PushAfter = pushAfter.UTC().Format(time.RFC3339Nano)
+	}
+	if !pullAfter.IsZero() {
+		cf.PullAfter = pullAfter.UTC().Format(time.RFC3339Nano)
+	}
+	b, _ := json.Marshal(cf)
 	_ = os.WriteFile(p, b, 0o600)
 }
 
