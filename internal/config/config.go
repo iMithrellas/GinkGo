@@ -94,7 +94,6 @@ func DefaultDBPath() string {
 }
 
 // GetConfigOptions returns the default configuration options and their meanings.
-// This is the single source of truth for default values and generator output.
 func GetConfigOptions() []ConfigOption {
 	return []ConfigOption{
 		// Core paths and conventions
@@ -103,7 +102,6 @@ func GetConfigOptions() []ConfigOption {
 		{Key: "namespace", Value: "", Comment: "Current namespace; if empty, falls back to default_namespace"},
 		{Key: "default_tags", Value: []string{}, Comment: "Tags applied when creating a note without explicit tags"},
 
-		// Sections (dotted keys for generator convenience)
 		{Key: "notifications.enabled", Value: false, Comment: "Enable reminder notifications"},
 		{Key: "notifications.every_days", Value: 3, Comment: "Reminder cadence in days"},
 		{Key: "editor.delete_empty", Value: true, Comment: "Delete note if editor exits with no content"},

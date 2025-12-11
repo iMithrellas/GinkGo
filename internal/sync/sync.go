@@ -1,13 +1,213 @@
 package sync
 
-import "context"
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
 
-// Service coordinates replication to remotes.
-type Service struct{}
+	"github.com/spf13/viper"
 
-func New() *Service { return &Service{} }
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
+	"github.com/mithrel/ginkgo/internal/db"
+	pbmsg "github.com/mithrel/ginkgo/internal/ipc/pb"
+	"github.com/mithrel/ginkgo/pkg/api"
+)
+
+type Service struct {
+	cfg        *viper.Viper
+	store      *db.Store
+	httpClient *http.Client
+}
+
+func New(cfg *viper.Viper, store *db.Store) *Service {
+	return &Service{
+		cfg:   cfg,
+		store: store,
+		httpClient: &http.Client{
+			Timeout: 20 * time.Second,
+		},
+	}
+}
 
 func (s *Service) SyncNow(ctx context.Context) error {
-	// Wireframe: no-op.
+	remotes := s.cfg.GetStringMap("remotes")
+	if len(remotes) == 0 {
+		return nil
+	}
+	var firstErr error
+	for name := range remotes {
+		if !s.remoteEnabled(name) {
+			continue
+		}
+		if err := s.pushRemote(ctx, name); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+		}
+	}
+	return firstErr
+}
+
+func (s *Service) remoteEnabled(name string) bool {
+	base := "remotes." + name + "."
+	url := strings.TrimSpace(s.cfg.GetString(base + "url"))
+	enabled := s.cfg.GetBool(base + "enabled")
+	if s.cfg.IsSet(base + "enabled") {
+		return enabled && url != ""
+	}
+	return url != ""
+}
+
+func (s *Service) pushRemote(ctx context.Context, name string) error {
+	base := "remotes." + name + "."
+	url := strings.TrimRight(s.cfg.GetString(base+"url"), "/")
+	token := s.cfg.GetString(base + "token")
+	if url == "" {
+		return fmt.Errorf("remote %s missing url", name)
+	}
+	if strings.TrimSpace(token) == "" {
+		return fmt.Errorf("remote %s missing token", name)
+	}
+	after := s.loadCursor(name)
+	batchSize := s.cfg.GetInt("sync.batch_size")
+	if batchSize <= 0 {
+		batchSize = 256
+	}
+	evs, nextCur, err := s.store.Events.List(ctx, api.Cursor{After: after}, batchSize)
+	if err != nil {
+		return fmt.Errorf("list events: %w", err)
+	}
+	if len(evs) == 0 {
+		return nil
+	}
+	pbBatch := &pbmsg.PushBatch{Events: make([]*pbmsg.RepEvent, 0, len(evs))}
+	for _, e := range evs {
+		var pe *pbmsg.Entry
+		if e.Entry != nil {
+			pe = &pbmsg.Entry{
+				Id:        e.Entry.ID,
+				Version:   e.Entry.Version,
+				Title:     e.Entry.Title,
+				Body:      e.Entry.Body,
+				Tags:      append([]string(nil), e.Entry.Tags...),
+				CreatedAt: timestamppb.New(e.Entry.CreatedAt),
+				UpdatedAt: timestamppb.New(e.Entry.UpdatedAt),
+				Namespace: e.Entry.Namespace,
+			}
+		}
+		pbBatch.Events = append(pbBatch.Events, &pbmsg.RepEvent{
+			Time:  timestamppb.New(e.Time),
+			Type:  string(e.Type),
+			Id:    e.ID,
+			Entry: pe,
+		})
+	}
+	body, _ := proto.Marshal(pbBatch)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url+"/v1/replicate/push", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/x-protobuf")
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("remote %s push failed: %s", name, strings.TrimSpace(string(b)))
+	}
+	var pr pbmsg.PushResult
+	if data, err := io.ReadAll(resp.Body); err == nil && len(data) > 0 {
+		_ = proto.Unmarshal(data, &pr)
+	}
+	newAfter := nextCur.After
+	if newAfter.IsZero() && len(evs) > 0 {
+		newAfter = evs[len(evs)-1].Time
+	}
+	s.saveCursor(name, newAfter)
 	return nil
+}
+
+func (s *Service) cursorPath(name string) string {
+	dir := s.cfg.GetString("data_dir")
+	p := filepath.Join(dir, "sync")
+	_ = os.MkdirAll(p, 0o700)
+	return filepath.Join(p, "cursor_"+name+".json")
+}
+
+func (s *Service) loadCursor(name string) time.Time {
+	p := s.cursorPath(name)
+	b, err := os.ReadFile(p)
+	if err != nil {
+		return time.Time{}
+	}
+	var m struct {
+		Last string `json:"last_after"`
+	}
+	if err := json.Unmarshal(b, &m); err != nil {
+		return time.Time{}
+	}
+	if m.Last == "" {
+		return time.Time{}
+	}
+	if t, err := time.Parse(time.RFC3339Nano, m.Last); err == nil {
+		return t
+	}
+	if t, err := time.Parse(time.RFC3339, m.Last); err == nil {
+		return t
+	}
+	return time.Time{}
+}
+
+func (s *Service) saveCursor(name string, t time.Time) {
+	p := s.cursorPath(name)
+	m := struct {
+		Last string `json:"last_after"`
+	}{Last: t.UTC().Format(time.RFC3339Nano)}
+	b, _ := json.Marshal(m)
+	_ = os.WriteFile(p, b, 0o600)
+}
+
+func (s *Service) RunBackground(ctx context.Context) {
+	base := s.cfg.GetDuration("sync.interval")
+	if base == 0 {
+		base = 60 * time.Second
+	}
+	fib := func() func() int {
+		a, b := 1, 1
+		return func() int { a, b = b, a+b; return a }
+	}()
+	next := base
+	for {
+		if err := s.SyncNow(ctx); err != nil {
+			step := fib()
+			max := s.cfg.GetDuration("sync.max_backoff")
+			if max == 0 {
+				max = 10 * time.Minute
+			}
+			next = base * time.Duration(step)
+			if next > max {
+				next = max
+			}
+		} else {
+			next = base
+			fib = func() func() int { a, b := 1, 1; return func() int { a, b = b, a+b; return a } }()
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(next):
+		}
+	}
 }

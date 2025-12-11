@@ -51,3 +51,29 @@ message Response {
   Entry entry = 3;
   repeated Entry entries = 4;
 }
+
+message RepEvent {
+  google.protobuf.Timestamp time = 1;
+  string type = 2;
+  string id = 3;
+  Entry entry = 4;
+}
+
+message PushBatch {
+  repeated RepEvent events = 1;
+}
+
+message ItemStatus {
+  string id = 1;
+  bool ok = 2;
+  string msg = 3;
+}
+
+message Cursor {
+  google.protobuf.Timestamp after = 1;
+}
+
+message PushResult {
+  repeated ItemStatus items = 1;
+  Cursor next = 2;
+}

@@ -123,7 +123,20 @@ func (s *sqliteStore) Append(ctx context.Context, ev api.Event) error {
 }
 
 func (s *sqliteStore) List(ctx context.Context, cur api.Cursor, limit int) ([]api.Event, api.Cursor, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT time, type, id, entry_json FROM events ORDER BY time ASC`)
+	// Apply simple cursor and limit.
+	q := `SELECT time, type, id, entry_json FROM events`
+	args := []any{}
+	if !cur.After.IsZero() {
+		q += ` WHERE time > ?`
+		args = append(args, cur.After.UTC())
+	}
+	q += ` ORDER BY time ASC`
+	limit = 200000
+	if limit > 0 {
+		q += ` LIMIT ?`
+		args = append(args, limit)
+	}
+	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, api.Cursor{}, err
 	}
@@ -143,7 +156,11 @@ func (s *sqliteStore) List(ctx context.Context, cur api.Cursor, limit int) ([]ap
 		}
 		out = append(out, api.Event{Time: t, Type: api.EventType(typ), ID: id, Entry: e})
 	}
-	return out, api.Cursor{}, nil
+	var next api.Cursor
+	if len(out) > 0 {
+		next.After = out[len(out)-1].Time
+	}
+	return out, next, nil
 }
 
 func (s *sqliteStore) GetEntry(ctx context.Context, id string) (api.Entry, error) {

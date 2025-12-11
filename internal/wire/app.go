@@ -29,7 +29,7 @@ func BuildApp(ctx context.Context, cfg *viper.Viper) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	syncer := synsvc.New()
+	syncer := synsvc.New(cfg, store)
 	return &App{
 		Cfg:    cfg,
 		Log:    logger,

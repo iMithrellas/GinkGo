@@ -62,6 +62,7 @@ func NewRootCmd() *cobra.Command {
 	cmd.AddCommand(newConfigCmd())
 	cmd.AddCommand(newImportCmd())
 	cmd.AddCommand(newQuicCmd())
+	cmd.AddCommand(newServerCmd())
 
 	cmd.Run = func(cmd *cobra.Command, args []string) { _ = cmd.Help() }
 

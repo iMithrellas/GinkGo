@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"context"
 	"fmt"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -13,8 +15,23 @@ func newNoteSyncCmd() *cobra.Command {
 		Short: "Replicate local note changes to remotes",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			app := getApp(cmd)
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "[dry-run] note sync background=%v\n", background)
-			_ = app
+			if background {
+				ctx := cmd.Context()
+				go app.Syncer.RunBackground(ctx)
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "sync: background worker started")
+				for {
+					select {
+					case <-ctx.Done():
+						return ctx.Err()
+					default:
+						time.Sleep(5 * time.Second)
+					}
+				}
+			}
+			if err := app.Syncer.SyncNow(context.Background()); err != nil {
+				return err
+			}
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "sync: completed push to remotes")
 			return nil
 		},
 	}
