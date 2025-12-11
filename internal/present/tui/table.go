@@ -239,6 +239,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			res.dur = time.Since(mp.start)
 			return res
 		})
+	case manualSyncResultMsg:
+		if msg.err != nil {
+			m.status = fmt.Sprintf("Sync error: %v", msg.err)
+		} else {
+			m.status = "Sync triggered"
+		}
+		m.lastDuration = msg.dur
+		return m, nil
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -312,6 +320,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, editCmd(m.ctx, sel.ID, idx)
 			}
 			return m, nil
+		case "s", "S":
+			m.status = "Triggering sync..."
+			return m, manualSyncCmd(m.ctx)
 		case "d":
 			idx := m.table.Cursor()
 			if idx >= 0 && idx < len(m.entries) {
@@ -329,7 +340,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) renderFooter() string {
-	left := "↑/↓ to navigate • enter=show • d=delete • q=exit • e=edit • i=inspect"
+	left := "↑/↓ to navigate • enter=show • d=delete • q=exit • e=edit • i=inspect • s=sync"
 
 	var right string
 	if m.status != "" {
@@ -568,6 +579,12 @@ func showNoteCmd(ctx context.Context, id string) tea.Cmd {
 	}
 }
 
+// manualSyncResultMsg conveys the result of a manual sync trigger.
+type manualSyncResultMsg struct {
+	err error
+	dur time.Duration
+}
+
 // deleteResultMsg conveys the outcome of a delete operation back to Update.
 type deleteResultMsg struct {
 	idx int
@@ -599,6 +616,24 @@ type editPrepMsg struct {
 	curVersion int64
 	sock       string
 	start      time.Time
+}
+
+func manualSyncCmd(ctx context.Context) tea.Cmd {
+	return func() tea.Msg {
+		start := time.Now()
+		sock, err := ipc.SocketPath()
+		if err != nil {
+			return manualSyncResultMsg{err: err, dur: time.Since(start)}
+		}
+		resp, err := ipc.Request(ctx, sock, ipc.Message{Name: "sync.run"})
+		if err != nil {
+			return manualSyncResultMsg{err: err, dur: time.Since(start)}
+		}
+		if !resp.OK {
+			return manualSyncResultMsg{err: fmt.Errorf("sync failed: %s", resp.Msg), dur: time.Since(start)}
+		}
+		return manualSyncResultMsg{err: nil, dur: time.Since(start)}
+	}
 }
 
 // deleteCmd performs the IPC call to delete an entry and returns a deleteResultMsg.
