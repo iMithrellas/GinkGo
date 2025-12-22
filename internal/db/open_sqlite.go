@@ -502,6 +502,25 @@ func (s *sqliteStore) ListTags(ctx context.Context, q api.TagsQuery) ([]api.TagS
 	return out, nil
 }
 
+func (s *sqliteStore) ListNamespaces(ctx context.Context) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT namespace FROM entries ORDER BY namespace ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var ns string
+		if err := rows.Scan(&ns); err != nil {
+			return nil, err
+		}
+		if ns != "" {
+			out = append(out, ns)
+		}
+	}
+	return out, nil
+}
+
 func (s *sqliteStore) fetchEntriesByIDs(ctx context.Context, ids []string) ([]api.Entry, api.Page, error) {
 	out := make([]api.Entry, 0, len(ids))
 	for _, id := range ids {

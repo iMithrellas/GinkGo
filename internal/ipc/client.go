@@ -56,6 +56,8 @@ func Request(ctx context.Context, path string, m Message) (Response, error) {
 		preq.Cmd = &pb.Request_SyncRun{SyncRun: &pb.SyncRun{}}
 	case "sync.queue":
 		preq.Cmd = &pb.Request_QueueList{QueueList: &pb.QueueRequest{Limit: int32(m.Limit), Remote: m.Remote}}
+	case "namespace.list":
+		preq.Cmd = &pb.Request_NamespaceList{NamespaceList: &pb.NamespaceList{}}
 	}
 
 	c := transport.NewUnixClient(path)
@@ -93,6 +95,9 @@ func Request(ctx context.Context, path string, m Message) (Response, error) {
 			}
 			r.Queue = append(r.Queue, qr)
 		}
+	}
+	if len(presp.Namespaces) > 0 {
+		r.Namespaces = presp.Namespaces
 	}
 	return r, nil
 }

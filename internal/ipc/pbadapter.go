@@ -98,6 +98,8 @@ func (h pbHandler) Handle(ctx context.Context, req any) (any, error) {
 			m.Limit = int(x.QueueList.Limit)
 			m.Remote = x.QueueList.Remote
 		}
+	case *pb.Request_NamespaceList:
+		m.Name = "namespace.list"
 	}
 
 	r := h.fn(m)
@@ -126,6 +128,9 @@ func (h pbHandler) Handle(ctx context.Context, req any) (any, error) {
 			}
 			presp.Queue = append(presp.Queue, pqr)
 		}
+	}
+	if len(r.Namespaces) > 0 {
+		presp.Namespaces = r.Namespaces
 	}
 	return presp, nil
 }

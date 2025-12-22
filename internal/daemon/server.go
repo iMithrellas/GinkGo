@@ -178,6 +178,12 @@ func Run(ctx context.Context, app *wire.App) error {
 				return ipc.Response{OK: false, Msg: err.Error()}
 			}
 			return ipc.Response{OK: true, Msg: "sync triggered"}
+		case "namespace.list":
+			nss, err := app.Store.Entries.ListNamespaces(ctx)
+			if err != nil {
+				return ipc.Response{OK: false, Msg: err.Error()}
+			}
+			return ipc.Response{OK: true, Namespaces: nss}
 		default:
 			log.Printf("unknown IPC cmd=%s", m.Name)
 			return ipc.Response{OK: false, Msg: "unknown command"}

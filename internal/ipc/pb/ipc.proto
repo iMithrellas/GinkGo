@@ -44,6 +44,7 @@ message Request {
     SearchRegex note_search_regex = 7;
     SyncRun sync_run = 8;
     QueueRequest queue_list = 9;
+    NamespaceList namespace_list = 10;
   }
 }
 
@@ -53,6 +54,7 @@ message Response {
   Entry entry = 3;
   repeated Entry entries = 4;
   repeated QueueRemote queue = 5;
+  repeated string namespaces = 6;
 }
 
 message RepEvent {
@@ -87,6 +89,7 @@ message PullResult {
 }
 
 message SyncRun {}
+message NamespaceList {}
 
 message QueueRequest { int32 limit = 1; string remote = 2; }
 

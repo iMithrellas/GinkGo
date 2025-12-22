@@ -571,6 +571,7 @@ type Request struct {
 	//	*Request_NoteSearchRegex
 	//	*Request_SyncRun
 	//	*Request_QueueList
+	//	*Request_NamespaceList
 	Cmd           isRequest_Cmd `protobuf_oneof:"cmd"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -694,6 +695,15 @@ func (x *Request) GetQueueList() *QueueRequest {
 	return nil
 }
 
+func (x *Request) GetNamespaceList() *NamespaceList {
+	if x != nil {
+		if x, ok := x.Cmd.(*Request_NamespaceList); ok {
+			return x.NamespaceList
+		}
+	}
+	return nil
+}
+
 type isRequest_Cmd interface {
 	isRequest_Cmd()
 }
@@ -734,6 +744,10 @@ type Request_QueueList struct {
 	QueueList *QueueRequest `protobuf:"bytes,9,opt,name=queue_list,json=queueList,proto3,oneof"`
 }
 
+type Request_NamespaceList struct {
+	NamespaceList *NamespaceList `protobuf:"bytes,10,opt,name=namespace_list,json=namespaceList,proto3,oneof"`
+}
+
 func (*Request_NoteAdd) isRequest_Cmd() {}
 
 func (*Request_NoteEdit) isRequest_Cmd() {}
@@ -752,6 +766,8 @@ func (*Request_SyncRun) isRequest_Cmd() {}
 
 func (*Request_QueueList) isRequest_Cmd() {}
 
+func (*Request_NamespaceList) isRequest_Cmd() {}
+
 type Response struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
@@ -759,6 +775,7 @@ type Response struct {
 	Entry         *Entry                 `protobuf:"bytes,3,opt,name=entry,proto3" json:"entry,omitempty"`
 	Entries       []*Entry               `protobuf:"bytes,4,rep,name=entries,proto3" json:"entries,omitempty"`
 	Queue         []*QueueRemote         `protobuf:"bytes,5,rep,name=queue,proto3" json:"queue,omitempty"`
+	Namespaces    []string               `protobuf:"bytes,6,rep,name=namespaces,proto3" json:"namespaces,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -824,6 +841,13 @@ func (x *Response) GetEntries() []*Entry {
 func (x *Response) GetQueue() []*QueueRemote {
 	if x != nil {
 		return x.Queue
+	}
+	return nil
+}
+
+func (x *Response) GetNamespaces() []string {
+	if x != nil {
+		return x.Namespaces
 	}
 	return nil
 }
@@ -1184,6 +1208,42 @@ func (*SyncRun) Descriptor() ([]byte, []int) {
 	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{16}
 }
 
+type NamespaceList struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NamespaceList) Reset() {
+	*x = NamespaceList{}
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NamespaceList) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NamespaceList) ProtoMessage() {}
+
+func (x *NamespaceList) ProtoReflect() protoreflect.Message {
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NamespaceList.ProtoReflect.Descriptor instead.
+func (*NamespaceList) Descriptor() ([]byte, []int) {
+	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{17}
+}
+
 type QueueRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Limit         int32                  `protobuf:"varint,1,opt,name=limit,proto3" json:"limit,omitempty"`
@@ -1194,7 +1254,7 @@ type QueueRequest struct {
 
 func (x *QueueRequest) Reset() {
 	*x = QueueRequest{}
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[17]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1206,7 +1266,7 @@ func (x *QueueRequest) String() string {
 func (*QueueRequest) ProtoMessage() {}
 
 func (x *QueueRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[17]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1219,7 +1279,7 @@ func (x *QueueRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueueRequest.ProtoReflect.Descriptor instead.
 func (*QueueRequest) Descriptor() ([]byte, []int) {
-	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{17}
+	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *QueueRequest) GetLimit() int32 {
@@ -1247,7 +1307,7 @@ type QueueEvent struct {
 
 func (x *QueueEvent) Reset() {
 	*x = QueueEvent{}
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[18]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1259,7 +1319,7 @@ func (x *QueueEvent) String() string {
 func (*QueueEvent) ProtoMessage() {}
 
 func (x *QueueEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[18]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1272,7 +1332,7 @@ func (x *QueueEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueueEvent.ProtoReflect.Descriptor instead.
 func (*QueueEvent) Descriptor() ([]byte, []int) {
-	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{18}
+	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *QueueEvent) GetTime() *timestamppb.Timestamp {
@@ -1308,7 +1368,7 @@ type QueueRemote struct {
 
 func (x *QueueRemote) Reset() {
 	*x = QueueRemote{}
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[19]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1320,7 +1380,7 @@ func (x *QueueRemote) String() string {
 func (*QueueRemote) ProtoMessage() {}
 
 func (x *QueueRemote) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[19]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1333,7 +1393,7 @@ func (x *QueueRemote) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueueRemote.ProtoReflect.Descriptor instead.
 func (*QueueRemote) Descriptor() ([]byte, []int) {
-	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{19}
+	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *QueueRemote) GetName() string {
@@ -1412,7 +1472,7 @@ const file_internal_ipc_pb_ipc_proto_rawDesc = "" +
 	"\x06filter\x18\x02 \x01(\v2\x0f.ipc.ListFilterR\x06filter\"P\n" +
 	"\vSearchRegex\x12\x18\n" +
 	"\apattern\x18\x01 \x01(\tR\apattern\x12'\n" +
-	"\x06filter\x18\x02 \x01(\v2\x0f.ipc.ListFilterR\x06filter\"\xd4\x03\n" +
+	"\x06filter\x18\x02 \x01(\v2\x0f.ipc.ListFilterR\x06filter\"\x91\x04\n" +
 	"\aRequest\x12)\n" +
 	"\bnote_add\x18\x01 \x01(\v2\f.ipc.NoteAddH\x00R\anoteAdd\x12,\n" +
 	"\tnote_edit\x18\x02 \x01(\v2\r.ipc.NoteEditH\x00R\bnoteEdit\x122\n" +
@@ -1424,8 +1484,10 @@ const file_internal_ipc_pb_ipc_proto_rawDesc = "" +
 	"\x11note_search_regex\x18\a \x01(\v2\x10.ipc.SearchRegexH\x00R\x0fnoteSearchRegex\x12)\n" +
 	"\bsync_run\x18\b \x01(\v2\f.ipc.SyncRunH\x00R\asyncRun\x122\n" +
 	"\n" +
-	"queue_list\x18\t \x01(\v2\x11.ipc.QueueRequestH\x00R\tqueueListB\x05\n" +
-	"\x03cmd\"\x9c\x01\n" +
+	"queue_list\x18\t \x01(\v2\x11.ipc.QueueRequestH\x00R\tqueueList\x12;\n" +
+	"\x0enamespace_list\x18\n" +
+	" \x01(\v2\x12.ipc.NamespaceListH\x00R\rnamespaceListB\x05\n" +
+	"\x03cmd\"\xbc\x01\n" +
 	"\bResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x10\n" +
 	"\x03msg\x18\x02 \x01(\tR\x03msg\x12 \n" +
@@ -1433,7 +1495,10 @@ const file_internal_ipc_pb_ipc_proto_rawDesc = "" +
 	".ipc.EntryR\x05entry\x12$\n" +
 	"\aentries\x18\x04 \x03(\v2\n" +
 	".ipc.EntryR\aentries\x12&\n" +
-	"\x05queue\x18\x05 \x03(\v2\x10.ipc.QueueRemoteR\x05queue\"\x80\x01\n" +
+	"\x05queue\x18\x05 \x03(\v2\x10.ipc.QueueRemoteR\x05queue\x12\x1e\n" +
+	"\n" +
+	"namespaces\x18\x06 \x03(\tR\n" +
+	"namespaces\"\x80\x01\n" +
 	"\bRepEvent\x12.\n" +
 	"\x04time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12\x12\n" +
 	"\x04type\x18\x02 \x01(\tR\x04type\x12\x0e\n" +
@@ -1457,7 +1522,8 @@ const file_internal_ipc_pb_ipc_proto_rawDesc = "" +
 	"PullResult\x12%\n" +
 	"\x06events\x18\x01 \x03(\v2\r.ipc.RepEventR\x06events\x12\x1f\n" +
 	"\x04next\x18\x02 \x01(\v2\v.ipc.CursorR\x04next\"\t\n" +
-	"\aSyncRun\"<\n" +
+	"\aSyncRun\"\x0f\n" +
+	"\rNamespaceList\"<\n" +
 	"\fQueueRequest\x12\x14\n" +
 	"\x05limit\x18\x01 \x01(\x05R\x05limit\x12\x16\n" +
 	"\x06remote\x18\x02 \x01(\tR\x06remote\"`\n" +
@@ -1484,7 +1550,7 @@ func file_internal_ipc_pb_ipc_proto_rawDescGZIP() []byte {
 	return file_internal_ipc_pb_ipc_proto_rawDescData
 }
 
-var file_internal_ipc_pb_ipc_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
+var file_internal_ipc_pb_ipc_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_internal_ipc_pb_ipc_proto_goTypes = []any{
 	(*Entry)(nil),                 // 0: ipc.Entry
 	(*NoteAdd)(nil),               // 1: ipc.NoteAdd
@@ -1503,16 +1569,17 @@ var file_internal_ipc_pb_ipc_proto_goTypes = []any{
 	(*PushResult)(nil),            // 14: ipc.PushResult
 	(*PullResult)(nil),            // 15: ipc.PullResult
 	(*SyncRun)(nil),               // 16: ipc.SyncRun
-	(*QueueRequest)(nil),          // 17: ipc.QueueRequest
-	(*QueueEvent)(nil),            // 18: ipc.QueueEvent
-	(*QueueRemote)(nil),           // 19: ipc.QueueRemote
-	(*timestamppb.Timestamp)(nil), // 20: google.protobuf.Timestamp
+	(*NamespaceList)(nil),         // 17: ipc.NamespaceList
+	(*QueueRequest)(nil),          // 18: ipc.QueueRequest
+	(*QueueEvent)(nil),            // 19: ipc.QueueEvent
+	(*QueueRemote)(nil),           // 20: ipc.QueueRemote
+	(*timestamppb.Timestamp)(nil), // 21: google.protobuf.Timestamp
 }
 var file_internal_ipc_pb_ipc_proto_depIdxs = []int32{
-	20, // 0: ipc.Entry.created_at:type_name -> google.protobuf.Timestamp
-	20, // 1: ipc.Entry.updated_at:type_name -> google.protobuf.Timestamp
-	20, // 2: ipc.ListFilter.since:type_name -> google.protobuf.Timestamp
-	20, // 3: ipc.ListFilter.until:type_name -> google.protobuf.Timestamp
+	21, // 0: ipc.Entry.created_at:type_name -> google.protobuf.Timestamp
+	21, // 1: ipc.Entry.updated_at:type_name -> google.protobuf.Timestamp
+	21, // 2: ipc.ListFilter.since:type_name -> google.protobuf.Timestamp
+	21, // 3: ipc.ListFilter.until:type_name -> google.protobuf.Timestamp
 	5,  // 4: ipc.SearchFTS.filter:type_name -> ipc.ListFilter
 	5,  // 5: ipc.SearchRegex.filter:type_name -> ipc.ListFilter
 	1,  // 6: ipc.Request.note_add:type_name -> ipc.NoteAdd
@@ -1523,25 +1590,26 @@ var file_internal_ipc_pb_ipc_proto_depIdxs = []int32{
 	6,  // 11: ipc.Request.note_search_fts:type_name -> ipc.SearchFTS
 	7,  // 12: ipc.Request.note_search_regex:type_name -> ipc.SearchRegex
 	16, // 13: ipc.Request.sync_run:type_name -> ipc.SyncRun
-	17, // 14: ipc.Request.queue_list:type_name -> ipc.QueueRequest
-	0,  // 15: ipc.Response.entry:type_name -> ipc.Entry
-	0,  // 16: ipc.Response.entries:type_name -> ipc.Entry
-	19, // 17: ipc.Response.queue:type_name -> ipc.QueueRemote
-	20, // 18: ipc.RepEvent.time:type_name -> google.protobuf.Timestamp
-	0,  // 19: ipc.RepEvent.entry:type_name -> ipc.Entry
-	10, // 20: ipc.PushBatch.events:type_name -> ipc.RepEvent
-	20, // 21: ipc.Cursor.after:type_name -> google.protobuf.Timestamp
-	12, // 22: ipc.PushResult.items:type_name -> ipc.ItemStatus
-	13, // 23: ipc.PushResult.next:type_name -> ipc.Cursor
-	10, // 24: ipc.PullResult.events:type_name -> ipc.RepEvent
-	13, // 25: ipc.PullResult.next:type_name -> ipc.Cursor
-	20, // 26: ipc.QueueEvent.time:type_name -> google.protobuf.Timestamp
-	18, // 27: ipc.QueueRemote.events:type_name -> ipc.QueueEvent
-	28, // [28:28] is the sub-list for method output_type
-	28, // [28:28] is the sub-list for method input_type
-	28, // [28:28] is the sub-list for extension type_name
-	28, // [28:28] is the sub-list for extension extendee
-	0,  // [0:28] is the sub-list for field type_name
+	18, // 14: ipc.Request.queue_list:type_name -> ipc.QueueRequest
+	17, // 15: ipc.Request.namespace_list:type_name -> ipc.NamespaceList
+	0,  // 16: ipc.Response.entry:type_name -> ipc.Entry
+	0,  // 17: ipc.Response.entries:type_name -> ipc.Entry
+	20, // 18: ipc.Response.queue:type_name -> ipc.QueueRemote
+	21, // 19: ipc.RepEvent.time:type_name -> google.protobuf.Timestamp
+	0,  // 20: ipc.RepEvent.entry:type_name -> ipc.Entry
+	10, // 21: ipc.PushBatch.events:type_name -> ipc.RepEvent
+	21, // 22: ipc.Cursor.after:type_name -> google.protobuf.Timestamp
+	12, // 23: ipc.PushResult.items:type_name -> ipc.ItemStatus
+	13, // 24: ipc.PushResult.next:type_name -> ipc.Cursor
+	10, // 25: ipc.PullResult.events:type_name -> ipc.RepEvent
+	13, // 26: ipc.PullResult.next:type_name -> ipc.Cursor
+	21, // 27: ipc.QueueEvent.time:type_name -> google.protobuf.Timestamp
+	19, // 28: ipc.QueueRemote.events:type_name -> ipc.QueueEvent
+	29, // [29:29] is the sub-list for method output_type
+	29, // [29:29] is the sub-list for method input_type
+	29, // [29:29] is the sub-list for extension type_name
+	29, // [29:29] is the sub-list for extension extendee
+	0,  // [0:29] is the sub-list for field type_name
 }
 
 func init() { file_internal_ipc_pb_ipc_proto_init() }
@@ -1559,6 +1627,7 @@ func file_internal_ipc_pb_ipc_proto_init() {
 		(*Request_NoteSearchRegex)(nil),
 		(*Request_SyncRun)(nil),
 		(*Request_QueueList)(nil),
+		(*Request_NamespaceList)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1566,7 +1635,7 @@ func file_internal_ipc_pb_ipc_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_internal_ipc_pb_ipc_proto_rawDesc), len(file_internal_ipc_pb_ipc_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   20,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

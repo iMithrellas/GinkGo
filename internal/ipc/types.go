@@ -26,11 +26,12 @@ type Message struct {
 
 // Response is a minimal daemon reply.
 type Response struct {
-	OK      bool          `json:"ok"`
-	Msg     string        `json:"msg,omitempty"`
-	Entry   *api.Entry    `json:"entry,omitempty"`
-	Entries []api.Entry   `json:"entries,omitempty"`
-	Queue   []QueueRemote `json:"queue,omitempty"`
+	OK         bool          `json:"ok"`
+	Msg        string        `json:"msg,omitempty"`
+	Entry      *api.Entry    `json:"entry,omitempty"`
+	Entries    []api.Entry   `json:"entries,omitempty"`
+	Queue      []QueueRemote `json:"queue,omitempty"`
+	Namespaces []string      `json:"namespaces,omitempty"`
 }
 
 type QueueEvent struct {

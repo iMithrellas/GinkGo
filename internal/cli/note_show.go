@@ -43,6 +43,9 @@ func newNoteShowCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&outputMode, "output", "pretty", "output mode: plain|pretty|json")
+	_ = cmd.RegisterFlagCompletionFunc("output", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"plain", "pretty", "json"}, cobra.ShellCompDirectiveNoFileComp
+	})
 	cmd.Flags().BoolVar(&headers, "headers", false, "print header row in plain mode")
 	return cmd
 }

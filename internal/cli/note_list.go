@@ -61,6 +61,9 @@ func newNoteListCmd() *cobra.Command {
 	}
 	addFilterFlags(cmd, &filters)
 	cmd.Flags().StringVar(&outputMode, "output", "plain", "output mode: plain|pretty|json|tui")
+	_ = cmd.RegisterFlagCompletionFunc("output", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"plain", "pretty", "json", "tui"}, cobra.ShellCompDirectiveNoFileComp
+	})
 	cmd.Flags().BoolVar(&noHeaders, "noheaders", false, "hide column headers (plain/tui)")
 	return cmd
 }

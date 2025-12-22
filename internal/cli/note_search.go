@@ -103,6 +103,9 @@ func newNoteSearchCmd() *cobra.Command {
 	cmd.AddCommand(fts, rx)
 	addFilterFlags(cmd, &filters)
 	cmd.PersistentFlags().StringVar(&outputMode, "output", "plain", "output mode: plain|pretty|json")
+	_ = cmd.RegisterFlagCompletionFunc("output", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"plain", "pretty", "json"}, cobra.ShellCompDirectiveNoFileComp
+	})
 	// Cobra supports only single-letter shorthand; using -H for --noheaders
 	cmd.PersistentFlags().BoolVarP(&noHeaders, "noheaders", "H", false, "hide column headers (plain)")
 	return cmd

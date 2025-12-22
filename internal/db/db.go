@@ -23,6 +23,7 @@ type EntryRepo interface {
 	ListEntries(ctx context.Context, q api.ListQuery) ([]api.Entry, api.Page, error)
 	Search(ctx context.Context, q api.SearchQuery) ([]api.Entry, api.Page, error)
 	ListTags(ctx context.Context, q api.TagsQuery) ([]api.TagStat, error)
+	ListNamespaces(ctx context.Context) ([]string, error)
 }
 
 type Store struct {
