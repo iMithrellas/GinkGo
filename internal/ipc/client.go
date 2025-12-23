@@ -58,6 +58,8 @@ func Request(ctx context.Context, path string, m Message) (Response, error) {
 		preq.Cmd = &pb.Request_QueueList{QueueList: &pb.QueueRequest{Limit: int32(m.Limit), Remote: m.Remote}}
 	case "namespace.list":
 		preq.Cmd = &pb.Request_NamespaceList{NamespaceList: &pb.NamespaceList{}}
+	case "tag.list":
+		preq.Cmd = &pb.Request_TagList{TagList: &pb.TagList{Namespace: m.Namespace}}
 	}
 
 	c := transport.NewUnixClient(path)
@@ -98,6 +100,12 @@ func Request(ctx context.Context, path string, m Message) (Response, error) {
 	}
 	if len(presp.Namespaces) > 0 {
 		r.Namespaces = presp.Namespaces
+	}
+	if len(presp.Tags) > 0 {
+		r.Tags = make([]api.TagStat, 0, len(presp.Tags))
+		for _, t := range presp.Tags {
+			r.Tags = append(r.Tags, api.TagStat{Tag: t.GetTag(), Count: int(t.GetCount()), Description: t.GetDescription()})
+		}
 	}
 	return r, nil
 }

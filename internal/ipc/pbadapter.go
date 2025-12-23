@@ -100,6 +100,11 @@ func (h pbHandler) Handle(ctx context.Context, req any) (any, error) {
 		}
 	case *pb.Request_NamespaceList:
 		m.Name = "namespace.list"
+	case *pb.Request_TagList:
+		m.Name = "tag.list"
+		if x.TagList != nil {
+			m.Namespace = x.TagList.Namespace
+		}
 	}
 
 	r := h.fn(m)
@@ -131,6 +136,12 @@ func (h pbHandler) Handle(ctx context.Context, req any) (any, error) {
 	}
 	if len(r.Namespaces) > 0 {
 		presp.Namespaces = r.Namespaces
+	}
+	if len(r.Tags) > 0 {
+		presp.Tags = make([]*pb.TagStat, 0, len(r.Tags))
+		for _, t := range r.Tags {
+			presp.Tags = append(presp.Tags, &pb.TagStat{Tag: t.Tag, Count: int32(t.Count), Description: t.Description})
+		}
 	}
 	return presp, nil
 }

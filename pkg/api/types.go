@@ -62,6 +62,7 @@ type TagsQuery struct {
 	Namespace string `json:"namespace"`
 	Limit     int    `json:"limit"`
 	Prefix    string `json:"prefix"`
+	SortBy    string `json:"sort_by"` // "count", "frecency"
 }
 
 // ListQuery specifies tag-based filtering for entries.

@@ -184,6 +184,12 @@ func Run(ctx context.Context, app *wire.App) error {
 				return ipc.Response{OK: false, Msg: err.Error()}
 			}
 			return ipc.Response{OK: true, Namespaces: nss}
+		case "tag.list":
+			tags, err := app.Store.Entries.ListTags(ctx, api.TagsQuery{Namespace: ns})
+			if err != nil {
+				return ipc.Response{OK: false, Msg: err.Error()}
+			}
+			return ipc.Response{OK: true, Tags: tags}
 		default:
 			log.Printf("unknown IPC cmd=%s", m.Name)
 			return ipc.Response{OK: false, Msg: "unknown command"}

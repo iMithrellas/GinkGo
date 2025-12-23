@@ -33,6 +33,10 @@ message ListFilter {
 message SearchFTS { string query = 1; ListFilter filter = 2; }
 message SearchRegex { string pattern = 1; ListFilter filter = 2; }
 
+message TagList {
+  string namespace = 1;
+}
+
 message Request {
   oneof cmd {
     NoteAdd note_add = 1;
@@ -45,7 +49,14 @@ message Request {
     SyncRun sync_run = 8;
     QueueRequest queue_list = 9;
     NamespaceList namespace_list = 10;
+    TagList tag_list = 11;
   }
+}
+
+message TagStat {
+  string tag = 1;
+  int32 count = 2;
+  string description = 3;
 }
 
 message Response {
@@ -55,6 +66,7 @@ message Response {
   repeated Entry entries = 4;
   repeated QueueRemote queue = 5;
   repeated string namespaces = 6;
+  repeated TagStat tags = 7;
 }
 
 message RepEvent {

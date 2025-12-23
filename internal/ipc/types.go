@@ -22,6 +22,7 @@ type Message struct {
 	TagsAll   []string `json:"tags_all,omitempty"`
 	Limit     int      `json:"limit,omitempty"`
 	Remote    string   `json:"remote,omitempty"`
+	SortBy    string   `json:"sort_by,omitempty"`
 }
 
 // Response is a minimal daemon reply.
@@ -32,6 +33,7 @@ type Response struct {
 	Entries    []api.Entry   `json:"entries,omitempty"`
 	Queue      []QueueRemote `json:"queue,omitempty"`
 	Namespaces []string      `json:"namespaces,omitempty"`
+	Tags       []api.TagStat `json:"tags,omitempty"`
 }
 
 type QueueEvent struct {

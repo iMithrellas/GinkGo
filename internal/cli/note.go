@@ -36,6 +36,7 @@ func newNoteCmd() *cobra.Command {
 	cmd.AddCommand(newNoteSearchCmd())
 	cmd.AddCommand(newNoteSyncCmd())
 	cmd.AddCommand(newNoteQueueCmd())
+	cmd.AddCommand(newNoteCompleteTagsCmd())
 
 	// Flags: allow tags for one-liner adds and an optional namespace override
 	cmd.Flags().StringSliceVarP(&tagsFlag, "tags", "t", nil, "tags for one-liner add (comma-separated or repeated)")
