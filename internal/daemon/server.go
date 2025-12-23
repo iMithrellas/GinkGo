@@ -83,6 +83,8 @@ func Run(ctx context.Context, app *wire.App) error {
 			if ifv == 0 {
 				ifv = cur.Version
 			}
+			// Local edit: increment version
+			cur.Version = cur.Version + 1
 			e, err := app.Store.Entries.UpdateEntryCAS(ctx, cur, ifv)
 			if err != nil {
 				if err == db.ErrConflict {

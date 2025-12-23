@@ -228,8 +228,9 @@ func (s *sqliteStore) UpdateEntryCAS(ctx context.Context, e api.Entry, ifVersion
 	}
 	defer tx.Rollback()
 
-	res, err := tx.ExecContext(ctx, `UPDATE entries SET version=version+1, title=?, body=?, tags=?, updated_at=?, namespace=? WHERE id=? AND version=?`,
-		e.Title, e.Body, string(tagsJSON), e.UpdatedAt.UTC(), e.Namespace, e.ID, ifVersion)
+	// Update using explicit version from 'e'
+	res, err := tx.ExecContext(ctx, `UPDATE entries SET version=?, title=?, body=?, tags=?, updated_at=?, namespace=? WHERE id=? AND version=?`,
+		e.Version, e.Title, e.Body, string(tagsJSON), e.UpdatedAt.UTC(), e.Namespace, e.ID, ifVersion)
 	if err != nil {
 		return api.Entry{}, err
 	}
