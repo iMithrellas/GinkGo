@@ -26,32 +26,11 @@ func Request(ctx context.Context, path string, m Message) (Response, error) {
 	case "note.show":
 		preq.Cmd = &pb.Request_NoteShow{NoteShow: &pb.NoteShow{Id: m.ID, Namespace: m.Namespace}}
 	case "note.list":
-		lf := &pb.ListFilter{Namespace: m.Namespace, TagsAny: m.TagsAny, TagsAll: m.TagsAll}
-		if ts := parseRFC3339OrEmpty(m.Since); !ts.IsZero() {
-			lf.Since = timestamppb.New(ts)
-		}
-		if ts := parseRFC3339OrEmpty(m.Until); !ts.IsZero() {
-			lf.Until = timestamppb.New(ts)
-		}
-		preq.Cmd = &pb.Request_NoteList{NoteList: lf}
+		preq.Cmd = &pb.Request_NoteList{NoteList: toPbListFilter(m)}
 	case "note.search.fts":
-		lf := &pb.ListFilter{Namespace: m.Namespace, TagsAny: m.TagsAny, TagsAll: m.TagsAll}
-		if ts := parseRFC3339OrEmpty(m.Since); !ts.IsZero() {
-			lf.Since = timestamppb.New(ts)
-		}
-		if ts := parseRFC3339OrEmpty(m.Until); !ts.IsZero() {
-			lf.Until = timestamppb.New(ts)
-		}
-		preq.Cmd = &pb.Request_NoteSearchFts{NoteSearchFts: &pb.SearchFTS{Query: m.Title, Filter: lf}}
+		preq.Cmd = &pb.Request_NoteSearchFts{NoteSearchFts: &pb.SearchFTS{Query: m.Title, Filter: toPbListFilter(m)}}
 	case "note.search.regex":
-		lf := &pb.ListFilter{Namespace: m.Namespace, TagsAny: m.TagsAny, TagsAll: m.TagsAll}
-		if ts := parseRFC3339OrEmpty(m.Since); !ts.IsZero() {
-			lf.Since = timestamppb.New(ts)
-		}
-		if ts := parseRFC3339OrEmpty(m.Until); !ts.IsZero() {
-			lf.Until = timestamppb.New(ts)
-		}
-		preq.Cmd = &pb.Request_NoteSearchRegex{NoteSearchRegex: &pb.SearchRegex{Pattern: m.Title, Filter: lf}}
+		preq.Cmd = &pb.Request_NoteSearchRegex{NoteSearchRegex: &pb.SearchRegex{Pattern: m.Title, Filter: toPbListFilter(m)}}
 	case "sync.run":
 		preq.Cmd = &pb.Request_SyncRun{SyncRun: &pb.SyncRun{}}
 	case "sync.queue":
@@ -108,6 +87,17 @@ func Request(ctx context.Context, path string, m Message) (Response, error) {
 		}
 	}
 	return r, nil
+}
+
+func toPbListFilter(m Message) *pb.ListFilter {
+	lf := &pb.ListFilter{Namespace: m.Namespace, TagsAny: m.TagsAny, TagsAll: m.TagsAll}
+	if ts := parseRFC3339OrEmpty(m.Since); !ts.IsZero() {
+		lf.Since = timestamppb.New(ts)
+	}
+	if ts := parseRFC3339OrEmpty(m.Until); !ts.IsZero() {
+		lf.Until = timestamppb.New(ts)
+	}
+	return lf
 }
 
 func parseRFC3339OrEmpty(s string) time.Time {

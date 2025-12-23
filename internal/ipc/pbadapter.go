@@ -48,47 +48,19 @@ func (h pbHandler) Handle(ctx context.Context, req any) (any, error) {
 	case *pb.Request_NoteList:
 		m.Name = "note.list"
 		if x.NoteList != nil {
-			m.Namespace = x.NoteList.Namespace
-			m.TagsAny = append([]string(nil), x.NoteList.TagsAny...)
-			m.TagsAll = append([]string(nil), x.NoteList.TagsAll...)
-			if x.NoteList.Since != nil {
-				m.Since = x.NoteList.Since.AsTime().UTC().Format(timeRFC3339)
-			}
-			if x.NoteList.Until != nil {
-				m.Until = x.NoteList.Until.AsTime().UTC().Format(timeRFC3339)
-			}
+			fillFilter(&m, x.NoteList)
 		}
 	case *pb.Request_NoteSearchFts:
 		m.Name = "note.search.fts"
 		if x.NoteSearchFts != nil {
 			m.Title = x.NoteSearchFts.Query
-			if f := x.NoteSearchFts.Filter; f != nil {
-				m.Namespace = f.Namespace
-				m.TagsAny = append([]string(nil), f.TagsAny...)
-				m.TagsAll = append([]string(nil), f.TagsAll...)
-				if f.Since != nil {
-					m.Since = f.Since.AsTime().UTC().Format(timeRFC3339)
-				}
-				if f.Until != nil {
-					m.Until = f.Until.AsTime().UTC().Format(timeRFC3339)
-				}
-			}
+			fillFilter(&m, x.NoteSearchFts.Filter)
 		}
 	case *pb.Request_NoteSearchRegex:
 		m.Name = "note.search.regex"
 		if x.NoteSearchRegex != nil {
 			m.Title = x.NoteSearchRegex.Pattern
-			if f := x.NoteSearchRegex.Filter; f != nil {
-				m.Namespace = f.Namespace
-				m.TagsAny = append([]string(nil), f.TagsAny...)
-				m.TagsAll = append([]string(nil), f.TagsAll...)
-				if f.Since != nil {
-					m.Since = f.Since.AsTime().UTC().Format(timeRFC3339)
-				}
-				if f.Until != nil {
-					m.Until = f.Until.AsTime().UTC().Format(timeRFC3339)
-				}
-			}
+			fillFilter(&m, x.NoteSearchRegex.Filter)
 		}
 	case *pb.Request_SyncRun:
 		m.Name = "sync.run"
@@ -162,5 +134,20 @@ func toPbEntry(e api.Entry) pb.Entry {
 		CreatedAt: timestamppb.New(e.CreatedAt),
 		UpdatedAt: timestamppb.New(e.UpdatedAt),
 		Namespace: e.Namespace,
+	}
+}
+
+func fillFilter(m *Message, f *pb.ListFilter) {
+	if f == nil {
+		return
+	}
+	m.Namespace = f.Namespace
+	m.TagsAny = append([]string(nil), f.TagsAny...)
+	m.TagsAll = append([]string(nil), f.TagsAll...)
+	if f.Since != nil {
+		m.Since = f.Since.AsTime().UTC().Format(timeRFC3339)
+	}
+	if f.Until != nil {
+		m.Until = f.Until.AsTime().UTC().Format(timeRFC3339)
 	}
 }
