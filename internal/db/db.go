@@ -70,8 +70,22 @@ func (s *Store) ApplyReplication(ctx context.Context, ev api.Event) error {
 		if ev.Entry == nil {
 			return nil
 		}
+		// Idempotency check: if we already have this EXACT entry, skip write.
+		cur, err := s.Entries.GetEntry(ctx, ev.Entry.ID)
+		if err == nil {
+			// Found local entry. Check hash.
+			if cur.Hash() == ev.Entry.Hash() {
+				return nil
+			}
+			// If different, overwrite logic below will handle it.
+		} else if err != ErrNotFound {
+			return err
+		}
+
 		if _, err := s.Entries.CreateEntry(ctx, *ev.Entry); err != nil {
 			if err == ErrConflict {
+				// We already checked GetEntry above, so we know it exists.
+				// But concurrent writes could happen, so this is safe fallback.
 				cur, err := s.Entries.GetEntry(ctx, ev.Entry.ID)
 				if err != nil {
 					return err
