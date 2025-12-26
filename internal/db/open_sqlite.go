@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -315,12 +316,18 @@ func (s *sqliteStore) ListEntries(ctx context.Context, q api.ListQuery) ([]api.E
 		Any:       q.Any,
 		All:       q.All,
 	})
+	cursor, hasCursor := parseCursorToken(q.Cursor)
+	cursorClause, cursorArgs := cursorWhereClause(cursor, hasCursor, q.Reverse)
+	orderClause := orderByClause(q.Reverse)
+	pageLimit := limit + 1
 	sqlq := pf.CTE + `SELECT e.id, e.version, e.title, '' AS body, e.tags, e.created_at, e.updated_at, e.namespace
 FROM filtered f
 JOIN entries e ON e.id = f.id
-ORDER BY f.c_at DESC
+` + cursorClause + `
+` + orderClause + `
 LIMIT ?`
-	args := append(pf.Args, limit)
+	args := append(pf.Args, cursorArgs...)
+	args = append(args, pageLimit)
 
 	rows, err := s.db.QueryContext(ctx, sqlq, args...)
 	if err != nil {
@@ -338,7 +345,15 @@ LIMIT ?`
 		_ = json.Unmarshal([]byte(tagsJSON), &e.Tags)
 		out = append(out, e)
 	}
-	return out, api.Page{}, nil
+	hasMore := len(out) > limit
+	if hasMore {
+		out = out[:limit]
+	}
+	if q.Reverse {
+		reverseEntries(out)
+	}
+	page := buildPage(out, hasMore, q.Reverse, q.Cursor != "")
+	return out, page, nil
 }
 
 func (s *sqliteStore) Search(ctx context.Context, q api.SearchQuery) ([]api.Entry, api.Page, error) {
@@ -347,20 +362,33 @@ func (s *sqliteStore) Search(ctx context.Context, q api.SearchQuery) ([]api.Entr
 		limit = 500
 	}
 	var ids []string
+	var hasMore bool
 	var err error
 	if q.Regex {
-		ids, err = s.searchRegex(ctx, q, limit)
+		ids, hasMore, err = s.searchRegex(ctx, q, limit)
 	} else {
-		ids, err = s.searchFTS(ctx, q, limit)
+		ids, hasMore, err = s.searchFTS(ctx, q, limit)
 	}
 	if err != nil {
 		return nil, api.Page{}, err
 	}
-	return s.fetchEntriesByIDs(ctx, ids)
+	entries, _, err := s.fetchEntriesByIDs(ctx, ids)
+	if err != nil {
+		return nil, api.Page{}, err
+	}
+	if q.Reverse {
+		reverseEntries(entries)
+	}
+	page := buildPage(entries, hasMore, q.Reverse, q.Cursor != "")
+	return entries, page, nil
 }
 
-func (s *sqliteStore) searchFTS(ctx context.Context, q api.SearchQuery, limit int) ([]string, error) {
+func (s *sqliteStore) searchFTS(ctx context.Context, q api.SearchQuery, limit int) ([]string, bool, error) {
 	pf := buildPrefilter(filter{Namespace: q.Namespace, Since: q.Since, Until: q.Until, Any: q.Any, All: q.All})
+	cursor, hasCursor := parseCursorToken(q.Cursor)
+	cursorClause, cursorArgs := cursorWhereClause(cursor, hasCursor, q.Reverse)
+	orderClause := orderByClause(q.Reverse)
+	pageLimit := limit + 1
 	sqlq := pf.CTE + `SELECT e.id
 FROM filtered f
 JOIN entries e ON e.id = f.id
@@ -374,6 +402,10 @@ JOIN entries_fts x ON x.id = e.id
 	sqlq += "WHERE x.entries_fts MATCH ?\n"
 	args := append([]any{}, pf.Args...)
 	args = append(args, q.Query)
+	if cursorClause != "" {
+		sqlq += "AND " + strings.TrimPrefix(cursorClause, "WHERE ") + "\n"
+		args = append(args, cursorArgs...)
+	}
 	if needTags {
 		sqlq += "GROUP BY e.id\nHAVING "
 		hav := []string{}
@@ -399,25 +431,29 @@ JOIN entries_fts x ON x.id = e.id
 		}
 		sqlq += strings.Join(hav, " AND ") + "\n"
 	}
-	sqlq += "ORDER BY f.c_at DESC\nLIMIT ?"
-	args = append(args, limit)
+	sqlq += orderClause + "\nLIMIT ?"
+	args = append(args, pageLimit)
 	rows, err := s.db.QueryContext(ctx, sqlq, args...)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer rows.Close()
 	var ids []string
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		ids = append(ids, id)
 	}
-	return ids, nil
+	hasMore := len(ids) > limit
+	if hasMore {
+		ids = ids[:limit]
+	}
+	return ids, hasMore, nil
 }
 
-func (s *sqliteStore) searchRegex(ctx context.Context, q api.SearchQuery, limit int) ([]string, error) {
+func (s *sqliteStore) searchRegex(ctx context.Context, q api.SearchQuery, limit int) ([]string, bool, error) {
 	token := longestWord(q.Query)
 	pf := buildPrefilter(filter{Namespace: q.Namespace, Since: q.Since, Until: q.Until, Any: q.Any, All: q.All})
 	// Candidate cap to keep resource usage bounded
@@ -425,6 +461,9 @@ func (s *sqliteStore) searchRegex(ctx context.Context, q api.SearchQuery, limit 
 	if cand < limit {
 		cand = limit
 	}
+	cursor, hasCursor := parseCursorToken(q.Cursor)
+	cursorClause, cursorArgs := cursorWhereClause(cursor, hasCursor, q.Reverse)
+	orderClause := orderByClause(q.Reverse)
 	sqlq := pf.CTE + `SELECT e.id, e.title, e.body, e.tags
 FROM filtered f
 JOIN entries e ON e.id = f.id`
@@ -432,35 +471,47 @@ JOIN entries e ON e.id = f.id`
 	if token != "" {
 		sqlq += "\nJOIN entries_fts x ON x.id = e.id\nWHERE x.entries_fts MATCH ?"
 		args = append(args, token)
+	} else if cursorClause != "" {
+		sqlq += "\n" + cursorClause
 	}
-	sqlq += "\nORDER BY f.c_at DESC\nLIMIT ?"
+	if token != "" && cursorClause != "" {
+		sqlq += "\nAND " + strings.TrimPrefix(cursorClause, "WHERE ")
+		args = append(args, cursorArgs...)
+	} else if cursorClause != "" {
+		args = append(args, cursorArgs...)
+	}
+	sqlq += "\n" + orderClause + "\nLIMIT ?"
 	args = append(args, cand)
 	rows, err := s.db.QueryContext(ctx, sqlq, args...)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer rows.Close()
 	re, err := compileRegex(q.Query)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	out := make([]string, 0, limit)
+	out := make([]string, 0, limit+1)
 	for rows.Next() {
 		var id, title, body, tagsJSON string
 		if err := rows.Scan(&id, &title, &body, &tagsJSON); err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		var tags []string
 		_ = json.Unmarshal([]byte(tagsJSON), &tags)
 		hay := title + "\n" + body + "\n" + strings.Join(tags, ",")
 		if re.MatchString(hay) {
 			out = append(out, id)
-			if len(out) >= limit {
+			if len(out) >= limit+1 {
 				break
 			}
 		}
 	}
-	return out, nil
+	hasMore := len(out) > limit
+	if hasMore {
+		out = out[:limit]
+	}
+	return out, hasMore, nil
 }
 
 // ListTags returns tag counts (per namespace if provided) with optional prefix filter.
@@ -531,6 +582,77 @@ func (s *sqliteStore) fetchEntriesByIDs(ctx context.Context, ids []string) ([]ap
 		}
 	}
 	return out, api.Page{}, nil
+}
+
+type cursorToken struct {
+	ts time.Time
+	id string
+}
+
+func parseCursorToken(s string) (cursorToken, bool) {
+	parts := strings.SplitN(strings.TrimSpace(s), "|", 2)
+	if len(parts) != 2 {
+		return cursorToken{}, false
+	}
+	ts, err := time.Parse(time.RFC3339Nano, parts[0])
+	if err != nil {
+		return cursorToken{}, false
+	}
+	id := strings.TrimSpace(parts[1])
+	if id == "" {
+		return cursorToken{}, false
+	}
+	return cursorToken{ts: ts, id: id}, true
+}
+
+func encodeCursorToken(e api.Entry) string {
+	return fmt.Sprintf("%s|%s", e.CreatedAt.UTC().Format(time.RFC3339Nano), e.ID)
+}
+
+func cursorWhereClause(c cursorToken, ok bool, reverse bool) (string, []any) {
+	if !ok {
+		return "", nil
+	}
+	if reverse {
+		return "WHERE (f.c_at > ? OR (f.c_at = ? AND e.id > ?))", []any{c.ts.UTC(), c.ts.UTC(), c.id}
+	}
+	return "WHERE (f.c_at < ? OR (f.c_at = ? AND e.id < ?))", []any{c.ts.UTC(), c.ts.UTC(), c.id}
+}
+
+func orderByClause(reverse bool) string {
+	if reverse {
+		return "ORDER BY f.c_at ASC, e.id ASC"
+	}
+	return "ORDER BY f.c_at DESC, e.id DESC"
+}
+
+func reverseEntries(entries []api.Entry) {
+	for i, j := 0, len(entries)-1; i < j; i, j = i+1, j-1 {
+		entries[i], entries[j] = entries[j], entries[i]
+	}
+}
+
+func buildPage(entries []api.Entry, hasMore bool, reverse bool, hasCursor bool) api.Page {
+	var page api.Page
+	if len(entries) == 0 {
+		return page
+	}
+	first := entries[0]
+	last := entries[len(entries)-1]
+	if reverse {
+		page.Next = encodeCursorToken(last)
+		if hasMore {
+			page.Prev = encodeCursorToken(first)
+		}
+		return page
+	}
+	if hasMore {
+		page.Next = encodeCursorToken(last)
+	}
+	if hasCursor {
+		page.Prev = encodeCursorToken(first)
+	}
+	return page
 }
 
 func longestWord(s string) string {

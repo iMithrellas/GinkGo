@@ -124,39 +124,65 @@ func Run(ctx context.Context, app *wire.App) error {
 		case "note.list":
 			log.Printf("list notes")
 			var entries []api.Entry
+			var page api.Page
 			var err error
 			since, until := parseBounds(m.Since, m.Until)
-			entries, _, err = app.Store.Entries.ListEntries(ctx, api.ListQuery{
+			entries, page, err = app.Store.Entries.ListEntries(ctx, api.ListQuery{
 				Namespace: ns,
 				Any:       m.TagsAny,
 				All:       m.TagsAll,
 				Since:     since,
 				Until:     until,
+				Limit:     m.Limit,
+				Cursor:    m.Cursor,
+				Reverse:   m.Reverse,
 			})
 			if err != nil {
 				return ipc.Response{OK: false, Msg: err.Error()}
 			}
 			log.Printf("list notes count=%d", len(entries))
-			return ipc.Response{OK: true, Entries: entries}
+			return ipc.Response{OK: true, Entries: entries, Page: page}
 		case "note.search.fts":
 			q := strings.ToLower(strings.TrimSpace(m.Title))
 			since, until := parseBounds(m.Since, m.Until)
-			entries, _, err := app.Store.Entries.Search(ctx, api.SearchQuery{Namespace: ns, Query: q, Regex: false, Any: m.TagsAny, All: m.TagsAll, Since: since, Until: until})
+			entries, page, err := app.Store.Entries.Search(ctx, api.SearchQuery{
+				Namespace: ns,
+				Query:     q,
+				Regex:     false,
+				Any:       m.TagsAny,
+				All:       m.TagsAll,
+				Since:     since,
+				Until:     until,
+				Limit:     m.Limit,
+				Cursor:    m.Cursor,
+				Reverse:   m.Reverse,
+			})
 			if err != nil {
 				return ipc.Response{OK: false, Msg: err.Error()}
 			}
-			return ipc.Response{OK: true, Entries: entries}
+			return ipc.Response{OK: true, Entries: entries, Page: page}
 		case "note.search.regex":
 			pattern := m.Title
 			since, until := parseBounds(m.Since, m.Until)
 			if _, err := regexp.Compile(pattern); err != nil {
 				return ipc.Response{OK: false, Msg: "bad regex"}
 			}
-			entries, _, err := app.Store.Entries.Search(ctx, api.SearchQuery{Namespace: ns, Query: pattern, Regex: true, Any: m.TagsAny, All: m.TagsAll, Since: since, Until: until})
+			entries, page, err := app.Store.Entries.Search(ctx, api.SearchQuery{
+				Namespace: ns,
+				Query:     pattern,
+				Regex:     true,
+				Any:       m.TagsAny,
+				All:       m.TagsAll,
+				Since:     since,
+				Until:     until,
+				Limit:     m.Limit,
+				Cursor:    m.Cursor,
+				Reverse:   m.Reverse,
+			})
 			if err != nil {
 				return ipc.Response{OK: false, Msg: err.Error()}
 			}
-			return ipc.Response{OK: true, Entries: entries}
+			return ipc.Response{OK: true, Entries: entries, Page: page}
 		case "sync.queue":
 			limit := m.Limit
 			qs, err := app.Syncer.Queue(ctx, limit, m.Remote)
