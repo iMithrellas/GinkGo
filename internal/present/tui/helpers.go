@@ -1,6 +1,12 @@
 package tui
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/mithrel/ginkgo/pkg/api"
+)
 
 func joinTags(tags []string) string {
 	if len(tags) == 0 {
@@ -33,4 +39,9 @@ func splitCSV(s string) []string {
 		}
 	}
 	return out
+}
+
+func encodeCursor(e api.Entry) string {
+	ts := e.CreatedAt.UTC().Format(time.RFC3339Nano)
+	return fmt.Sprintf("%s|%s", ts, e.ID)
 }

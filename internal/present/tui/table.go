@@ -21,7 +21,7 @@ import (
 )
 
 // RenderTable opens an interactive Bubble Tea table to browse entries.
-func RenderTable(ctx context.Context, entries []api.Entry, headers bool, initialStatus string, initialDuration time.Duration, filterTagsAny, filterTagsAll, filterSince, filterUntil, namespace string) error {
+func RenderTable(ctx context.Context, entries []api.Entry, headers bool, initialStatus string, initialDuration time.Duration, filterTagsAny, filterTagsAll, filterSince, filterUntil, namespace string, bufferRatio float64) error {
 	m := model{
 		ctx:          ctx,
 		entries:      entries,
@@ -35,6 +35,7 @@ func RenderTable(ctx context.Context, entries []api.Entry, headers bool, initial
 		since:        filterSince,
 		until:        filterUntil,
 		namespace:    namespace,
+		bufferRatio:  bufferRatio,
 	}
 	m.initTable()
 
@@ -87,6 +88,8 @@ type model struct {
 	nextCursor   string
 	prevCursor   string
 	pageSize     int
+	bufferSize   int
+	bufferRatio  float64
 	loaded       bool
 	loadingNext  bool
 	loadingPrev  bool
@@ -108,6 +111,11 @@ func (m *model) initTable() {
 	if m.pageSize == 0 {
 		m.pageSize = 50
 	}
+	if m.bufferRatio == 0 {
+		m.bufferRatio = 0.2
+	}
+	m.bufferRatio = clampBufferRatio(m.bufferRatio)
+	m.updateBufferSize()
 	m.loaded = len(m.entries) > 0
 	m.updateRows()
 	m.applyStyles()
@@ -468,8 +476,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	var cmd tea.Cmd
 	m.table, cmd = m.table.Update(msg)
+	m.maybePrune()
 	if nextCmd := m.maybeFetchNext(); nextCmd != nil {
-		return m, nextCmd
+		return m, tea.Batch(cmd, nextCmd)
 	}
 	return m, cmd
 }
@@ -526,6 +535,7 @@ func (m *model) applyLayout() {
 	m.table.SetHeight(h)
 	m.table.SetWidth(m.width)
 	m.pageSize = max(5, m.table.Height())
+	m.updateBufferSize()
 	pad := 4
 	avail := m.width - pad
 	if avail < 40 {
@@ -577,6 +587,24 @@ func (m *model) applyStyles() {
 	m.table.SetStyles(s)
 }
 
+func (m *model) updateBufferSize() {
+	if m.pageSize <= 0 {
+		m.bufferSize = 0
+		return
+	}
+	m.bufferSize = max(1, int(float64(m.pageSize)*m.bufferRatio))
+}
+
+func clampBufferRatio(r float64) float64 {
+	if r < 0.1 {
+		return 0.1
+	}
+	if r > 0.3 {
+		return 0.3
+	}
+	return r
+}
+
 func (m *model) maybeFetchNext() tea.Cmd {
 	if m.showModal || m.showFilter {
 		return nil
@@ -587,11 +615,37 @@ func (m *model) maybeFetchNext() tea.Cmd {
 	if len(m.entries) == 0 {
 		return nil
 	}
-	if m.table.Cursor() < len(m.entries)-1 {
+	if m.bufferSize == 0 {
+		return nil
+	}
+	if m.table.Cursor() < len(m.entries)-1-m.bufferSize {
 		return nil
 	}
 	m.loadingNext = true
 	return listCmd(m.ctx, m.namespace, splitCSV(m.tagsAny), splitCSV(m.tagsAll), m.since, m.until, m.pageSize, m.nextCursor, false, listModeAppend)
+}
+
+func (m *model) maybePrune() {
+	if m.bufferSize == 0 || len(m.entries) == 0 {
+		return
+	}
+	if m.loadingPrev {
+		return
+	}
+	cur := m.table.Cursor()
+	drop := cur - m.bufferSize
+	if drop <= 0 {
+		return
+	}
+	if drop >= len(m.entries) {
+		return
+	}
+	m.entries = m.entries[drop:]
+	m.table.SetCursor(cur - drop)
+	m.updateRows()
+	if len(m.entries) > 0 {
+		m.prevCursor = encodeCursor(m.entries[0])
+	}
 }
 
 // columnsFor returns columns with or without titles based on headers flag.
