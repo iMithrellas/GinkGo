@@ -115,6 +115,9 @@ func (h pbHandler) Handle(ctx context.Context, req any) (any, error) {
 			presp.Tags = append(presp.Tags, &pb.TagStat{Tag: t.Tag, Count: int32(t.Count), Description: t.Description})
 		}
 	}
+	if r.Page.Next != "" || r.Page.Prev != "" {
+		presp.Page = &pb.Page{Next: r.Page.Next, Prev: r.Page.Prev}
+	}
 	return presp, nil
 }
 
@@ -150,4 +153,7 @@ func fillFilter(m *Message, f *pb.ListFilter) {
 	if f.Until != nil {
 		m.Until = f.Until.AsTime().UTC().Format(timeRFC3339)
 	}
+	m.Limit = int(f.Limit)
+	m.Cursor = f.Cursor
+	m.Reverse = f.Reverse
 }
