@@ -103,6 +103,7 @@ func GetConfigOptions() []ConfigOption {
 		{Key: "auth.token", Default: "", Comment: "Shared token required by replication server"},
 		{Key: "sync.batch_size", Default: 256, Comment: "Batch size for remote sync operations"},
 		{Key: "remotes", Default: map[string]any{}, Comment: "Named remotes: [remotes.<name>] url/token/enabled"},
+		{Key: "export.page_size", Default: 200, Comment: "Batch size for list/search export paging"},
 
 		{Key: "notifications.enabled", Default: false, Comment: "Enable reminder notifications"},
 		{Key: "notifications.every_days", Default: 3, Comment: "Reminder cadence in days"},
