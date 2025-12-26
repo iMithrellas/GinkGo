@@ -47,6 +47,8 @@ type editResultMsg struct {
 // listResultMsg conveys the outcome of reloading the list with filters applied.
 type listResultMsg struct {
 	entries []api.Entry
+	page    api.Page
+	mode    listMode
 	err     error
 	dur     time.Duration
 }
@@ -109,12 +111,12 @@ func manualSyncCmd(ctx context.Context) tea.Cmd {
 	}
 }
 
-func listCmd(ctx context.Context, namespace string, tagsAny, tagsAll []string, since, until string) tea.Cmd {
+func listCmd(ctx context.Context, namespace string, tagsAny, tagsAll []string, since, until string, limit int, cursor string, reverse bool, mode listMode) tea.Cmd {
 	return func() tea.Msg {
 		start := time.Now()
 		sock, err := ipc.SocketPath()
 		if err != nil {
-			return listResultMsg{err: err, dur: time.Since(start)}
+			return listResultMsg{err: err, dur: time.Since(start), mode: mode}
 		}
 		resp, err := ipc.Request(ctx, sock, ipc.Message{
 			Name:      "note.list",
@@ -123,14 +125,17 @@ func listCmd(ctx context.Context, namespace string, tagsAny, tagsAll []string, s
 			TagsAll:   tagsAll,
 			Since:     since,
 			Until:     until,
+			Limit:     limit,
+			Cursor:    cursor,
+			Reverse:   reverse,
 		})
 		if err != nil {
-			return listResultMsg{err: err, dur: time.Since(start)}
+			return listResultMsg{err: err, dur: time.Since(start), mode: mode}
 		}
 		if !resp.OK {
-			return listResultMsg{err: fmt.Errorf("list failed: %s", resp.Msg), dur: time.Since(start)}
+			return listResultMsg{err: fmt.Errorf("list failed: %s", resp.Msg), dur: time.Since(start), mode: mode}
 		}
-		return listResultMsg{entries: resp.Entries, dur: time.Since(start)}
+		return listResultMsg{entries: resp.Entries, page: resp.Page, dur: time.Since(start), mode: mode}
 	}
 }
 

@@ -84,13 +84,31 @@ type model struct {
 	since        string
 	until        string
 	namespace    string
+	nextCursor   string
+	prevCursor   string
+	pageSize     int
+	loaded       bool
+	loadingNext  bool
+	loadingPrev  bool
 }
+
+type listMode int
+
+const (
+	listModeReplace listMode = iota
+	listModeAppend
+	listModePrepend
+)
 
 func (m *model) initTable() {
 	cols := m.columnsFor(m.headers, 12, 40, 20, 19)
 	m.table = table.New(table.WithColumns(cols), table.WithFocused(true))
 	m.titleWidth = 40
 	m.tagsWidth = 20
+	if m.pageSize == 0 {
+		m.pageSize = 50
+	}
+	m.loaded = len(m.entries) > 0
 	m.updateRows()
 	m.applyStyles()
 }
@@ -262,14 +280,47 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.status = fmt.Sprintf("Filter failed: %v", msg.err)
 			m.lastDuration = msg.dur
+			if msg.mode == listModeAppend {
+				m.loadingNext = false
+			}
+			if msg.mode == listModePrepend {
+				m.loadingPrev = false
+			}
 			return m, nil
 		}
-		m.entries = msg.entries
-		m.updateRows()
-		if len(m.entries) > 0 {
+		switch msg.mode {
+		case listModeReplace:
+			m.entries = msg.entries
 			m.table.SetCursor(0)
+			m.status = "Filters applied"
+			m.nextCursor = msg.page.Next
+			m.prevCursor = msg.page.Prev
+			m.loaded = true
+		case listModeAppend:
+			if len(msg.entries) == 0 {
+				m.nextCursor = ""
+			} else {
+				m.entries = append(m.entries, msg.entries...)
+				if msg.page.Next != "" {
+					m.nextCursor = msg.page.Next
+				}
+				m.status = "Loaded more"
+			}
+			m.loadingNext = false
+		case listModePrepend:
+			if len(msg.entries) == 0 {
+				m.prevCursor = ""
+			} else {
+				m.entries = append(msg.entries, m.entries...)
+				m.table.SetCursor(m.table.Cursor() + len(msg.entries))
+				if msg.page.Prev != "" {
+					m.prevCursor = msg.page.Prev
+				}
+				m.status = "Loaded newer"
+			}
+			m.loadingPrev = false
 		}
-		m.status = "Filters applied"
+		m.updateRows()
 		m.lastDuration = msg.dur
 		return m, nil
 	case tea.WindowSizeMsg:
@@ -287,6 +338,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.applyLayout()
 		m.updateRows()
+		if !m.loaded && m.pageSize > 0 {
+			m.status = "Loading..."
+			return m, listCmd(m.ctx, m.namespace, splitCSV(m.tagsAny), splitCSV(m.tagsAll), m.since, m.until, m.pageSize, "", false, listModeReplace)
+		}
 		return m, nil
 	case tea.KeyMsg:
 		if m.showModal && m.modal != nil {
@@ -312,7 +367,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.until = ""
 				m.showFilter = false
 				m.status = "Clearing filters..."
-				return m, listCmd(m.ctx, m.namespace, nil, nil, "", "")
+				m.nextCursor = ""
+				m.prevCursor = ""
+				m.loaded = false
+				return m, listCmd(m.ctx, m.namespace, nil, nil, "", "", m.pageSize, "", false, listModeReplace)
 			case "enter":
 				tagsAny, tagsAll, since, until := m.filterModal.values()
 				normalizedSince, normalizedUntil, err := util.NormalizeTimeRange(since, until)
@@ -327,7 +385,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.until = until
 				m.showFilter = false
 				m.status = "Filtering..."
-				return m, listCmd(m.ctx, m.namespace, splitCSV(tagsAny), splitCSV(tagsAll), normalizedSince, normalizedUntil)
+				m.nextCursor = ""
+				m.prevCursor = ""
+				m.loaded = false
+				return m, listCmd(m.ctx, m.namespace, splitCSV(tagsAny), splitCSV(tagsAll), normalizedSince, normalizedUntil, m.pageSize, "", false, listModeReplace)
 			default:
 				var cmd tea.Cmd
 				m.filterModal, cmd = m.filterModal.update(msg)
@@ -407,6 +468,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	var cmd tea.Cmd
 	m.table, cmd = m.table.Update(msg)
+	if nextCmd := m.maybeFetchNext(); nextCmd != nil {
+		return m, nextCmd
+	}
 	return m, cmd
 }
 
@@ -461,6 +525,7 @@ func (m *model) applyLayout() {
 	h := max(6, m.height-1)
 	m.table.SetHeight(h)
 	m.table.SetWidth(m.width)
+	m.pageSize = max(5, m.table.Height())
 	pad := 4
 	avail := m.width - pad
 	if avail < 40 {
@@ -510,6 +575,23 @@ func (m *model) applyStyles() {
 		Background(lipgloss.Color("57")).
 		Bold(false)
 	m.table.SetStyles(s)
+}
+
+func (m *model) maybeFetchNext() tea.Cmd {
+	if m.showModal || m.showFilter {
+		return nil
+	}
+	if m.loadingNext || m.nextCursor == "" {
+		return nil
+	}
+	if len(m.entries) == 0 {
+		return nil
+	}
+	if m.table.Cursor() < len(m.entries)-1 {
+		return nil
+	}
+	m.loadingNext = true
+	return listCmd(m.ctx, m.namespace, splitCSV(m.tagsAny), splitCSV(m.tagsAll), m.since, m.until, m.pageSize, m.nextCursor, false, listModeAppend)
 }
 
 // columnsFor returns columns with or without titles based on headers flag.
