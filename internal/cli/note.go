@@ -83,11 +83,10 @@ func completeTags(cmd *cobra.Command, args []string, toComplete string) ([]strin
 	query := toComplete
 	if idx := strings.LastIndex(toComplete, ","); idx != -1 {
 		prefix = toComplete[:idx+1]
-		query = strings.TrimLeft(toComplete[idx+1:], " ")
+		query = toComplete[idx+1:]
 	}
 
 	matches := util.ScoreCompletions(query, tags, 0)
-
 	// Re-attach prefix to matches so the shell replaces the whole token correctly
 	if prefix != "" {
 		for i, m := range matches {
