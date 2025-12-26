@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -9,8 +10,6 @@ import (
 	"github.com/mithrel/ginkgo/internal/present"
 	"github.com/mithrel/ginkgo/internal/util"
 	"github.com/spf13/cobra"
-
-	"github.com/mithrel/ginkgo/pkg/api"
 )
 
 func newNoteListCmd() *cobra.Command {
@@ -42,27 +41,7 @@ func newNoteListCmd() *cobra.Command {
 			if !ok {
 				return fmt.Errorf("invalid --output: %s", outputMode)
 			}
-			start := time.Now()
-			var entries []api.Entry
-			if mode == present.ModeTUI {
-				entries = nil
-			} else {
-				var err error
-				entries, err = fetchAllEntries(cmd.Context(), sock, pageSize, func(cursor string) ipc.Message {
-					return ipc.Message{
-						Name:      "note.list",
-						Namespace: resolveNamespace(cmd),
-						TagsAny:   any,
-						TagsAll:   all,
-						Since:     sinceStr, // RFC3339 string or ""
-						Until:     untilStr, // RFC3339 string or ""
-					}
-				})
-				if err != nil {
-					return err
-				}
-			}
-			dur := time.Since(start)
+			dur := time.Duration(0)
 			if !ok {
 				return fmt.Errorf("invalid --output: %s", outputMode)
 			}
@@ -79,7 +58,22 @@ func newNoteListCmd() *cobra.Command {
 				Namespace:       resolveNamespace(cmd),
 				TUIBufferRatio:  app.Cfg.GetFloat64("tui.buffer_ratio"),
 			}
-			return present.RenderEntries(cmd.Context(), cmd.OutOrStdout(), entries, opts)
+			if mode == present.ModeTUI {
+				return renderEntries(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), nil, opts)
+			}
+			return withPager(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), func(w io.Writer) error {
+				writer := newEntryStreamWriter(w, opts)
+				return streamEntries(cmd.Context(), sock, pageSize, func(cursor string) ipc.Message {
+					return ipc.Message{
+						Name:      "note.list",
+						Namespace: resolveNamespace(cmd),
+						TagsAny:   any,
+						TagsAll:   all,
+						Since:     sinceStr, // RFC3339 string or ""
+						Until:     untilStr, // RFC3339 string or ""
+					}
+				}, writer)
+			})
 		},
 	}
 	addFilterFlags(cmd, &filters)

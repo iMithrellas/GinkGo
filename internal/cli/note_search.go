@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/mithrel/ginkgo/internal/ipc"
@@ -43,26 +44,25 @@ func newNoteSearchCmd() *cobra.Command {
 			if pageSize <= 0 {
 				pageSize = app.Cfg.GetInt("export.page_size")
 			}
-			entries, err := fetchAllEntries(cmd.Context(), sock, pageSize, func(cursor string) ipc.Message {
-				return ipc.Message{
-					Name:      "note.search.fts",
-					Title:     q,
-					Namespace: resolveNamespace(cmd),
-					TagsAny:   any,
-					TagsAll:   all,
-					Since:     sinceStr, // RFC3339 or ""
-					Until:     untilStr, // RFC3339 or ""
-				}
-			})
-			if err != nil {
-				return err
-			}
 			mode, ok := present.ParseMode(strings.ToLower(outputMode))
 			if !ok || mode == present.ModeTUI {
 				return fmt.Errorf("invalid --output: %s", outputMode)
 			}
 			opts := present.Options{Mode: mode, JSONIndent: false, Headers: !noHeaders}
-			return present.RenderEntries(cmd.Context(), cmd.OutOrStdout(), entries, opts)
+			return withPager(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), func(w io.Writer) error {
+				writer := newEntryStreamWriter(w, opts)
+				return streamEntries(cmd.Context(), sock, pageSize, func(cursor string) ipc.Message {
+					return ipc.Message{
+						Name:      "note.search.fts",
+						Title:     q,
+						Namespace: resolveNamespace(cmd),
+						TagsAny:   any,
+						TagsAll:   all,
+						Since:     sinceStr, // RFC3339 or ""
+						Until:     untilStr, // RFC3339 or ""
+					}
+				}, writer)
+			})
 		},
 	}
 
@@ -87,26 +87,25 @@ func newNoteSearchCmd() *cobra.Command {
 			if pageSize <= 0 {
 				pageSize = app.Cfg.GetInt("export.page_size")
 			}
-			entries, err := fetchAllEntries(cmd.Context(), sock, pageSize, func(cursor string) ipc.Message {
-				return ipc.Message{
-					Name:      "note.search.regex",
-					Title:     pattern,
-					Namespace: resolveNamespace(cmd),
-					TagsAny:   any,
-					TagsAll:   all,
-					Since:     sinceStr, // RFC3339 or ""
-					Until:     untilStr, // RFC3339 or ""
-				}
-			})
-			if err != nil {
-				return err
-			}
 			mode, ok := present.ParseMode(strings.ToLower(outputMode))
 			if !ok || mode == present.ModeTUI {
 				return fmt.Errorf("invalid --output: %s", outputMode)
 			}
 			opts := present.Options{Mode: mode, JSONIndent: false, Headers: !noHeaders}
-			return present.RenderEntries(cmd.Context(), cmd.OutOrStdout(), entries, opts)
+			return withPager(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), func(w io.Writer) error {
+				writer := newEntryStreamWriter(w, opts)
+				return streamEntries(cmd.Context(), sock, pageSize, func(cursor string) ipc.Message {
+					return ipc.Message{
+						Name:      "note.search.regex",
+						Title:     pattern,
+						Namespace: resolveNamespace(cmd),
+						TagsAny:   any,
+						TagsAll:   all,
+						Since:     sinceStr, // RFC3339 or ""
+						Until:     untilStr, // RFC3339 or ""
+					}
+				}, writer)
+			})
 		},
 	}
 
