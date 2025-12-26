@@ -73,7 +73,24 @@ func newNoteCmd() *cobra.Command {
 			tags[i] = t.Tag
 		}
 
-		return util.ScoreCompletions(toComplete, tags, 5), cobra.ShellCompDirectiveNoFileComp
+		// Handle comma-separated tags
+		prefix := ""
+		query := toComplete
+		if idx := strings.LastIndex(toComplete, ","); idx != -1 {
+			prefix = toComplete[:idx+1]
+			query = strings.TrimLeft(toComplete[idx+1:], " ")
+		}
+
+		matches := util.ScoreCompletions(query, tags, 0)
+
+		// Re-attach prefix to matches so the shell replaces the whole token correctly
+		if prefix != "" {
+			for i, m := range matches {
+				matches[i] = prefix + m
+			}
+		}
+
+		return matches, cobra.ShellCompDirectiveNoFileComp
 	})
 
 	return cmd
