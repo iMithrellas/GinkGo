@@ -7,6 +7,7 @@ import (
 
 	"github.com/mithrel/ginkgo/internal/ipc"
 	"github.com/mithrel/ginkgo/internal/present"
+	"github.com/mithrel/ginkgo/internal/util"
 	"github.com/spf13/cobra"
 )
 
@@ -18,7 +19,7 @@ func newNoteListCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List notes",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			sinceStr, untilStr, err := normalizeTimeRange(filters.Since, filters.Until)
+			sinceStr, untilStr, err := util.NormalizeTimeRange(filters.Since, filters.Until)
 			if err != nil {
 				return err
 			}
@@ -55,6 +56,11 @@ func newNoteListCmd() *cobra.Command {
 				Headers:         !noHeaders,
 				InitialStatus:   fmt.Sprintf("loaded successfully"),
 				InitialDuration: dur,
+				FilterTagsAny:   filters.TagsAny,
+				FilterTagsAll:   filters.TagsAll,
+				FilterSince:     filters.Since,
+				FilterUntil:     filters.Until,
+				Namespace:       resolveNamespace(cmd),
 			}
 			return present.RenderEntries(cmd.Context(), cmd.OutOrStdout(), resp.Entries, opts)
 		},

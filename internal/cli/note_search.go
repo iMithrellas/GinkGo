@@ -6,6 +6,7 @@ import (
 
 	"github.com/mithrel/ginkgo/internal/ipc"
 	"github.com/mithrel/ginkgo/internal/present"
+	"github.com/mithrel/ginkgo/internal/util"
 	"github.com/spf13/cobra"
 )
 
@@ -25,7 +26,7 @@ func newNoteSearchCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			q := args[0]
-			sinceStr, untilStr, err := normalizeTimeRange(filters.Since, filters.Until)
+			sinceStr, untilStr, err := util.NormalizeTimeRange(filters.Since, filters.Until)
 			if err != nil {
 				return err
 			}
@@ -67,7 +68,7 @@ func newNoteSearchCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			pattern := args[0]
-			sinceStr, untilStr, err := normalizeTimeRange(filters.Since, filters.Until)
+			sinceStr, untilStr, err := util.NormalizeTimeRange(filters.Since, filters.Until)
 			if err != nil {
 				return err
 			}

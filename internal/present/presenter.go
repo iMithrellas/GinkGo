@@ -26,6 +26,11 @@ type Options struct {
 	Headers         bool
 	InitialStatus   string
 	InitialDuration time.Duration
+	FilterTagsAny   string
+	FilterTagsAll   string
+	FilterSince     string
+	FilterUntil     string
+	Namespace       string
 }
 
 // ParseMode parses a string like "plain", "pretty", "json", "tui".
@@ -56,7 +61,7 @@ func RenderEntries(ctx context.Context, w io.Writer, entries []api.Entry, opts O
 		return format.WritePlainEntries(w, entries, opts.Headers)
 	case ModeTUI:
 		// Pass headers flag through so the TUI can optionally hide column headers.
-		return tui.RenderTable(ctx, entries, opts.Headers, opts.InitialStatus, opts.InitialDuration)
+		return tui.RenderTable(ctx, entries, opts.Headers, opts.InitialStatus, opts.InitialDuration, opts.FilterTagsAny, opts.FilterTagsAll, opts.FilterSince, opts.FilterUntil, opts.Namespace)
 	default:
 		return format.WritePlainEntries(w, entries, opts.Headers)
 	}

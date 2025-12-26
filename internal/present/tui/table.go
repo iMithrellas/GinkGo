@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/table"
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -18,11 +19,12 @@ import (
 	"github.com/mithrel/ginkgo/internal/editor"
 	"github.com/mithrel/ginkgo/internal/ipc"
 	"github.com/mithrel/ginkgo/internal/present/format"
+	"github.com/mithrel/ginkgo/internal/util"
 	"github.com/mithrel/ginkgo/pkg/api"
 )
 
 // RenderTable opens an interactive Bubble Tea table to browse entries.
-func RenderTable(ctx context.Context, entries []api.Entry, headers bool, initialStatus string, initialDuration time.Duration) error {
+func RenderTable(ctx context.Context, entries []api.Entry, headers bool, initialStatus string, initialDuration time.Duration, filterTagsAny, filterTagsAll, filterSince, filterUntil, namespace string) error {
 	m := model{
 		ctx:          ctx,
 		entries:      entries,
@@ -31,6 +33,11 @@ func RenderTable(ctx context.Context, entries []api.Entry, headers bool, initial
 		headers:      headers,
 		status:       initialStatus,
 		lastDuration: initialDuration,
+		tagsAny:      filterTagsAny,
+		tagsAll:      filterTagsAll,
+		since:        filterSince,
+		until:        filterUntil,
+		namespace:    namespace,
 	}
 	m.initTable()
 
@@ -66,6 +73,8 @@ type model struct {
 	editIdx      int
 	showModal    bool
 	modal        *noteModal
+	showFilter   bool
+	filterModal  *filterModal
 	headers      bool
 	width        int
 	height       int
@@ -73,6 +82,11 @@ type model struct {
 	tagsWidth    int
 	status       string
 	lastDuration time.Duration
+	tagsAny      string
+	tagsAll      string
+	since        string
+	until        string
+	namespace    string
 }
 
 func (m *model) initTable() {
@@ -247,12 +261,31 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.lastDuration = msg.dur
 		return m, nil
+	case listResultMsg:
+		if msg.err != nil {
+			m.status = fmt.Sprintf("Filter failed: %v", msg.err)
+			m.lastDuration = msg.dur
+			return m, nil
+		}
+		m.entries = msg.entries
+		m.updateRows()
+		if len(m.entries) > 0 {
+			m.table.SetCursor(0)
+		}
+		m.status = "Filters applied"
+		m.lastDuration = msg.dur
+		return m, nil
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
 		if m.showModal && m.modal != nil {
 			var cmd tea.Cmd
 			m.modal, cmd = m.modal.update(msg)
+			_ = cmd
+		}
+		if m.showFilter && m.filterModal != nil {
+			var cmd tea.Cmd
+			m.filterModal, cmd = m.filterModal.update(msg)
 			_ = cmd
 		}
 		m.applyLayout()
@@ -267,6 +300,40 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			default:
 				var cmd tea.Cmd
 				m.modal, cmd = m.modal.update(msg)
+				return m, cmd
+			}
+		}
+		if m.showFilter && m.filterModal != nil {
+			switch msg.String() {
+			case "esc", "ctrl+q":
+				m.showFilter = false
+				return m, nil
+			case "ctrl+x":
+				m.tagsAny = ""
+				m.tagsAll = ""
+				m.since = ""
+				m.until = ""
+				m.showFilter = false
+				m.status = "Clearing filters..."
+				return m, listCmd(m.ctx, m.namespace, nil, nil, "", "")
+			case "enter":
+				tagsAny, tagsAll, since, until := m.filterModal.values()
+				normalizedSince, normalizedUntil, err := util.NormalizeTimeRange(since, until)
+				if err != nil {
+					m.status = fmt.Sprintf("Filter error: %v", err)
+					m.lastDuration = 0
+					return m, nil
+				}
+				m.tagsAny = tagsAny
+				m.tagsAll = tagsAll
+				m.since = since
+				m.until = until
+				m.showFilter = false
+				m.status = "Filtering..."
+				return m, listCmd(m.ctx, m.namespace, splitCSV(tagsAny), splitCSV(tagsAll), normalizedSince, normalizedUntil)
+			default:
+				var cmd tea.Cmd
+				m.filterModal, cmd = m.filterModal.update(msg)
 				return m, cmd
 			}
 		}
@@ -323,6 +390,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "s", "S":
 			m.status = "Triggering sync..."
 			return m, manualSyncCmd(m.ctx)
+		case "f":
+			if m.showModal {
+				return m, nil
+			}
+			m.filterModal = newFilterModal(m.tagsAny, m.tagsAll, m.since, m.until, m.namespace, m.width, m.height)
+			m.showFilter = true
+			return m, nil
 		case "d":
 			idx := m.table.Cursor()
 			if idx >= 0 && idx < len(m.entries) {
@@ -340,7 +414,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) renderFooter() string {
-	left := "↑/↓ to navigate • enter=show • d=delete • q=exit • e=edit • i=inspect • s=sync"
+	left := "↑/↓ to navigate • enter=show • d=delete • q=exit • e=edit • i=inspect • s=sync • f=filter"
 
 	var right string
 	if m.status != "" {
@@ -365,24 +439,26 @@ func (m model) View() string {
 	if m.table.Height() < 3 {
 		base := "(no entries) \n"
 		if m.showModal && m.modal != nil {
-			return m.renderWithOverlay(base)
+			return m.renderOverlay(base, m.modal.View(), m.modal.width, m.modal.height)
+		}
+		if m.showFilter && m.filterModal != nil {
+			return m.renderOverlay(base, m.filterModal.View(), m.filterModal.width, m.filterModal.height)
 		}
 		return base
 	}
 
 	base := m.table.View() + "\n" + m.renderFooter() + "\n"
 	if m.showModal && m.modal != nil {
-		return m.renderWithOverlay(base)
+		return m.renderOverlay(base, m.modal.View(), m.modal.width, m.modal.height)
+	}
+	if m.showFilter && m.filterModal != nil {
+		return m.renderOverlay(base, m.filterModal.View(), m.filterModal.width, m.filterModal.height)
 	}
 	return base
 }
 
-// renderWithOverlay composes a centered modal on top of the given base view string.
-func (m model) renderWithOverlay(base string) string {
-	fg := ""
-	if m.modal != nil {
-		fg = m.modal.View()
-	}
+// renderOverlay composes a centered modal on top of the given base view string.
+func (m model) renderOverlay(base, fg string, overlayW, overlayH int) string {
 	// Compute terminal size with fallbacks.
 	termW, termH := m.width, m.height
 	if termW <= 0 {
@@ -392,8 +468,8 @@ func (m model) renderWithOverlay(base string) string {
 		termH = 24
 	}
 	// Center target position.
-	x := (termW - m.modal.width) / 2
-	y := (termH - m.modal.height) / 2
+	x := (termW - overlayW) / 2
+	y := (termH - overlayH) / 2
 	if x < 0 {
 		x = 0
 	}
@@ -548,6 +624,150 @@ func (m *noteModal) Init() tea.Cmd                           { return nil }
 func (m *noteModal) Update(msg tea.Msg) (tea.Model, tea.Cmd) { return m.update(msg) }
 func (m *noteModal) View() string                            { return m.box.Render(m.vp.View()) }
 
+// filterModal is a foreground modal with inputs to filter the list view.
+type filterModal struct {
+	tagsAny   textinput.Model
+	tagsAll   textinput.Model
+	since     textinput.Model
+	until     textinput.Model
+	width     int
+	height    int
+	padX      int
+	padY      int
+	box       lipglossv2.Style
+	namespace string
+	focus     int
+}
+
+func newFilterModal(tagsAny, tagsAll, since, until, namespace string, termW, termH int) *filterModal {
+	m := &filterModal{
+		padX:      2,
+		padY:      1,
+		namespace: namespace,
+	}
+	m.tagsAny = newFilterInput("tags-any: ", "work,ginkgo", tagsAny)
+	m.tagsAll = newFilterInput("tags-all: ", "work,ginkgo", tagsAll)
+	m.since = newFilterInput("since: ", "2h | 2025-10-26T14:30", since)
+	m.until = newFilterInput("until: ", "3d | 2025-10-26", until)
+	m.setFocus(0)
+	m.resizeForTerm(termW, termH)
+	return m
+}
+
+func newFilterInput(prompt, placeholder, value string) textinput.Model {
+	ti := textinput.New()
+	ti.Prompt = prompt
+	ti.Placeholder = placeholder
+	ti.SetValue(value)
+	return ti
+}
+
+func (m *filterModal) resizeForTerm(termW, termH int) {
+	if termW <= 0 || termH <= 0 {
+		termW, termH = 80, 24
+	}
+	w := int(float64(termW) * 0.6)
+	if termW < 80 {
+		w = termW - 4
+	}
+	if w < 46 {
+		w = max(42, termW-2)
+	}
+	h := int(float64(termH) * 0.45)
+	if termH < 20 {
+		h = termH - 4
+	}
+	if h < 12 {
+		h = max(10, termH-1)
+	}
+	m.width, m.height = w, h
+	m.box = lipglossv2.NewStyle().
+		Width(w).
+		Height(h).
+		Padding(m.padY, m.padX).
+		Border(lipglossv2.RoundedBorder()).
+		BorderForeground(lipglossv2.Color("63"))
+
+	innerW := w - 2 - m.padX*2
+	minW := 12
+	if innerW < minW {
+		innerW = minW
+	}
+	m.tagsAny.Width = max(minW, innerW-lipgloss.Width(m.tagsAny.Prompt))
+	m.tagsAll.Width = max(minW, innerW-lipgloss.Width(m.tagsAll.Prompt))
+	m.since.Width = max(minW, innerW-lipgloss.Width(m.since.Prompt))
+	m.until.Width = max(minW, innerW-lipgloss.Width(m.until.Prompt))
+}
+
+func (m *filterModal) setFocus(idx int) {
+	m.focus = idx
+	inputs := []*textinput.Model{&m.tagsAny, &m.tagsAll, &m.since, &m.until}
+	for i, in := range inputs {
+		if i == idx {
+			in.Focus()
+		} else {
+			in.Blur()
+		}
+	}
+}
+
+func (m *filterModal) values() (string, string, string, string) {
+	return m.tagsAny.Value(), m.tagsAll.Value(), m.since.Value(), m.until.Value()
+}
+
+func (m *filterModal) update(msg tea.Msg) (*filterModal, tea.Cmd) {
+	switch x := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.resizeForTerm(x.Width, x.Height)
+		return m, nil
+	case tea.KeyMsg:
+		switch x.String() {
+		case "tab", "down":
+			m.setFocus((m.focus + 1) % 4)
+			return m, nil
+		case "shift+tab", "up":
+			m.setFocus((m.focus + 3) % 4)
+			return m, nil
+		}
+	}
+	var cmd tea.Cmd
+	switch m.focus {
+	case 0:
+		m.tagsAny, cmd = m.tagsAny.Update(msg)
+	case 1:
+		m.tagsAll, cmd = m.tagsAll.Update(msg)
+	case 2:
+		m.since, cmd = m.since.Update(msg)
+	case 3:
+		m.until, cmd = m.until.Update(msg)
+	}
+	return m, cmd
+}
+
+func (m *filterModal) View() string {
+	title := "Filters"
+	if strings.TrimSpace(m.namespace) != "" {
+		// TODO: Consider surfacing namespace in a dedicated header/footer region.
+		title = fmt.Sprintf("Filters (namespace: %s)", m.namespace)
+	}
+	header := lipgloss.NewStyle().Bold(true).Render(title)
+	help := lipgloss.NewStyle().Faint(true).Render("enter=apply • esc/ctrl+q=cancel • tab=next • ctrl+x=clear")
+	body := strings.Join([]string{
+		header,
+		"",
+		m.tagsAny.View(),
+		m.tagsAll.View(),
+		m.since.View(),
+		m.until.View(),
+		"",
+		help,
+	}, "\n")
+	return m.box.Render(body)
+}
+
+func (m *filterModal) Init() tea.Cmd                           { return nil }
+func (m *filterModal) Update(msg tea.Msg) (tea.Model, tea.Cmd) { return m.update(msg) }
+
 // showNoteResultMsg conveys the result of fetching a full note.
 type showNoteResultMsg struct {
 	entry *api.Entry
@@ -602,6 +822,13 @@ type editResultMsg struct {
 	dur     time.Duration
 }
 
+// listResultMsg conveys the outcome of reloading the list with filters applied.
+type listResultMsg struct {
+	entries []api.Entry
+	err     error
+	dur     time.Duration
+}
+
 // editPrepMsg signals that the editor should be launched.
 type editPrepMsg struct {
 	ctx        context.Context
@@ -633,6 +860,31 @@ func manualSyncCmd(ctx context.Context) tea.Cmd {
 			return manualSyncResultMsg{err: fmt.Errorf("sync failed: %s", resp.Msg), dur: time.Since(start)}
 		}
 		return manualSyncResultMsg{err: nil, dur: time.Since(start)}
+	}
+}
+
+func listCmd(ctx context.Context, namespace string, tagsAny, tagsAll []string, since, until string) tea.Cmd {
+	return func() tea.Msg {
+		start := time.Now()
+		sock, err := ipc.SocketPath()
+		if err != nil {
+			return listResultMsg{err: err, dur: time.Since(start)}
+		}
+		resp, err := ipc.Request(ctx, sock, ipc.Message{
+			Name:      "note.list",
+			Namespace: namespace,
+			TagsAny:   tagsAny,
+			TagsAll:   tagsAll,
+			Since:     since,
+			Until:     until,
+		})
+		if err != nil {
+			return listResultMsg{err: err, dur: time.Since(start)}
+		}
+		if !resp.OK {
+			return listResultMsg{err: fmt.Errorf("list failed: %s", resp.Msg), dur: time.Since(start)}
+		}
+		return listResultMsg{entries: resp.Entries, dur: time.Since(start)}
 	}
 }
 
@@ -801,6 +1053,21 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func splitCSV(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		t := strings.TrimSpace(p)
+		if t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 // columnsFor returns columns with or without titles based on headers flag.

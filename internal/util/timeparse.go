@@ -1,4 +1,4 @@
-package cli
+package util
 
 import (
 	"fmt"
@@ -53,8 +53,8 @@ func parseTimeExpr(s string, now time.Time) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("invalid time expression: %q", s)
 }
 
-// normalizeTimeRange parses since/until (empty allowed) and swaps if reversed.
-func normalizeTimeRange(since, until string) (string, string, error) {
+// NormalizeTimeRange parses since/until (empty allowed) and swaps if reversed.
+func NormalizeTimeRange(since, until string) (string, string, error) {
 	now := time.Now()
 
 	var s, u time.Time
