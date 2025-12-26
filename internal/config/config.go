@@ -104,6 +104,7 @@ func GetConfigOptions() []ConfigOption {
 		{Key: "sync.batch_size", Default: 256, Comment: "Batch size for remote sync operations"},
 		{Key: "remotes", Default: map[string]any{}, Comment: "Named remotes: [remotes.<name>] url/token/enabled"},
 		{Key: "export.page_size", Default: 200, Comment: "Batch size for list/search export paging"},
+		{Key: "tui.buffer_ratio", Default: 0.2, Comment: "Prefetch buffer ratio for TUI paging (0.1-0.3)"},
 
 		{Key: "notifications.enabled", Default: false, Comment: "Enable reminder notifications"},
 		{Key: "notifications.every_days", Default: 3, Comment: "Reminder cadence in days"},
