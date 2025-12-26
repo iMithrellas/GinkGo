@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/mithrel/ginkgo/internal/ipc"
+	"github.com/mithrel/ginkgo/internal/util"
 	"github.com/spf13/cobra"
 )
 
@@ -52,6 +53,27 @@ func newNoteCmd() *cobra.Command {
 			return nil, cobra.ShellCompDirectiveError
 		}
 		return resp.Namespaces, cobra.ShellCompDirectiveNoFileComp
+	})
+
+	_ = cmd.RegisterFlagCompletionFunc("tags", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		sock, err := ipc.SocketPath()
+		if err != nil {
+			return nil, cobra.ShellCompDirectiveError
+		}
+		resp, err := ipc.Request(cmd.Context(), sock, ipc.Message{
+			Name:      "tag.list",
+			Namespace: resolveNamespace(cmd),
+		})
+		if err != nil || !resp.OK {
+			return nil, cobra.ShellCompDirectiveError
+		}
+
+		tags := make([]string, len(resp.Tags))
+		for i, t := range resp.Tags {
+			tags[i] = t.Tag
+		}
+
+		return util.ScoreCompletions(toComplete, tags, 5), cobra.ShellCompDirectiveNoFileComp
 	})
 
 	return cmd

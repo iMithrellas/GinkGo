@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/mithrel/ginkgo/internal/ipc"
-	"github.com/sahilm/fuzzy"
+	"github.com/mithrel/ginkgo/internal/util"
 	"github.com/spf13/cobra"
 )
 
@@ -36,21 +36,16 @@ func newNoteCompleteTagsCmd() *cobra.Command {
 				return fmt.Errorf("daemon error: %s", resp.Msg)
 			}
 
-			// Extract tag strings for fuzzy matching
+			// Extract tag strings for scoring
 			tags := make([]string, len(resp.Tags))
 			for i, t := range resp.Tags {
 				tags[i] = t.Tag
 			}
 
-			matches := fuzzy.Find(input, tags)
+			matches := util.ScoreCompletions(input, tags, 20)
 
-			limit := 20
-			if len(matches) < limit {
-				limit = len(matches)
-			}
-
-			for i := 0; i < limit; i++ {
-				fmt.Println(matches[i].Str)
+			for _, m := range matches {
+				fmt.Println(m)
 			}
 
 			return nil
