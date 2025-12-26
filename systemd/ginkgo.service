@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=%h/.local/bin/ginkgo-cli daemon
+ExecStart=%h/.local/bin/ginkgod
 Restart=on-failure
 RestartSec=2
 Environment=GODEBUG=madvdontneed=1
