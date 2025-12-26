@@ -14,6 +14,7 @@ func newNoteSearchCmd() *cobra.Command {
 	var filters FilterOpts
 	var outputMode string
 	var noHeaders bool
+	var pageSize int
 	cmd := &cobra.Command{
 		Use:   "search",
 		Short: "Search notes (fts|regex)",
@@ -25,6 +26,7 @@ func newNoteSearchCmd() *cobra.Command {
 		Short: "Full-text style search",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			app := getApp(cmd)
 			q := args[0]
 			sinceStr, untilStr, err := util.NormalizeTimeRange(filters.Since, filters.Until)
 			if err != nil {
@@ -38,7 +40,10 @@ func newNoteSearchCmd() *cobra.Command {
 				return err
 			}
 
-			entries, err := fetchAllEntries(cmd.Context(), sock, 200, func(cursor string) ipc.Message {
+			if pageSize <= 0 {
+				pageSize = app.Cfg.GetInt("export.page_size")
+			}
+			entries, err := fetchAllEntries(cmd.Context(), sock, pageSize, func(cursor string) ipc.Message {
 				return ipc.Message{
 					Name:      "note.search.fts",
 					Title:     q,
@@ -67,6 +72,7 @@ func newNoteSearchCmd() *cobra.Command {
 		Short: "Regex search (with FTS narrowing)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			app := getApp(cmd)
 			pattern := args[0]
 			sinceStr, untilStr, err := util.NormalizeTimeRange(filters.Since, filters.Until)
 			if err != nil {
@@ -78,7 +84,10 @@ func newNoteSearchCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			entries, err := fetchAllEntries(cmd.Context(), sock, 200, func(cursor string) ipc.Message {
+			if pageSize <= 0 {
+				pageSize = app.Cfg.GetInt("export.page_size")
+			}
+			entries, err := fetchAllEntries(cmd.Context(), sock, pageSize, func(cursor string) ipc.Message {
 				return ipc.Message{
 					Name:      "note.search.regex",
 					Title:     pattern,
@@ -104,6 +113,7 @@ func newNoteSearchCmd() *cobra.Command {
 	cmd.AddCommand(fts, rx)
 	addFilterFlags(cmd, &filters)
 	cmd.PersistentFlags().StringVar(&outputMode, "output", "plain", "output mode: plain|pretty|json")
+	cmd.PersistentFlags().IntVar(&pageSize, "page-size", 0, "page size for export paging (0 uses config)")
 	_ = cmd.RegisterFlagCompletionFunc("output", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return []string{"plain", "pretty", "json"}, cobra.ShellCompDirectiveNoFileComp
 	})
