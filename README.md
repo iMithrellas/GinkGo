@@ -34,9 +34,8 @@ Entries can be created as quick one-liners or rich Markdown notes via `$EDITOR`.
 - Optional namespaces (e.g., `work`, `personal`, `ideas`).
 
 ### Search & Rendering
-- Full-text and regex search with filters (`--in body|title|tags`, date ranges).
-- Highlighted matches, context lines, count mode.
-- Markdown rendering in the terminal (currently minimal; Glamour-based theming planned).
+- Full-text and regex search with date range and tag filters.
+- Markdown rendering in the terminal for single-entry “pretty” output (Glamour-based).
 - Export entries to Markdown, JSON, or NDJSON.
 - Optional interactive list table using Bubble Tea (`ginkgo-cli note list --bubble`).
 
@@ -52,7 +51,6 @@ Entries can be created as quick one-liners or rich Markdown notes via `$EDITOR`.
 
 ### Storage & Backends
 - SQLite (WAL) default for local use.
-- Postgres backend (optional) for remote sync/multi-device deployments.
 
 ---
 
@@ -72,6 +70,19 @@ GinkGo supports dynamic shell completions for namespaces and tags, including fuz
 ginkgo-cli completion generate bash
 ginkgo-cli completion generate zsh fish
 ```
+
+## Make Targets
+
+- `make build`: build `ginkgo-cli` into `./build/`
+- `make install`: build + install binary + install man pages
+- `make install-binary`: build output symlinked to `~/.local/bin/ginkgo-cli` and `~/.local/bin/ginkgod`
+- `make install-service`: install the systemd user service file
+- `make reload-service`: reload systemd user daemon and restart ginkgo service
+- `make run`: build, install, and restart the service (one-shot)
+- `make dev`: alias for `make run`
+- `make docs`: generate Markdown + man pages
+- `make install-man`: install man pages
+- `make uninstall-man`: remove man pages
 
 ## QUIC (Experimental)
 
@@ -144,15 +155,15 @@ docker run --rm \
 
 ## Bubble UI
 
-`note list` supports an interactive table powered by Bubble Tea. It is enabled by default (no build tags required):
+`note list` supports an interactive table powered by Bubble Tea. It is enabled via `--output=tui` (no build tags required):
 
 ```bash
 make build
-ginkgo-cli note list --bubble
+ginkgo-cli note list --output=tui
 ```
 
 - The first build will fetch Charmbracelet deps automatically via Go modules.
-- Use `--bubble` for the interactive UI, or omit it for plain tab-separated output.
+- Use `--output=tui` for the interactive UI, or omit it for plain tab-separated output.
 
 ## Roadmap
 
@@ -163,8 +174,6 @@ Active roadmap is tracked in GitHub Issues:
 Upcoming highlights from the roadmap:
 
 - Glamour-based Markdown rendering for note bodies (themeable).
-- `note list --json` machine-readable output.
-- Time range filters for list/search (absolute timestamps and relative expressions like `-1d`, `-1d to -3d`).
 - Background sync service and export commands.
 - `note delete` and additional quality-of-life improvements.
 
