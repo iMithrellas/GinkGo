@@ -43,6 +43,7 @@ func NewRootCmd() *cobra.Command {
 			if err := config.Load(cmd.Context(), v); err != nil {
 				return err
 			}
+			applyConfigFlagOverrides(cmd, v, nil)
 			// Wire up the app and stash it in context for subcommands.
 			app, err := wire.BuildApp(cmd.Context(), v)
 			if err != nil {

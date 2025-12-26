@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/mithrel/ginkgo/internal/config"
 	"github.com/spf13/cobra"
@@ -42,7 +41,7 @@ func newConfigGenerateCmd() *cobra.Command {
 				return err
 			}
 			defer f.Close()
-			if _, err := f.WriteString(renderDefaultTOML()); err != nil {
+			if _, err := f.WriteString(config.RenderDefaultTOML()); err != nil {
 				return err
 			}
 			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Wrote %s\n", out)
@@ -51,57 +50,4 @@ func newConfigGenerateCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&out, "output", "o", "", "output path for config.toml")
 	return cmd
-}
-
-func renderDefaultTOML() string {
-	var b strings.Builder
-	b.WriteString("# GinkGo configuration (TOML)\n")
-	opts := config.GetConfigOptions()
-	// flat keys
-	for _, o := range opts {
-		if strings.Contains(o.Key, ".") {
-			continue
-		}
-		if o.Comment != "" {
-			b.WriteString("# " + o.Comment + "\n")
-		}
-		switch v := o.Value.(type) {
-		case string:
-			b.WriteString(fmt.Sprintf("%s = \"%s\"\n\n", o.Key, v))
-		case bool, int, int64:
-			b.WriteString(fmt.Sprintf("%s = %v\n\n", o.Key, v))
-		case []string:
-			b.WriteString(fmt.Sprintf("%s = [", o.Key))
-			for i, s := range v {
-				if i > 0 {
-					b.WriteString(", ")
-				}
-				b.WriteString(fmt.Sprintf("\"%s\"", s))
-			}
-			b.WriteString("]\n\n")
-		}
-	}
-	// notifications
-	b.WriteString("[notifications]\n")
-	for _, o := range opts {
-		if strings.HasPrefix(o.Key, "notifications.") {
-			k := strings.TrimPrefix(o.Key, "notifications.")
-			if o.Comment != "" {
-				b.WriteString("# " + o.Comment + "\n")
-			}
-			b.WriteString(fmt.Sprintf("%s = %v\n", k, o.Value))
-		}
-	}
-	b.WriteString("\n[editor]\n")
-	for _, o := range opts {
-		if strings.HasPrefix(o.Key, "editor.") {
-			k := strings.TrimPrefix(o.Key, "editor.")
-			if o.Comment != "" {
-				b.WriteString("# " + o.Comment + "\n")
-			}
-			b.WriteString(fmt.Sprintf("%s = %v\n", k, o.Value))
-		}
-	}
-	b.WriteString("\n")
-	return b.String()
 }
