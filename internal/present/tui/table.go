@@ -87,6 +87,8 @@ type model struct {
 	namespace    string
 	nextCursor   string
 	prevCursor   string
+	canFetchPrev bool
+	lastPrevSent string
 	pageSize     int
 	bufferSize   int
 	bufferRatio  float64
@@ -102,6 +104,8 @@ const (
 	listModeAppend
 	listModePrepend
 )
+
+const scrollOffsetRows = 2
 
 func (m *model) initTable() {
 	cols := m.columnsFor(m.headers, 12, 40, 20, 19)
@@ -303,6 +307,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = "Filters applied"
 			m.nextCursor = msg.page.Next
 			m.prevCursor = msg.page.Prev
+			m.canFetchPrev = msg.page.Prev != ""
+			m.lastPrevSent = ""
 			m.loaded = true
 		case listModeAppend:
 			if len(msg.entries) == 0 {
@@ -321,11 +327,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.entries = append(msg.entries, m.entries...)
 				m.table.SetCursor(m.table.Cursor() + len(msg.entries))
-				if msg.page.Prev != "" {
-					m.prevCursor = msg.page.Prev
-				}
 				m.status = "Loaded newer"
 			}
+			m.prevCursor = msg.page.Prev
+			m.canFetchPrev = msg.page.Prev != ""
 			m.loadingPrev = false
 		}
 		m.updateRows()
@@ -476,6 +481,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	var cmd tea.Cmd
 	m.table, cmd = m.table.Update(msg)
+	if prevCmd := m.maybeFetchPrev(); prevCmd != nil {
+		m.maybePrune()
+		if nextCmd := m.maybeFetchNext(); nextCmd != nil {
+			return m, tea.Batch(cmd, prevCmd, nextCmd)
+		}
+		return m, tea.Batch(cmd, prevCmd)
+	}
 	m.maybePrune()
 	if nextCmd := m.maybeFetchNext(); nextCmd != nil {
 		return m, tea.Batch(cmd, nextCmd)
@@ -605,6 +617,16 @@ func clampBufferRatio(r float64) float64 {
 	return r
 }
 
+func (m *model) prefetchThreshold() int {
+	if m.bufferSize == 0 {
+		return 0
+	}
+	if scrollOffsetRows > m.bufferSize {
+		return scrollOffsetRows
+	}
+	return m.bufferSize
+}
+
 func (m *model) maybeFetchNext() tea.Cmd {
 	if m.showModal || m.showFilter {
 		return nil
@@ -615,14 +637,37 @@ func (m *model) maybeFetchNext() tea.Cmd {
 	if len(m.entries) == 0 {
 		return nil
 	}
-	if m.bufferSize == 0 {
+	threshold := m.prefetchThreshold()
+	if threshold == 0 {
 		return nil
 	}
-	if m.table.Cursor() < len(m.entries)-1-m.bufferSize {
+	if m.table.Cursor() < len(m.entries)-1-threshold {
 		return nil
 	}
 	m.loadingNext = true
 	return listCmd(m.ctx, m.namespace, splitCSV(m.tagsAny), splitCSV(m.tagsAll), m.since, m.until, m.pageSize, m.nextCursor, false, listModeAppend)
+}
+
+func (m *model) maybeFetchPrev() tea.Cmd {
+	if m.showModal || m.showFilter {
+		return nil
+	}
+	if m.loadingPrev || !m.canFetchPrev || m.prevCursor == "" {
+		return nil
+	}
+	if m.prevCursor == m.lastPrevSent {
+		return nil
+	}
+	threshold := m.prefetchThreshold()
+	if len(m.entries) == 0 || threshold == 0 {
+		return nil
+	}
+	if m.table.Cursor() > threshold {
+		return nil
+	}
+	m.loadingPrev = true
+	m.lastPrevSent = m.prevCursor
+	return listCmd(m.ctx, m.namespace, splitCSV(m.tagsAny), splitCSV(m.tagsAll), m.since, m.until, m.pageSize, m.prevCursor, true, listModePrepend)
 }
 
 func (m *model) maybePrune() {
@@ -633,7 +678,8 @@ func (m *model) maybePrune() {
 		return
 	}
 	cur := m.table.Cursor()
-	drop := cur - m.bufferSize
+	viewTop := max(0, cur-m.table.Height())
+	drop := viewTop - m.bufferSize
 	if drop <= 0 {
 		return
 	}
@@ -642,10 +688,9 @@ func (m *model) maybePrune() {
 	}
 	m.entries = m.entries[drop:]
 	m.table.SetCursor(cur - drop)
+	m.prevCursor = encodeCursor(m.entries[0])
+	m.canFetchPrev = true
 	m.updateRows()
-	if len(m.entries) > 0 {
-		m.prevCursor = encodeCursor(m.entries[0])
-	}
 }
 
 // columnsFor returns columns with or without titles based on headers flag.

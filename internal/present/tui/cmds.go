@@ -114,6 +114,9 @@ func manualSyncCmd(ctx context.Context) tea.Cmd {
 func listCmd(ctx context.Context, namespace string, tagsAny, tagsAll []string, since, until string, limit int, cursor string, reverse bool, mode listMode) tea.Cmd {
 	return func() tea.Msg {
 		start := time.Now()
+		if limit <= 0 {
+			limit = 50
+		}
 		sock, err := ipc.SocketPath()
 		if err != nil {
 			return listResultMsg{err: err, dur: time.Since(start), mode: mode}
