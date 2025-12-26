@@ -86,11 +86,14 @@ func Request(ctx context.Context, path string, m Message) (Response, error) {
 			r.Tags = append(r.Tags, api.TagStat{Tag: t.GetTag(), Count: int(t.GetCount()), Description: t.GetDescription()})
 		}
 	}
+	if presp.Page != nil {
+		r.Page = api.Page{Next: presp.Page.GetNext(), Prev: presp.Page.GetPrev()}
+	}
 	return r, nil
 }
 
 func toPbListFilter(m Message) *pb.ListFilter {
-	lf := &pb.ListFilter{Namespace: m.Namespace, TagsAny: m.TagsAny, TagsAll: m.TagsAll}
+	lf := &pb.ListFilter{Namespace: m.Namespace, TagsAny: m.TagsAny, TagsAll: m.TagsAll, Limit: int32(m.Limit), Cursor: m.Cursor, Reverse: m.Reverse}
 	if ts := parseRFC3339OrEmpty(m.Since); !ts.IsZero() {
 		lf.Since = timestamppb.New(ts)
 	}

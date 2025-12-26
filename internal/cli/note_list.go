@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -15,10 +16,12 @@ func newNoteListCmd() *cobra.Command {
 	var filters FilterOpts
 	var outputMode string
 	var noHeaders bool
+	var pageSize int
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List notes",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			app := getApp(cmd)
 			sinceStr, untilStr, err := util.NormalizeTimeRange(filters.Since, filters.Until)
 			if err != nil {
 				return err
@@ -31,22 +34,14 @@ func newNoteListCmd() *cobra.Command {
 				return err
 			}
 
-			req := ipc.Message{
-				Name:      "note.list",
-				Namespace: resolveNamespace(cmd),
-				TagsAny:   any,
-				TagsAll:   all,
-				Since:     sinceStr, // RFC3339 string or ""
-				Until:     untilStr, // RFC3339 string or ""
-			}
-
-			start := time.Now()
-			resp, err := ipc.Request(cmd.Context(), sock, req)
-			dur := time.Since(start)
-			if err != nil {
-				return err
+			if pageSize <= 0 {
+				pageSize = app.Cfg.GetInt("export.page_size")
 			}
 			mode, ok := present.ParseMode(strings.ToLower(outputMode))
+			if !ok {
+				return fmt.Errorf("invalid --output: %s", outputMode)
+			}
+			dur := time.Duration(0)
 			if !ok {
 				return fmt.Errorf("invalid --output: %s", outputMode)
 			}
@@ -61,12 +56,29 @@ func newNoteListCmd() *cobra.Command {
 				FilterSince:     filters.Since,
 				FilterUntil:     filters.Until,
 				Namespace:       resolveNamespace(cmd),
+				TUIBufferRatio:  app.Cfg.GetFloat64("tui.buffer_ratio"),
 			}
-			return present.RenderEntries(cmd.Context(), cmd.OutOrStdout(), resp.Entries, opts)
+			if mode == present.ModeTUI {
+				return renderEntries(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), nil, opts)
+			}
+			return withPager(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), func(w io.Writer) error {
+				writer := newEntryStreamWriter(w, opts)
+				return streamEntries(cmd.Context(), sock, pageSize, func(cursor string) ipc.Message {
+					return ipc.Message{
+						Name:      "note.list",
+						Namespace: resolveNamespace(cmd),
+						TagsAny:   any,
+						TagsAll:   all,
+						Since:     sinceStr, // RFC3339 string or ""
+						Until:     untilStr, // RFC3339 string or ""
+					}
+				}, writer)
+			})
 		},
 	}
 	addFilterFlags(cmd, &filters)
 	cmd.Flags().StringVar(&outputMode, "output", "plain", "output mode: plain|pretty|json|tui")
+	cmd.Flags().IntVar(&pageSize, "page-size", 0, "page size for export paging (0 uses config)")
 	_ = cmd.RegisterFlagCompletionFunc("output", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return []string{"plain", "pretty", "json", "tui"}, cobra.ShellCompDirectiveNoFileComp
 	})

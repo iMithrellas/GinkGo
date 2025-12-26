@@ -28,6 +28,9 @@ message ListFilter {
   repeated string tags_all = 3;
   google.protobuf.Timestamp since = 4;
   google.protobuf.Timestamp until = 5;
+  int32 limit = 6;
+  string cursor = 7;
+  bool reverse = 8;
 }
 
 message SearchFTS { string query = 1; ListFilter filter = 2; }
@@ -67,6 +70,12 @@ message Response {
   repeated QueueRemote queue = 5;
   repeated string namespaces = 6;
   repeated TagStat tags = 7;
+  Page page = 8;
+}
+
+message Page {
+  string next = 1;
+  string prev = 2;
 }
 
 message RepEvent {

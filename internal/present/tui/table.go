@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"reflect"
 	"strings"
 	"time"
+	"unsafe"
 
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
@@ -21,7 +23,7 @@ import (
 )
 
 // RenderTable opens an interactive Bubble Tea table to browse entries.
-func RenderTable(ctx context.Context, entries []api.Entry, headers bool, initialStatus string, initialDuration time.Duration, filterTagsAny, filterTagsAll, filterSince, filterUntil, namespace string) error {
+func RenderTable(ctx context.Context, entries []api.Entry, headers bool, initialStatus string, initialDuration time.Duration, filterTagsAny, filterTagsAll, filterSince, filterUntil, namespace string, bufferRatio float64) error {
 	m := model{
 		ctx:          ctx,
 		entries:      entries,
@@ -35,6 +37,7 @@ func RenderTable(ctx context.Context, entries []api.Entry, headers bool, initial
 		since:        filterSince,
 		until:        filterUntil,
 		namespace:    namespace,
+		bufferRatio:  bufferRatio,
 	}
 	m.initTable()
 
@@ -84,13 +87,42 @@ type model struct {
 	since        string
 	until        string
 	namespace    string
+	nextCursor   string
+	prevCursor   string
+	canFetchPrev bool
+	lastPrevSent string
+	pageSize     int
+	bufferSize   int
+	bufferRatio  float64
+	loaded       bool
+	loadingNext  bool
+	loadingPrev  bool
 }
+
+type listMode int
+
+const (
+	listModeReplace listMode = iota
+	listModeAppend
+	listModePrepend
+)
+
+const scrollOffsetRows = 2
 
 func (m *model) initTable() {
 	cols := m.columnsFor(m.headers, 12, 40, 20, 19)
 	m.table = table.New(table.WithColumns(cols), table.WithFocused(true))
 	m.titleWidth = 40
 	m.tagsWidth = 20
+	if m.pageSize == 0 {
+		m.pageSize = 50
+	}
+	if m.bufferRatio == 0 {
+		m.bufferRatio = 0.2
+	}
+	m.bufferRatio = clampBufferRatio(m.bufferRatio)
+	m.updateBufferSize()
+	m.loaded = len(m.entries) > 0
 	m.updateRows()
 	m.applyStyles()
 }
@@ -262,14 +294,57 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.status = fmt.Sprintf("Filter failed: %v", msg.err)
 			m.lastDuration = msg.dur
+			if msg.mode == listModeAppend {
+				m.loadingNext = false
+			}
+			if msg.mode == listModePrepend {
+				m.loadingPrev = false
+			}
 			return m, nil
 		}
-		m.entries = msg.entries
-		m.updateRows()
-		if len(m.entries) > 0 {
+		switch msg.mode {
+		case listModeReplace:
+			m.entries = msg.entries
 			m.table.SetCursor(0)
+			m.status = "Filters applied"
+			m.nextCursor = msg.page.Next
+			m.prevCursor = msg.page.Prev
+			m.canFetchPrev = msg.page.Prev != ""
+			m.lastPrevSent = ""
+			m.loaded = true
+		case listModeAppend:
+			if len(msg.entries) == 0 {
+				m.nextCursor = ""
+			} else {
+				m.entries = append(m.entries, msg.entries...)
+				if msg.page.Next != "" {
+					m.nextCursor = msg.page.Next
+				}
+				m.status = "Loaded more"
+			}
+			m.loadingNext = false
+		case listModePrepend:
+			if len(msg.entries) == 0 {
+				m.prevCursor = ""
+			} else {
+				added := len(msg.entries)
+				oldCursor := m.table.Cursor()
+				oldYOffset := tableYOffset(&m.table)
+				m.entries = append(msg.entries, m.entries...)
+				m.table.SetCursor(oldCursor + added)
+				newYOffset := oldYOffset + added
+				maxYOffset := m.table.Height()
+				if newYOffset > maxYOffset {
+					newYOffset = maxYOffset
+				}
+				setTableYOffset(&m.table, newYOffset)
+				m.status = "Loaded newer"
+			}
+			m.prevCursor = msg.page.Prev
+			m.canFetchPrev = msg.page.Prev != ""
+			m.loadingPrev = false
 		}
-		m.status = "Filters applied"
+		m.updateRows()
 		m.lastDuration = msg.dur
 		return m, nil
 	case tea.WindowSizeMsg:
@@ -287,6 +362,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.applyLayout()
 		m.updateRows()
+		if !m.loaded && m.pageSize > 0 {
+			m.status = "Loading..."
+			return m, listCmd(m.ctx, m.namespace, splitCSV(m.tagsAny), splitCSV(m.tagsAll), m.since, m.until, m.pageSize, "", false, listModeReplace)
+		}
 		return m, nil
 	case tea.KeyMsg:
 		if m.showModal && m.modal != nil {
@@ -312,7 +391,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.until = ""
 				m.showFilter = false
 				m.status = "Clearing filters..."
-				return m, listCmd(m.ctx, m.namespace, nil, nil, "", "")
+				m.nextCursor = ""
+				m.prevCursor = ""
+				m.loaded = false
+				return m, listCmd(m.ctx, m.namespace, nil, nil, "", "", m.pageSize, "", false, listModeReplace)
 			case "enter":
 				tagsAny, tagsAll, since, until := m.filterModal.values()
 				normalizedSince, normalizedUntil, err := util.NormalizeTimeRange(since, until)
@@ -327,7 +409,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.until = until
 				m.showFilter = false
 				m.status = "Filtering..."
-				return m, listCmd(m.ctx, m.namespace, splitCSV(tagsAny), splitCSV(tagsAll), normalizedSince, normalizedUntil)
+				m.nextCursor = ""
+				m.prevCursor = ""
+				m.loaded = false
+				return m, listCmd(m.ctx, m.namespace, splitCSV(tagsAny), splitCSV(tagsAll), normalizedSince, normalizedUntil, m.pageSize, "", false, listModeReplace)
 			default:
 				var cmd tea.Cmd
 				m.filterModal, cmd = m.filterModal.update(msg)
@@ -407,6 +492,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	var cmd tea.Cmd
 	m.table, cmd = m.table.Update(msg)
+	if prevCmd := m.maybeFetchPrev(); prevCmd != nil {
+		m.maybePrune()
+		if nextCmd := m.maybeFetchNext(); nextCmd != nil {
+			return m, tea.Batch(cmd, prevCmd, nextCmd)
+		}
+		return m, tea.Batch(cmd, prevCmd)
+	}
+	m.maybePrune()
+	if nextCmd := m.maybeFetchNext(); nextCmd != nil {
+		return m, tea.Batch(cmd, nextCmd)
+	}
 	return m, cmd
 }
 
@@ -461,6 +557,8 @@ func (m *model) applyLayout() {
 	h := max(6, m.height-1)
 	m.table.SetHeight(h)
 	m.table.SetWidth(m.width)
+	m.pageSize = max(5, m.table.Height())
+	m.updateBufferSize()
 	pad := 4
 	avail := m.width - pad
 	if avail < 40 {
@@ -510,6 +608,134 @@ func (m *model) applyStyles() {
 		Background(lipgloss.Color("57")).
 		Bold(false)
 	m.table.SetStyles(s)
+}
+
+func (m *model) updateBufferSize() {
+	if m.pageSize <= 0 {
+		m.bufferSize = 0
+		return
+	}
+	m.bufferSize = max(1, int(float64(m.pageSize)*m.bufferRatio))
+}
+
+func clampBufferRatio(r float64) float64 {
+	if r < 0.1 {
+		return 0.1
+	}
+	if r > 0.3 {
+		return 0.3
+	}
+	return r
+}
+
+func (m *model) prefetchThreshold() int {
+	if m.bufferSize == 0 {
+		return 0
+	}
+	if scrollOffsetRows > m.bufferSize {
+		return scrollOffsetRows
+	}
+	return m.bufferSize
+}
+
+func (m *model) maybeFetchNext() tea.Cmd {
+	if m.showModal || m.showFilter {
+		return nil
+	}
+	if m.loadingNext || m.nextCursor == "" {
+		return nil
+	}
+	if len(m.entries) == 0 {
+		return nil
+	}
+	threshold := m.prefetchThreshold()
+	if threshold == 0 {
+		return nil
+	}
+	if m.table.Cursor() < len(m.entries)-1-threshold {
+		return nil
+	}
+	m.loadingNext = true
+	return listCmd(m.ctx, m.namespace, splitCSV(m.tagsAny), splitCSV(m.tagsAll), m.since, m.until, m.pageSize, m.nextCursor, false, listModeAppend)
+}
+
+func (m *model) maybeFetchPrev() tea.Cmd {
+	if m.showModal || m.showFilter {
+		return nil
+	}
+	if m.loadingPrev || !m.canFetchPrev || m.prevCursor == "" {
+		return nil
+	}
+	if m.prevCursor == m.lastPrevSent {
+		return nil
+	}
+	threshold := m.prefetchThreshold()
+	if len(m.entries) == 0 || threshold == 0 {
+		return nil
+	}
+	if m.table.Cursor() > threshold {
+		return nil
+	}
+	m.loadingPrev = true
+	m.lastPrevSent = m.prevCursor
+	return listCmd(m.ctx, m.namespace, splitCSV(m.tagsAny), splitCSV(m.tagsAll), m.since, m.until, m.pageSize, m.prevCursor, true, listModePrepend)
+}
+
+func (m *model) maybePrune() {
+	if m.bufferSize == 0 || len(m.entries) == 0 {
+		return
+	}
+	if m.loadingPrev {
+		return
+	}
+	cur := m.table.Cursor()
+	viewTop := max(0, cur-m.table.Height())
+	drop := viewTop - m.bufferSize
+	if drop <= 0 {
+		return
+	}
+	if drop >= len(m.entries) {
+		return
+	}
+	m.entries = m.entries[drop:]
+	m.table.SetCursor(cur - drop)
+	m.prevCursor = encodeCursor(m.entries[0])
+	m.canFetchPrev = true
+	m.updateRows()
+}
+
+// HACK: This relies on unexported fields in bubbles/table. Will break if internal structure changes.
+// tableYOffset reads the internal viewport offset so we can anchor the visible rows
+// when we prepend. table.Model doesn't expose this, so we use unsafe reflection to
+// avoid a visible jump; the tradeoff is relying on unexported fields in bubbles/table.
+// TODO: Create an issue for this upstream.
+func tableYOffset(t *table.Model) int {
+	v := reflect.ValueOf(t).Elem().FieldByName("viewport")
+	if !v.IsValid() {
+		return 0
+	}
+	v = reflect.NewAt(v.Type(), unsafe.Pointer(v.UnsafeAddr())).Elem()
+	y := v.FieldByName("YOffset")
+	if !y.IsValid() {
+		return 0
+	}
+	y = reflect.NewAt(y.Type(), unsafe.Pointer(y.UnsafeAddr())).Elem()
+	return int(y.Int())
+}
+
+// setTableYOffset writes the internal viewport offset; see tableYOffset for rationale.
+func setTableYOffset(t *table.Model, y int) {
+	v := reflect.ValueOf(t).Elem().FieldByName("viewport")
+	if !v.IsValid() {
+		return
+	}
+	v = reflect.NewAt(v.Type(), unsafe.Pointer(v.UnsafeAddr())).Elem()
+	yo := v.FieldByName("YOffset")
+	if !yo.IsValid() {
+		return
+	}
+	yo = reflect.NewAt(yo.Type(), unsafe.Pointer(yo.UnsafeAddr())).Elem()
+	yo.SetInt(int64(y))
 }
 
 // columnsFor returns columns with or without titles based on headers flag.
