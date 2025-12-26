@@ -66,6 +66,8 @@ To avoid confusion with the Go testing framework of the same name, the binary/pa
 
 ## Shell Completions
 
+GinkGo supports dynamic shell completions for namespaces and tags, including fuzzy matching for tag lists (e.g., typing `proj` suggests `project`). It works for comma-separated lists too (e.g. `work,proj` -> `work,project`).
+
 ```bash
 ginkgo-cli completion generate bash
 ginkgo-cli completion generate zsh fish
