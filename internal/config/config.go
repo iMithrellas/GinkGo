@@ -13,7 +13,7 @@ import (
 // This centralizes default values and descriptions in one place.
 func applyDefaults(v *viper.Viper) {
 	for _, o := range GetConfigOptions() {
-		v.SetDefault(o.Key, o.Value)
+		v.SetDefault(o.Key, o.Default)
 	}
 }
 
@@ -69,9 +69,6 @@ func Load(ctx context.Context, v *viper.Viper) error {
 	return nil
 }
 
-// No typed accessors: call viper directly in callers, e.g.,
-// v.GetString("namespace"), v.GetStringSlice("default_tags").
-
 // defaultDataDir resolves default data dir: $XDG_DATA_HOME/ginkgo or ~/.local/share/ginkgo
 func defaultDataDir() string {
 	if xdg := os.Getenv("XDG_DATA_HOME"); xdg != "" {
@@ -83,7 +80,7 @@ func defaultDataDir() string {
 
 type ConfigOption struct {
 	Key     string
-	Value   any
+	Default any
 	Comment string
 }
 
@@ -97,14 +94,19 @@ func DefaultDBPath() string {
 func GetConfigOptions() []ConfigOption {
 	return []ConfigOption{
 		// Core paths and conventions
-		{Key: "data_dir", Value: defaultDataDir(), Comment: "Directory for local state; DB is data_dir/ginkgo.db"},
-		{Key: "default_namespace", Value: "default", Comment: "Default namespace used when none is specified"},
-		{Key: "namespace", Value: "", Comment: "Current namespace; if empty, falls back to default_namespace"},
-		{Key: "default_tags", Value: []string{}, Comment: "Tags applied when creating a note without explicit tags"},
+		{Key: "data_dir", Default: defaultDataDir(), Comment: "Directory for local state; DB is data_dir/ginkgo.db"},
+		{Key: "default_namespace", Default: "default", Comment: "Default namespace used when none is specified"},
+		{Key: "namespace", Default: "", Comment: "Current namespace; if empty, falls back to default_namespace"},
+		{Key: "default_tags", Default: []string{}, Comment: "Tags applied when creating a note without explicit tags"},
 
-		{Key: "notifications.enabled", Value: false, Comment: "Enable reminder notifications"},
-		{Key: "notifications.every_days", Value: 3, Comment: "Reminder cadence in days"},
-		{Key: "editor.delete_empty", Value: true, Comment: "Delete note if editor exits with no content"},
+		{Key: "http_addr", Default: ":8080", Comment: "HTTP listen address for daemon/replication server"},
+		{Key: "auth.token", Default: "", Comment: "Shared token required by replication server"},
+		{Key: "sync.batch_size", Default: 256, Comment: "Batch size for remote sync operations"},
+		{Key: "remotes", Default: map[string]any{}, Comment: "Named remotes: [remotes.<name>] url/token/enabled"},
+
+		{Key: "notifications.enabled", Default: false, Comment: "Enable reminder notifications"},
+		{Key: "notifications.every_days", Default: 3, Comment: "Reminder cadence in days"},
+		{Key: "editor.delete_empty", Default: true, Comment: "Delete note if editor exits with no content"},
 	}
 }
 

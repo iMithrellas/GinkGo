@@ -27,12 +27,12 @@ func newServerCmd() *cobra.Command {
 			if err := config.Load(cmd.Context(), v); err != nil {
 				return err
 			}
+			applyConfigFlagOverrides(cmd, v, map[string]string{
+				"listen": "http_addr",
+			})
 			app, err := wire.BuildApp(cmd.Context(), v)
 			if err != nil {
 				return err
-			}
-			if listen != "" {
-				v.Set("http_addr", listen)
 			}
 			if strings.TrimSpace(v.GetString("auth.token")) == "" {
 				return fmt.Errorf("auth.token is required for the replication server")
