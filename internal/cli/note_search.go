@@ -38,17 +38,17 @@ func newNoteSearchCmd() *cobra.Command {
 				return err
 			}
 
-			req := ipc.Message{
-				Name:      "note.search.fts",
-				Title:     q,
-				Namespace: resolveNamespace(cmd),
-				TagsAny:   any,
-				TagsAll:   all,
-				Since:     sinceStr, // RFC3339 or ""
-				Until:     untilStr, // RFC3339 or ""
-			}
-
-			resp, err := ipc.Request(cmd.Context(), sock, req)
+			entries, err := fetchAllEntries(cmd.Context(), sock, 200, func(cursor string) ipc.Message {
+				return ipc.Message{
+					Name:      "note.search.fts",
+					Title:     q,
+					Namespace: resolveNamespace(cmd),
+					TagsAny:   any,
+					TagsAll:   all,
+					Since:     sinceStr, // RFC3339 or ""
+					Until:     untilStr, // RFC3339 or ""
+				}
+			})
 			if err != nil {
 				return err
 			}
@@ -57,7 +57,7 @@ func newNoteSearchCmd() *cobra.Command {
 				return fmt.Errorf("invalid --output: %s", outputMode)
 			}
 			opts := present.Options{Mode: mode, JSONIndent: false, Headers: !noHeaders}
-			return present.RenderEntries(cmd.Context(), cmd.OutOrStdout(), resp.Entries, opts)
+			return present.RenderEntries(cmd.Context(), cmd.OutOrStdout(), entries, opts)
 		},
 	}
 
@@ -78,17 +78,17 @@ func newNoteSearchCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			req := ipc.Message{
-				Name:      "note.search.regex",
-				Title:     pattern,
-				Namespace: resolveNamespace(cmd),
-				TagsAny:   any,
-				TagsAll:   all,
-				Since:     sinceStr, // RFC3339 or ""
-				Until:     untilStr, // RFC3339 or ""
-			}
-
-			resp, err := ipc.Request(cmd.Context(), sock, req)
+			entries, err := fetchAllEntries(cmd.Context(), sock, 200, func(cursor string) ipc.Message {
+				return ipc.Message{
+					Name:      "note.search.regex",
+					Title:     pattern,
+					Namespace: resolveNamespace(cmd),
+					TagsAny:   any,
+					TagsAll:   all,
+					Since:     sinceStr, // RFC3339 or ""
+					Until:     untilStr, // RFC3339 or ""
+				}
+			})
 			if err != nil {
 				return err
 			}
@@ -97,7 +97,7 @@ func newNoteSearchCmd() *cobra.Command {
 				return fmt.Errorf("invalid --output: %s", outputMode)
 			}
 			opts := present.Options{Mode: mode, JSONIndent: false, Headers: !noHeaders}
-			return present.RenderEntries(cmd.Context(), cmd.OutOrStdout(), resp.Entries, opts)
+			return present.RenderEntries(cmd.Context(), cmd.OutOrStdout(), entries, opts)
 		},
 	}
 
