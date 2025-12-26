@@ -55,45 +55,47 @@ func newNoteCmd() *cobra.Command {
 		return resp.Namespaces, cobra.ShellCompDirectiveNoFileComp
 	})
 
-	_ = cmd.RegisterFlagCompletionFunc("tags", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		sock, err := ipc.SocketPath()
-		if err != nil {
-			return nil, cobra.ShellCompDirectiveError
-		}
-		resp, err := ipc.Request(cmd.Context(), sock, ipc.Message{
-			Name:      "tag.list",
-			Namespace: resolveNamespace(cmd),
-		})
-		if err != nil || !resp.OK {
-			return nil, cobra.ShellCompDirectiveError
-		}
-
-		tags := make([]string, len(resp.Tags))
-		for i, t := range resp.Tags {
-			tags[i] = t.Tag
-		}
-
-		// Handle comma-separated tags
-		prefix := ""
-		query := toComplete
-		if idx := strings.LastIndex(toComplete, ","); idx != -1 {
-			prefix = toComplete[:idx+1]
-			query = strings.TrimLeft(toComplete[idx+1:], " ")
-		}
-
-		matches := util.ScoreCompletions(query, tags, 0)
-
-		// Re-attach prefix to matches so the shell replaces the whole token correctly
-		if prefix != "" {
-			for i, m := range matches {
-				matches[i] = prefix + m
-			}
-		}
-
-		return matches, cobra.ShellCompDirectiveNoFileComp
-	})
+	_ = cmd.RegisterFlagCompletionFunc("tags", completeTags)
 
 	return cmd
+}
+
+func completeTags(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	sock, err := ipc.SocketPath()
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveError
+	}
+	resp, err := ipc.Request(cmd.Context(), sock, ipc.Message{
+		Name:      "tag.list",
+		Namespace: resolveNamespace(cmd),
+	})
+	if err != nil || !resp.OK {
+		return nil, cobra.ShellCompDirectiveError
+	}
+
+	tags := make([]string, len(resp.Tags))
+	for i, t := range resp.Tags {
+		tags[i] = t.Tag
+	}
+
+	// Handle comma-separated tags
+	prefix := ""
+	query := toComplete
+	if idx := strings.LastIndex(toComplete, ","); idx != -1 {
+		prefix = toComplete[:idx+1]
+		query = strings.TrimLeft(toComplete[idx+1:], " ")
+	}
+
+	matches := util.ScoreCompletions(query, tags, 0)
+
+	// Re-attach prefix to matches so the shell replaces the whole token correctly
+	if prefix != "" {
+		for i, m := range matches {
+			matches[i] = prefix + m
+		}
+	}
+
+	return matches, cobra.ShellCompDirectiveNoFileComp
 }
 
 // resolveNamespace checks for a --namespace flag; if not set, uses app config.
@@ -112,4 +114,7 @@ func addFilterFlags(cmd *cobra.Command, opts *FilterOpts) {
 	cmd.PersistentFlags().StringVar(&opts.TagsAll, "tags-all", "", "comma-separated tags; match notes containing all")
 	cmd.PersistentFlags().StringVarP(&opts.Since, "since", "s", "", "Show notes created since a time (absolute: '2025-10-26T14:30', relative: '2h', '3d')")
 	cmd.PersistentFlags().StringVarP(&opts.Until, "until", "u", "", "Show notes created until a time (absolute or relative; same formats as --since)")
+
+	_ = cmd.RegisterFlagCompletionFunc("tags-any", completeTags)
+	_ = cmd.RegisterFlagCompletionFunc("tags-all", completeTags)
 }
