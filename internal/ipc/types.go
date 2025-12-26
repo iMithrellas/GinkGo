@@ -21,6 +21,8 @@ type Message struct {
 	TagsAny   []string `json:"tags_any,omitempty"`
 	TagsAll   []string `json:"tags_all,omitempty"`
 	Limit     int      `json:"limit,omitempty"`
+	Cursor    string   `json:"cursor,omitempty"`
+	Reverse   bool     `json:"reverse,omitempty"`
 	Remote    string   `json:"remote,omitempty"`
 	SortBy    string   `json:"sort_by,omitempty"`
 }
@@ -34,6 +36,7 @@ type Response struct {
 	Queue      []QueueRemote `json:"queue,omitempty"`
 	Namespaces []string      `json:"namespaces,omitempty"`
 	Tags       []api.TagStat `json:"tags,omitempty"`
+	Page       api.Page      `json:"page,omitempty"`
 }
 
 type QueueEvent struct {

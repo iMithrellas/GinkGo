@@ -42,11 +42,14 @@ type SearchQuery struct {
 	All       []string  `json:"all"`
 	Since     time.Time `json:"since"`
 	Until     time.Time `json:"until"`
+	Cursor    string    `json:"cursor,omitempty"`
+	Reverse   bool      `json:"reverse,omitempty"`
 }
 
 // Page describes pagination cursors for list/search results.
 type Page struct {
 	Next string `json:"next"`
+	Prev string `json:"prev"`
 }
 
 // TagStat reports a tag with the number of notes using it
@@ -75,4 +78,6 @@ type ListQuery struct {
 	Limit     int       `json:"limit"`
 	Since     time.Time `json:"since,omitempty"`
 	Until     time.Time `json:"until,omitempty"`
+	Cursor    string    `json:"cursor,omitempty"`
+	Reverse   bool      `json:"reverse,omitempty"`
 }
