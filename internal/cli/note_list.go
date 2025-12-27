@@ -9,6 +9,7 @@ import (
 	"github.com/mithrel/ginkgo/internal/ipc"
 	"github.com/mithrel/ginkgo/internal/present"
 	"github.com/mithrel/ginkgo/internal/util"
+	"github.com/mithrel/ginkgo/pkg/api"
 	"github.com/spf13/cobra"
 )
 
@@ -17,6 +18,7 @@ func newNoteListCmd() *cobra.Command {
 	var outputMode string
 	var noHeaders bool
 	var pageSize int
+	var exportFull bool
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List notes",
@@ -59,7 +61,14 @@ func newNoteListCmd() *cobra.Command {
 				TUIBufferRatio:  app.Cfg.GetFloat64("tui.buffer_ratio"),
 			}
 			if mode == present.ModeTUI {
+				exportFull = false
 				return renderEntries(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), nil, opts)
+			}
+			var enrich entryEnricher
+			if exportFull {
+				enrich = func(entries []api.Entry) ([]api.Entry, error) {
+					return fetchFullEntries(cmd.Context(), sock, entries)
+				}
 			}
 			return withPager(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), func(w io.Writer) error {
 				writer := newEntryStreamWriter(w, opts)
@@ -72,17 +81,18 @@ func newNoteListCmd() *cobra.Command {
 						Since:     sinceStr, // RFC3339 string or ""
 						Until:     untilStr, // RFC3339 string or ""
 					}
-				}, writer)
+				}, writer, enrich)
 			})
 		},
 	}
 	addFilterFlags(cmd, &filters)
-	cmd.Flags().StringVar(&outputMode, "output", "tui", "output mode: plain|pretty|json|tui")
+	cmd.Flags().StringVar(&outputMode, "output", "tui", "output mode: plain|pretty|json|ndjson|tui")
 	cmd.Flags().IntVar(&pageSize, "page-size", 0, "page size for export paging (0 uses config)")
 	_ = cmd.RegisterFlagCompletionFunc("output", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		return []string{"plain", "pretty", "json", "tui"}, cobra.ShellCompDirectiveNoFileComp
+		return []string{"plain", "pretty", "json", "ndjson", "tui"}, cobra.ShellCompDirectiveNoFileComp
 	})
 	cmd.Flags().BoolVar(&noHeaders, "noheaders", false, "hide column headers (plain/tui)")
+	cmd.Flags().BoolVar(&exportFull, "export", false, "include full note bodies (non-tui)")
 	return cmd
 }
 

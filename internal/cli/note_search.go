@@ -61,7 +61,7 @@ func newNoteSearchCmd() *cobra.Command {
 						Since:     sinceStr, // RFC3339 or ""
 						Until:     untilStr, // RFC3339 or ""
 					}
-				}, writer)
+				}, writer, nil)
 			})
 		},
 	}
@@ -104,17 +104,17 @@ func newNoteSearchCmd() *cobra.Command {
 						Since:     sinceStr, // RFC3339 or ""
 						Until:     untilStr, // RFC3339 or ""
 					}
-				}, writer)
+				}, writer, nil)
 			})
 		},
 	}
 
 	cmd.AddCommand(fts, rx)
 	addFilterFlags(cmd, &filters)
-	cmd.PersistentFlags().StringVar(&outputMode, "output", "plain", "output mode: plain|pretty|json")
+	cmd.PersistentFlags().StringVar(&outputMode, "output", "plain", "output mode: plain|pretty|json|ndjson")
 	cmd.PersistentFlags().IntVar(&pageSize, "page-size", 0, "page size for export paging (0 uses config)")
 	_ = cmd.RegisterFlagCompletionFunc("output", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		return []string{"plain", "pretty", "json"}, cobra.ShellCompDirectiveNoFileComp
+		return []string{"plain", "pretty", "json", "ndjson"}, cobra.ShellCompDirectiveNoFileComp
 	})
 	// Cobra supports only single-letter shorthand; using -H for --noheaders
 	cmd.PersistentFlags().BoolVarP(&noHeaders, "noheaders", "H", false, "hide column headers (plain)")

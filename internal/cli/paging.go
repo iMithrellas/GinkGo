@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"syscall"
@@ -40,7 +41,9 @@ func fetchAllEntries(ctx context.Context, sock string, pageSize int, build func(
 	return out, nil
 }
 
-func streamEntries(ctx context.Context, sock string, pageSize int, build func(cursor string) ipc.Message, writer entryStreamWriter) error {
+type entryEnricher func([]api.Entry) ([]api.Entry, error)
+
+func streamEntries(ctx context.Context, sock string, pageSize int, build func(cursor string) ipc.Message, writer entryStreamWriter, enrich entryEnricher) error {
 	if pageSize <= 0 {
 		pageSize = 200
 	}
@@ -56,7 +59,15 @@ func streamEntries(ctx context.Context, sock string, pageSize int, build func(cu
 		if len(resp.Entries) == 0 {
 			break
 		}
-		if err := writer.WriteEntries(resp.Entries); err != nil {
+		entries := resp.Entries
+		if enrich != nil {
+			var err error
+			entries, err = enrich(entries)
+			if err != nil {
+				return err
+			}
+		}
+		if err := writer.WriteEntries(entries); err != nil {
 			if isBrokenPipe(err) {
 				return nil
 			}
@@ -77,6 +88,28 @@ func streamEntries(ctx context.Context, sock string, pageSize int, build func(cu
 		return err
 	}
 	return nil
+}
+
+func fetchFullEntries(ctx context.Context, sock string, entries []api.Entry) ([]api.Entry, error) {
+	out := make([]api.Entry, 0, len(entries))
+	for _, entry := range entries {
+		resp, err := ipc.Request(ctx, sock, ipc.Message{
+			Name:      "note.show",
+			ID:        entry.ID,
+			Namespace: entry.Namespace,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if !resp.OK || resp.Entry == nil {
+			if resp.Msg != "" {
+				return nil, fmt.Errorf("fetch %s: %s", entry.ID, resp.Msg)
+			}
+			return nil, fmt.Errorf("fetch %s: not found", entry.ID)
+		}
+		out = append(out, *resp.Entry)
+	}
+	return out, nil
 }
 
 func isBrokenPipe(err error) bool {
