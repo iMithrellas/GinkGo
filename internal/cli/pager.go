@@ -74,6 +74,8 @@ func newEntryStreamWriter(w io.Writer, opts present.Options) entryStreamWriter {
 	switch opts.Mode {
 	case present.ModeJSON:
 		return &jsonStreamWriter{jw: format.NewJSONStreamWriter(w, opts.JSONIndent)}
+	case present.ModeNDJSON:
+		return &ndjsonStreamWriter{nw: format.NewNDJSONStreamWriter(w)}
 	case present.ModePretty:
 		return &plainStreamWriter{pw: format.NewPlainStreamWriter(w, opts.Headers)}
 	case present.ModePlain:
@@ -105,4 +107,16 @@ func (w *jsonStreamWriter) WriteEntries(entries []api.Entry) error {
 
 func (w *jsonStreamWriter) Close() error {
 	return w.jw.Close()
+}
+
+type ndjsonStreamWriter struct {
+	nw *format.NDJSONStreamWriter
+}
+
+func (w *ndjsonStreamWriter) WriteEntries(entries []api.Entry) error {
+	return w.nw.WriteEntries(entries)
+}
+
+func (w *ndjsonStreamWriter) Close() error {
+	return w.nw.Close()
 }
