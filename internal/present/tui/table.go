@@ -24,6 +24,10 @@ import (
 
 // RenderTable opens an interactive Bubble Tea table to browse entries.
 func RenderTable(ctx context.Context, entries []api.Entry, headers bool, initialStatus string, initialDuration time.Duration, filterTagsAny, filterTagsAll, filterSince, filterUntil, namespace string, bufferRatio float64) error {
+	normalizedSince, normalizedUntil, err := util.NormalizeTimeRange(filterSince, filterUntil)
+	if err != nil {
+		return err
+	}
 	m := model{
 		ctx:          ctx,
 		entries:      entries,
@@ -36,6 +40,8 @@ func RenderTable(ctx context.Context, entries []api.Entry, headers bool, initial
 		tagsAll:      filterTagsAll,
 		since:        filterSince,
 		until:        filterUntil,
+		sinceRFC:     normalizedSince,
+		untilRFC:     normalizedUntil,
 		namespace:    namespace,
 		bufferRatio:  bufferRatio,
 	}
@@ -86,6 +92,8 @@ type model struct {
 	tagsAll      string
 	since        string
 	until        string
+	sinceRFC     string
+	untilRFC     string
 	namespace    string
 	nextCursor   string
 	prevCursor   string
@@ -364,7 +372,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.updateRows()
 		if !m.loaded && m.pageSize > 0 {
 			m.status = "Loading..."
-			return m, listCmd(m.ctx, m.namespace, splitCSV(m.tagsAny), splitCSV(m.tagsAll), m.since, m.until, m.pageSize, "", false, listModeReplace)
+			return m, listCmd(m.ctx, m.namespace, splitCSV(m.tagsAny), splitCSV(m.tagsAll), m.sinceRFC, m.untilRFC, m.pageSize, "", false, listModeReplace)
 		}
 		return m, nil
 	case tea.KeyMsg:
@@ -389,6 +397,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.tagsAll = ""
 				m.since = ""
 				m.until = ""
+				m.sinceRFC = ""
+				m.untilRFC = ""
 				m.showFilter = false
 				m.status = "Clearing filters..."
 				m.nextCursor = ""
@@ -407,12 +417,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.tagsAll = tagsAll
 				m.since = since
 				m.until = until
+				m.sinceRFC = normalizedSince
+				m.untilRFC = normalizedUntil
 				m.showFilter = false
 				m.status = "Filtering..."
 				m.nextCursor = ""
 				m.prevCursor = ""
 				m.loaded = false
-				return m, listCmd(m.ctx, m.namespace, splitCSV(tagsAny), splitCSV(tagsAll), normalizedSince, normalizedUntil, m.pageSize, "", false, listModeReplace)
+				return m, listCmd(m.ctx, m.namespace, splitCSV(tagsAny), splitCSV(tagsAll), m.sinceRFC, m.untilRFC, m.pageSize, "", false, listModeReplace)
 			default:
 				var cmd tea.Cmd
 				m.filterModal, cmd = m.filterModal.update(msg)
@@ -656,7 +668,7 @@ func (m *model) maybeFetchNext() tea.Cmd {
 		return nil
 	}
 	m.loadingNext = true
-	return listCmd(m.ctx, m.namespace, splitCSV(m.tagsAny), splitCSV(m.tagsAll), m.since, m.until, m.pageSize, m.nextCursor, false, listModeAppend)
+	return listCmd(m.ctx, m.namespace, splitCSV(m.tagsAny), splitCSV(m.tagsAll), m.sinceRFC, m.untilRFC, m.pageSize, m.nextCursor, false, listModeAppend)
 }
 
 func (m *model) maybeFetchPrev() tea.Cmd {
@@ -678,7 +690,7 @@ func (m *model) maybeFetchPrev() tea.Cmd {
 	}
 	m.loadingPrev = true
 	m.lastPrevSent = m.prevCursor
-	return listCmd(m.ctx, m.namespace, splitCSV(m.tagsAny), splitCSV(m.tagsAll), m.since, m.until, m.pageSize, m.prevCursor, true, listModePrepend)
+	return listCmd(m.ctx, m.namespace, splitCSV(m.tagsAny), splitCSV(m.tagsAll), m.sinceRFC, m.untilRFC, m.pageSize, m.prevCursor, true, listModePrepend)
 }
 
 func (m *model) maybePrune() {
