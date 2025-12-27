@@ -53,8 +53,8 @@ func RenderTable(ctx context.Context, entries []api.Entry, headers bool, initial
 		return err
 	}
 	if fm, ok := final.(model); ok {
-		if fm.showIdx >= 0 && fm.showIdx < len(entries) {
-			sel := entries[fm.showIdx]
+		if fm.showIdx >= 0 && fm.showIdx < len(fm.entries) {
+			sel := fm.entries[fm.showIdx]
 			if sock, err := ipc.SocketPath(); err == nil {
 				// Let daemon resolve namespace; only ID is required here.
 				if resp, err := ipc.Request(ctx, sock, ipc.Message{Name: "note.show", ID: sel.ID}); err == nil && resp.OK && resp.Entry != nil {
