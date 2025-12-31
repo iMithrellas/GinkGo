@@ -6,10 +6,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"reflect"
 	"strings"
 	"time"
-	"unsafe"
 
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
@@ -123,11 +121,11 @@ func (m *model) initTable() {
 	m.bufferRatio = clampBufferRatio(m.bufferRatio)
 	m.updateBufferSize()
 	m.loaded = len(m.entries) > 0
-	m.updateRows()
+	m.updateRows(0)
 	m.applyStyles()
 }
 
-func (m *model) updateRows() {
+func (m *model) updateRows(prepended int) {
 	rows := make([]table.Row, 0, len(m.entries))
 	for _, e := range m.entries {
 		created := e.CreatedAt.Local().Format("2006-01-02 15:04")
@@ -138,7 +136,11 @@ func (m *model) updateRows() {
 			created,
 		})
 	}
-	m.table.SetRows(rows)
+	if prepended > 0 {
+		m.table.SetRowsWithAnchor(rows, prepended)
+	} else {
+		m.table.SetRows(rows)
+	}
 }
 
 func (m model) Init() tea.Cmd { return nil }
@@ -174,7 +176,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.entries = append(m.entries[:msg.idx], m.entries[msg.idx+1:]...)
 		}
 		// Rebuild rows and clamp cursor
-		m.updateRows()
+		m.updateRows(0)
 		newCur := msg.idx
 		if newCur >= len(m.entries) {
 			newCur = len(m.entries) - 1
@@ -197,7 +199,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// If updated is nil, consider it a no-op
 		if msg.updated != nil && msg.idx >= 0 && msg.idx < len(m.entries) {
 			m.entries[msg.idx] = *msg.updated
-			m.updateRows()
+			m.updateRows(0)
 			m.table.SetCursor(msg.idx)
 			m.status = fmt.Sprintf("Saved %s", msg.id)
 		} else {
@@ -302,6 +304,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
+		added := 0
 		switch msg.mode {
 		case listModeReplace:
 			m.entries = msg.entries
@@ -327,24 +330,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(msg.entries) == 0 {
 				m.prevCursor = ""
 			} else {
-				added := len(msg.entries)
-				oldCursor := m.table.Cursor()
-				oldYOffset := tableYOffset(&m.table)
+				added = len(msg.entries)
 				m.entries = append(msg.entries, m.entries...)
-				m.table.SetCursor(oldCursor + added)
-				newYOffset := oldYOffset + added
-				maxYOffset := m.table.Height()
-				if newYOffset > maxYOffset {
-					newYOffset = maxYOffset
-				}
-				setTableYOffset(&m.table, newYOffset)
 				m.status = "Loaded newer"
 			}
 			m.prevCursor = msg.page.Prev
 			m.canFetchPrev = msg.page.Prev != ""
 			m.loadingPrev = false
 		}
-		m.updateRows()
+		m.updateRows(added)
 		m.lastDuration = msg.dur
 		return m, nil
 	case tea.WindowSizeMsg:
@@ -361,7 +355,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			_ = cmd
 		}
 		m.applyLayout()
-		m.updateRows()
+		m.updateRows(0)
 		if !m.loaded && m.pageSize > 0 {
 			m.status = "Loading..."
 			return m, listCmd(m.ctx, m.namespace, splitCSV(m.tagsAny), splitCSV(m.tagsAll), m.since, m.until, m.pageSize, "", false, listModeReplace)
@@ -701,41 +695,7 @@ func (m *model) maybePrune() {
 	m.table.SetCursor(cur - drop)
 	m.prevCursor = encodeCursor(m.entries[0])
 	m.canFetchPrev = true
-	m.updateRows()
-}
-
-// HACK: This relies on unexported fields in bubbles/table. Will break if internal structure changes.
-// tableYOffset reads the internal viewport offset so we can anchor the visible rows
-// when we prepend. table.Model doesn't expose this, so we use unsafe reflection to
-// avoid a visible jump; the tradeoff is relying on unexported fields in bubbles/table.
-// TODO: Create an issue for this upstream.
-func tableYOffset(t *table.Model) int {
-	v := reflect.ValueOf(t).Elem().FieldByName("viewport")
-	if !v.IsValid() {
-		return 0
-	}
-	v = reflect.NewAt(v.Type(), unsafe.Pointer(v.UnsafeAddr())).Elem()
-	y := v.FieldByName("YOffset")
-	if !y.IsValid() {
-		return 0
-	}
-	y = reflect.NewAt(y.Type(), unsafe.Pointer(y.UnsafeAddr())).Elem()
-	return int(y.Int())
-}
-
-// setTableYOffset writes the internal viewport offset; see tableYOffset for rationale.
-func setTableYOffset(t *table.Model, y int) {
-	v := reflect.ValueOf(t).Elem().FieldByName("viewport")
-	if !v.IsValid() {
-		return
-	}
-	v = reflect.NewAt(v.Type(), unsafe.Pointer(v.UnsafeAddr())).Elem()
-	yo := v.FieldByName("YOffset")
-	if !yo.IsValid() {
-		return
-	}
-	yo = reflect.NewAt(yo.Type(), unsafe.Pointer(yo.UnsafeAddr())).Elem()
-	yo.SetInt(int64(y))
+	m.updateRows(0)
 }
 
 // columnsFor returns columns with or without titles based on headers flag.
