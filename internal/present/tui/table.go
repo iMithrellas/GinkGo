@@ -588,7 +588,7 @@ func (m *model) requiredSide() int {
 
 func (m *model) windowSide() int {
 	required := m.requiredSide()
-	slack := m.viewSize / 2
+	slack := max(m.viewSize/2, m.bufferSize/2)
 	if slack < 1 {
 		slack = 1
 	}
@@ -596,11 +596,11 @@ func (m *model) windowSide() int {
 }
 
 func clampBufferRatio(r float64) float64 {
-	if r < 0.1 {
-		return 0.1
+	if r < 0.4 {
+		return 0.4
 	}
-	if r > 0.3 {
-		return 0.3
+	if r > 4 {
+		return 4
 	}
 	return r
 }
