@@ -63,49 +63,37 @@ func RenderTable(ctx context.Context, entries []api.Entry, headers bool, initial
 }
 
 type model struct {
-	ctx          context.Context
-	table        table.Model
-	entries      []api.Entry
-	showIdx      int
-	deleteIdx    int
-	editIdx      int
-	showModal    bool
-	modal        *noteModal
-	showFilter   bool
-	filterModal  *filterModal
-	headers      bool
-	width        int
-	height       int
-	titleWidth   int
-	tagsWidth    int
-	status       string
-	lastDuration time.Duration
-	tagsAny      string
-	tagsAll      string
-	since        string
-	until        string
-	namespace    string
-	nextCursor   string
-	prevCursor   string
-	canFetchPrev bool
-	lastPrevSent string
-	pageSize     int
-	bufferSize   int
-	bufferRatio  float64
-	loaded       bool
-	loadingNext  bool
-	loadingPrev  bool
+	ctx           context.Context
+	table         table.Model
+	entries       []api.Entry
+	showIdx       int
+	deleteIdx     int
+	editIdx       int
+	showModal     bool
+	modal         *noteModal
+	showFilter    bool
+	filterModal   *filterModal
+	headers       bool
+	width         int
+	height        int
+	titleWidth    int
+	tagsWidth     int
+	status        string
+	lastDuration  time.Duration
+	tagsAny       string
+	tagsAll       string
+	since         string
+	until         string
+	namespace     string
+	pageSize      int
+	bufferSize    int
+	bufferRatio   float64
+	viewSize      int
+	canFetchPrev  bool
+	canFetchNext  bool
+	loaded        bool
+	loadingWindow bool
 }
-
-type listMode int
-
-const (
-	listModeReplace listMode = iota
-	listModeAppend
-	listModePrepend
-)
-
-const scrollOffsetRows = 2
 
 func (m *model) initTable() {
 	cols := m.columnsFor(m.headers, 12, 40, 20, 19)
@@ -119,7 +107,7 @@ func (m *model) initTable() {
 		m.bufferRatio = 0.2
 	}
 	m.bufferRatio = clampBufferRatio(m.bufferRatio)
-	m.updateBufferSize()
+	m.updateWindowSize()
 	m.loaded = len(m.entries) > 0
 	m.updateRows(0)
 	m.applyStyles()
@@ -292,54 +280,41 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.lastDuration = msg.dur
 		return m, nil
-	case listResultMsg:
+	case windowResultMsg:
 		if msg.err != nil {
-			m.status = fmt.Sprintf("Filter failed: %v", msg.err)
+			m.status = fmt.Sprintf("Load failed: %v", msg.err)
 			m.lastDuration = msg.dur
-			if msg.mode == listModeAppend {
-				m.loadingNext = false
-			}
-			if msg.mode == listModePrepend {
-				m.loadingPrev = false
-			}
+			m.loadingWindow = false
 			return m, nil
 		}
-		added := 0
-		switch msg.mode {
-		case listModeReplace:
-			m.entries = msg.entries
-			m.table.SetCursor(0)
-			m.status = "Filters applied"
-			m.nextCursor = msg.page.Next
-			m.prevCursor = msg.page.Prev
-			m.canFetchPrev = msg.page.Prev != ""
-			m.lastPrevSent = ""
-			m.loaded = true
-		case listModeAppend:
-			if len(msg.entries) == 0 {
-				m.nextCursor = ""
+		m.entries = msg.entries
+		m.canFetchPrev = msg.canFetchPrev
+		m.canFetchNext = msg.canFetchNext
+		m.loaded = true
+		anchorIdx := msg.anchorIdx
+		if anchorIdx < 0 {
+			if msg.anchorID != "" {
+				anchorIdx = indexOfEntryID(m.entries, msg.anchorID)
 			} else {
-				m.entries = append(m.entries, msg.entries...)
-				if msg.page.Next != "" {
-					m.nextCursor = msg.page.Next
-				}
-				m.status = "Loaded more"
+				anchorIdx = 0
 			}
-			m.loadingNext = false
-		case listModePrepend:
-			if len(msg.entries) == 0 {
-				m.prevCursor = ""
-			} else {
-				added = len(msg.entries)
-				m.entries = append(msg.entries, m.entries...)
-				m.status = "Loaded newer"
-			}
-			m.prevCursor = msg.page.Prev
-			m.canFetchPrev = msg.page.Prev != ""
-			m.loadingPrev = false
 		}
-		m.updateRows(added)
+		prepended := 0
+		oldCursor := m.table.Cursor()
+		if oldCursor >= 0 && anchorIdx >= 0 && anchorIdx > oldCursor {
+			prepended = anchorIdx - oldCursor
+		}
+		m.updateRows(prepended)
+		if anchorIdx >= 0 && anchorIdx < len(m.entries) {
+			m.table.SetCursor(anchorIdx)
+		} else {
+			m.table.SetCursor(0)
+		}
+		if msg.status != "" {
+			m.status = msg.status
+		}
 		m.lastDuration = msg.dur
+		m.loadingWindow = false
 		return m, nil
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -356,9 +331,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.applyLayout()
 		m.updateRows(0)
-		if !m.loaded && m.pageSize > 0 {
+		if !m.loaded && m.viewSize > 0 {
 			m.status = "Loading..."
-			return m, listCmd(m.ctx, m.namespace, splitCSV(m.tagsAny), splitCSV(m.tagsAll), m.since, m.until, m.pageSize, "", false, listModeReplace)
+			side := m.windowSide()
+			return m, windowCmd(m.ctx, m.namespace, splitCSV(m.tagsAny), splitCSV(m.tagsAll), m.since, m.until, api.Entry{}, side, side, "Loaded")
 		}
 		return m, nil
 	case tea.KeyMsg:
@@ -385,10 +361,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.until = ""
 				m.showFilter = false
 				m.status = "Clearing filters..."
-				m.nextCursor = ""
-				m.prevCursor = ""
 				m.loaded = false
-				return m, listCmd(m.ctx, m.namespace, nil, nil, "", "", m.pageSize, "", false, listModeReplace)
+				side := m.windowSide()
+				return m, windowCmd(m.ctx, m.namespace, nil, nil, "", "", api.Entry{}, side, side, "Filters cleared")
 			case "enter":
 				tagsAny, tagsAll, since, until := m.filterModal.values()
 				normalizedSince, normalizedUntil, err := util.NormalizeTimeRange(since, until)
@@ -403,10 +378,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.until = until
 				m.showFilter = false
 				m.status = "Filtering..."
-				m.nextCursor = ""
-				m.prevCursor = ""
 				m.loaded = false
-				return m, listCmd(m.ctx, m.namespace, splitCSV(tagsAny), splitCSV(tagsAll), normalizedSince, normalizedUntil, m.pageSize, "", false, listModeReplace)
+				side := m.windowSide()
+				return m, windowCmd(m.ctx, m.namespace, splitCSV(tagsAny), splitCSV(tagsAll), normalizedSince, normalizedUntil, api.Entry{}, side, side, "Filters applied")
 			default:
 				var cmd tea.Cmd
 				m.filterModal, cmd = m.filterModal.update(msg)
@@ -486,16 +460,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	var cmd tea.Cmd
 	m.table, cmd = m.table.Update(msg)
-	if prevCmd := m.maybeFetchPrev(); prevCmd != nil {
-		m.maybePrune()
-		if nextCmd := m.maybeFetchNext(); nextCmd != nil {
-			return m, tea.Batch(cmd, prevCmd, nextCmd)
-		}
-		return m, tea.Batch(cmd, prevCmd)
-	}
-	m.maybePrune()
-	if nextCmd := m.maybeFetchNext(); nextCmd != nil {
-		return m, tea.Batch(cmd, nextCmd)
+	if refetchCmd := m.maybeRefetchWindow(); refetchCmd != nil {
+		return m, tea.Batch(cmd, refetchCmd)
 	}
 	return m, cmd
 }
@@ -552,7 +518,7 @@ func (m *model) applyLayout() {
 	m.table.SetHeight(h)
 	m.table.SetWidth(m.width)
 	m.pageSize = max(5, m.table.Height())
-	m.updateBufferSize()
+	m.updateWindowSize()
 	pad := 4
 	avail := m.width - pad
 	if avail < 40 {
@@ -604,12 +570,29 @@ func (m *model) applyStyles() {
 	m.table.SetStyles(s)
 }
 
-func (m *model) updateBufferSize() {
-	if m.pageSize <= 0 {
-		m.bufferSize = 0
-		return
+func (m *model) updateWindowSize() {
+	view := m.table.Height()
+	if view <= 0 {
+		view = m.pageSize
 	}
-	m.bufferSize = max(1, int(float64(m.pageSize)*m.bufferRatio))
+	if view <= 0 {
+		view = 10
+	}
+	m.viewSize = max(5, view)
+	m.bufferSize = max(1, int(float64(m.viewSize)*m.bufferRatio))
+}
+
+func (m *model) requiredSide() int {
+	return m.viewSize + m.bufferSize
+}
+
+func (m *model) windowSide() int {
+	required := m.requiredSide()
+	slack := m.viewSize / 2
+	if slack < 1 {
+		slack = 1
+	}
+	return required + slack
 }
 
 func clampBufferRatio(r float64) float64 {
@@ -622,80 +605,46 @@ func clampBufferRatio(r float64) float64 {
 	return r
 }
 
-func (m *model) prefetchThreshold() int {
-	if m.bufferSize == 0 {
-		return 0
-	}
-	if scrollOffsetRows > m.bufferSize {
-		return scrollOffsetRows
-	}
-	return m.bufferSize
-}
-
-func (m *model) maybeFetchNext() tea.Cmd {
-	if m.showModal || m.showFilter {
-		return nil
-	}
-	if m.loadingNext || m.nextCursor == "" {
-		return nil
+func (m *model) needsWindowRefetch() bool {
+	if m.showModal || m.showFilter || m.loadingWindow {
+		return false
 	}
 	if len(m.entries) == 0 {
-		return nil
-	}
-	threshold := m.prefetchThreshold()
-	if threshold == 0 {
-		return nil
-	}
-	if m.table.Cursor() < len(m.entries)-1-threshold {
-		return nil
-	}
-	m.loadingNext = true
-	return listCmd(m.ctx, m.namespace, splitCSV(m.tagsAny), splitCSV(m.tagsAll), m.since, m.until, m.pageSize, m.nextCursor, false, listModeAppend)
-}
-
-func (m *model) maybeFetchPrev() tea.Cmd {
-	if m.showModal || m.showFilter {
-		return nil
-	}
-	if m.loadingPrev || !m.canFetchPrev || m.prevCursor == "" {
-		return nil
-	}
-	if m.prevCursor == m.lastPrevSent {
-		return nil
-	}
-	threshold := m.prefetchThreshold()
-	if len(m.entries) == 0 || threshold == 0 {
-		return nil
-	}
-	if m.table.Cursor() > threshold {
-		return nil
-	}
-	m.loadingPrev = true
-	m.lastPrevSent = m.prevCursor
-	return listCmd(m.ctx, m.namespace, splitCSV(m.tagsAny), splitCSV(m.tagsAll), m.since, m.until, m.pageSize, m.prevCursor, true, listModePrepend)
-}
-
-func (m *model) maybePrune() {
-	if m.bufferSize == 0 || len(m.entries) == 0 {
-		return
-	}
-	if m.loadingPrev {
-		return
+		return false
 	}
 	cur := m.table.Cursor()
-	viewTop := max(0, cur-m.table.Height())
-	drop := viewTop - m.bufferSize
-	if drop <= 0 {
-		return
+	if cur < 0 || cur >= len(m.entries) {
+		return false
 	}
-	if drop >= len(m.entries) {
-		return
+	required := m.requiredSide()
+	if required == 0 {
+		return false
 	}
-	m.entries = m.entries[drop:]
-	m.table.SetCursor(cur - drop)
-	m.prevCursor = encodeCursor(m.entries[0])
-	m.canFetchPrev = true
-	m.updateRows(0)
+	before := cur
+	after := len(m.entries) - 1 - cur
+	if before < required && m.canFetchPrev {
+		return true
+	}
+	if after < required && m.canFetchNext {
+		return true
+	}
+	return false
+}
+
+func (m *model) maybeRefetchWindow() tea.Cmd {
+	if !m.needsWindowRefetch() {
+		return nil
+	}
+	cur := m.table.Cursor()
+	if cur < 0 || cur >= len(m.entries) {
+		return nil
+	}
+	m.loadingWindow = true
+	m.status = "Loading..."
+	m.lastDuration = 0
+	anchor := m.entries[cur]
+	side := m.windowSide()
+	return windowCmd(m.ctx, m.namespace, splitCSV(m.tagsAny), splitCSV(m.tagsAll), m.since, m.until, anchor, side, side, "Loaded window")
 }
 
 // columnsFor returns columns with or without titles based on headers flag.

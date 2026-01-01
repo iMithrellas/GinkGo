@@ -44,13 +44,16 @@ type editResultMsg struct {
 	dur     time.Duration
 }
 
-// listResultMsg conveys the outcome of reloading the list with filters applied.
-type listResultMsg struct {
-	entries []api.Entry
-	page    api.Page
-	mode    listMode
-	err     error
-	dur     time.Duration
+// windowResultMsg conveys the outcome of loading a centered window.
+type windowResultMsg struct {
+	entries      []api.Entry
+	anchorID     string
+	anchorIdx    int
+	canFetchPrev bool
+	canFetchNext bool
+	status       string
+	err          error
+	dur          time.Duration
 }
 
 // editPrepMsg signals that the editor should be launched.
@@ -111,34 +114,97 @@ func manualSyncCmd(ctx context.Context) tea.Cmd {
 	}
 }
 
-func listCmd(ctx context.Context, namespace string, tagsAny, tagsAll []string, since, until string, limit int, cursor string, reverse bool, mode listMode) tea.Cmd {
+func windowCmd(ctx context.Context, namespace string, tagsAny, tagsAll []string, since, until string, anchor api.Entry, wantBefore, wantAfter int, status string) tea.Cmd {
 	return func() tea.Msg {
 		start := time.Now()
-		if limit <= 0 {
-			limit = 50
+		if wantBefore < 0 {
+			wantBefore = 0
+		}
+		if wantAfter < 0 {
+			wantAfter = 0
+		}
+		if wantBefore == 0 && wantAfter == 0 {
+			wantAfter = 1
 		}
 		sock, err := ipc.SocketPath()
 		if err != nil {
-			return listResultMsg{err: err, dur: time.Since(start), mode: mode}
+			return windowResultMsg{err: err, dur: time.Since(start)}
 		}
-		resp, err := ipc.Request(ctx, sock, ipc.Message{
+		limit := wantBefore + wantAfter + 1
+		if anchor.ID == "" {
+			resp, err := ipc.Request(ctx, sock, ipc.Message{
+				Name:      "note.list",
+				Namespace: namespace,
+				TagsAny:   tagsAny,
+				TagsAll:   tagsAll,
+				Since:     since,
+				Until:     until,
+				Limit:     limit,
+			})
+			if err != nil {
+				return windowResultMsg{err: err, dur: time.Since(start)}
+			}
+			if !resp.OK {
+				return windowResultMsg{err: fmt.Errorf("list failed: %s", resp.Msg), dur: time.Since(start)}
+			}
+			return windowResultMsg{
+				entries:      resp.Entries,
+				anchorID:     "",
+				anchorIdx:    0,
+				canFetchPrev: false,
+				canFetchNext: resp.Page.Next != "",
+				status:       status,
+				dur:          time.Since(start),
+			}
+		}
+		cursor := encodeCursor(anchor)
+		newer, err := ipc.Request(ctx, sock, ipc.Message{
 			Name:      "note.list",
 			Namespace: namespace,
 			TagsAny:   tagsAny,
 			TagsAll:   tagsAll,
 			Since:     since,
 			Until:     until,
-			Limit:     limit,
+			Limit:     wantBefore,
 			Cursor:    cursor,
-			Reverse:   reverse,
+			Reverse:   true,
 		})
 		if err != nil {
-			return listResultMsg{err: err, dur: time.Since(start), mode: mode}
+			return windowResultMsg{err: err, dur: time.Since(start)}
 		}
-		if !resp.OK {
-			return listResultMsg{err: fmt.Errorf("list failed: %s", resp.Msg), dur: time.Since(start), mode: mode}
+		if !newer.OK {
+			return windowResultMsg{err: fmt.Errorf("list failed: %s", newer.Msg), dur: time.Since(start)}
 		}
-		return listResultMsg{entries: resp.Entries, page: resp.Page, dur: time.Since(start), mode: mode}
+		older, err := ipc.Request(ctx, sock, ipc.Message{
+			Name:      "note.list",
+			Namespace: namespace,
+			TagsAny:   tagsAny,
+			TagsAll:   tagsAll,
+			Since:     since,
+			Until:     until,
+			Limit:     wantAfter,
+			Cursor:    cursor,
+			Reverse:   false,
+		})
+		if err != nil {
+			return windowResultMsg{err: err, dur: time.Since(start)}
+		}
+		if !older.OK {
+			return windowResultMsg{err: fmt.Errorf("list failed: %s", older.Msg), dur: time.Since(start)}
+		}
+		entries := make([]api.Entry, 0, len(newer.Entries)+1+len(older.Entries))
+		entries = append(entries, newer.Entries...)
+		entries = append(entries, anchor)
+		entries = append(entries, older.Entries...)
+		return windowResultMsg{
+			entries:      entries,
+			anchorID:     anchor.ID,
+			anchorIdx:    len(newer.Entries),
+			canFetchPrev: newer.Page.Prev != "",
+			canFetchNext: older.Page.Next != "",
+			status:       status,
+			dur:          time.Since(start),
+		}
 	}
 }
 

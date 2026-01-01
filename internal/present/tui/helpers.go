@@ -45,3 +45,15 @@ func encodeCursor(e api.Entry) string {
 	ts := e.CreatedAt.UTC().Format(time.RFC3339Nano)
 	return fmt.Sprintf("%s|%s", ts, e.ID)
 }
+
+func indexOfEntryID(entries []api.Entry, id string) int {
+	if id == "" {
+		return -1
+	}
+	for i, e := range entries {
+		if e.ID == id {
+			return i
+		}
+	}
+	return -1
+}
