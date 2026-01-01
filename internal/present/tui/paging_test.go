@@ -25,40 +25,44 @@ func makeEntries(n int) []api.Entry {
 func TestPagingTriggers(t *testing.T) {
 	m := model{
 		entries:      makeEntries(10),
-		nextCursor:   "next",
-		prevCursor:   "prev",
 		canFetchPrev: true,
+		canFetchNext: true,
 		pageSize:     10,
-		bufferSize:   2,
 		bufferRatio:  0.2,
 	}
 	m.initTable()
+	m.table.SetHeight(10)
+	m.updateWindowSize()
 
-	m.table.SetCursor(8)
-	cmd := m.maybeFetchNext()
-	require.NotNil(t, cmd)
-	require.True(t, m.loadingNext)
-
-	m.loadingNext = false
 	m.table.SetCursor(1)
-	cmd = m.maybeFetchPrev()
-	require.NotNil(t, cmd)
-	require.True(t, m.loadingPrev)
+	require.True(t, m.needsWindowRefetch())
+
+	m.canFetchPrev = false
+	require.True(t, m.needsWindowRefetch())
+
+	m.canFetchNext = false
+	require.False(t, m.needsWindowRefetch())
+
+	m.canFetchPrev = true
+	m.table.SetCursor(8)
+	require.True(t, m.needsWindowRefetch())
 }
 
-func TestPagingPrune(t *testing.T) {
+func TestPagingRefetchNoMoreData(t *testing.T) {
 	m := model{
 		entries:      makeEntries(10),
 		pageSize:     10,
-		bufferSize:   2,
 		bufferRatio:  0.2,
-		canFetchPrev: true,
+		canFetchPrev: false,
+		canFetchNext: false,
 	}
 	m.initTable()
-	m.table.SetHeight(1)
-	m.table.SetCursor(6)
+	m.table.SetHeight(10)
+	m.updateWindowSize()
 
-	m.maybePrune()
-	require.Len(t, m.entries, 6)
-	require.Equal(t, 2, m.table.Cursor())
+	m.table.SetCursor(0)
+	require.False(t, m.needsWindowRefetch())
+
+	m.table.SetCursor(9)
+	require.False(t, m.needsWindowRefetch())
 }
