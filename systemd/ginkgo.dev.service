@@ -1,0 +1,14 @@
+[Unit]
+Description=GinkGo Daemon (development build)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/ginkgod
+Restart=on-failure
+RestartSec=2
+Environment=GODEBUG=madvdontneed=1
+
+[Install]
+WantedBy=default.target
