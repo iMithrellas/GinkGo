@@ -5,7 +5,7 @@ BUILD_OUTPUT := $(BUILD_DIR)/ginkgo-cli
 BIN_SYMLINK := $(HOME)/.local/bin/ginkgo-cli
 BIN_DAEMON_SYMLINK := $(HOME)/.local/bin/ginkgod
 SERVICE_DIR := $(HOME)/.config/systemd/user
-SERVICE_FILE := $(CURDIR)/systemd/ginkgo.service
+SERVICE_FILE := $(CURDIR)/systemd/ginkgo.dev.service
 
 # --- Docs / man ---
 PREFIX ?= $(HOME)/.local

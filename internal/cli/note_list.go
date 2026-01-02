@@ -77,7 +77,7 @@ func newNoteListCmd() *cobra.Command {
 		},
 	}
 	addFilterFlags(cmd, &filters)
-	cmd.Flags().StringVar(&outputMode, "output", "plain", "output mode: plain|pretty|json|tui")
+	cmd.Flags().StringVar(&outputMode, "output", "tui", "output mode: plain|pretty|json|tui")
 	cmd.Flags().IntVar(&pageSize, "page-size", 0, "page size for export paging (0 uses config)")
 	_ = cmd.RegisterFlagCompletionFunc("output", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return []string{"plain", "pretty", "json", "tui"}, cobra.ShellCompDirectiveNoFileComp
