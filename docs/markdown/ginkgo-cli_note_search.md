@@ -7,7 +7,7 @@ Search notes (fts|regex)
 ```
   -h, --help              help for search
   -H, --noheaders         hide column headers (plain)
-      --output string     output mode: plain|pretty|json (default "plain")
+      --output string     output mode: plain|pretty|json|ndjson (default "plain")
       --page-size int     page size for export paging (0 uses config)
   -s, --since string      Show notes created since a time (absolute: '2025-10-26T14:30', relative: '2h', '3d')
       --tags-all string   comma-separated tags; match notes containing all

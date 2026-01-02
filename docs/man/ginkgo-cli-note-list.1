@@ -18,6 +18,10 @@ List notes
 
 .SH OPTIONS
 .PP
+\fB--export\fP[=false]
+	include note bodies in output
+
+.PP
 \fB-h\fP, \fB--help\fP[=false]
 	help for list
 
@@ -26,8 +30,8 @@ List notes
 	hide column headers (plain/tui)
 
 .PP
-\fB--output\fP="plain"
-	output mode: plain|pretty|json|tui
+\fB--output\fP="tui"
+	output mode: plain|pretty|json|ndjson|tui
 
 .PP
 \fB--page-size\fP=0

@@ -9,9 +9,10 @@ ginkgo-cli note list [flags]
 ### Options
 
 ```
+      --export            include note bodies in output
   -h, --help              help for list
       --noheaders         hide column headers (plain/tui)
-      --output string     output mode: plain|pretty|json|tui (default "plain")
+      --output string     output mode: plain|pretty|json|ndjson|tui (default "tui")
       --page-size int     page size for export paging (0 uses config)
   -s, --since string      Show notes created since a time (absolute: '2025-10-26T14:30', relative: '2h', '3d')
       --tags-all string   comma-separated tags; match notes containing all
