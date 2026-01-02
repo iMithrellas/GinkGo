@@ -3,6 +3,7 @@ package tests
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,6 +19,7 @@ import (
 	"github.com/mithrel/ginkgo/internal/daemon"
 	"github.com/mithrel/ginkgo/internal/ipc"
 	"github.com/mithrel/ginkgo/internal/wire"
+	"github.com/mithrel/ginkgo/pkg/api"
 )
 
 // runCLI executes the CLI with the given args and returns stdout, stderr, and error.
@@ -91,6 +93,7 @@ func TestE2E_NoteAdd(t *testing.T) {
 	require.NoError(t, waitForSocket(sock, 5*time.Second))
 
 	// 3. Test: Note Add (One-liner)
+	var noteID string
 	t.Run("Add One-Liner", func(t *testing.T) {
 		out, _, err := runCLI(t, "--config", cfgPath, "note", "add", "My First Note", "--tags", "alpha,beta")
 		require.NoError(t, err)
@@ -103,6 +106,28 @@ func TestE2E_NoteAdd(t *testing.T) {
 
 		assert.NotEmpty(t, id)
 		assert.Equal(t, "My First Note", title)
+		noteID = id
+	})
+
+	// 3b. Test: Add body via IPC for export test
+	t.Run("Add Body", func(t *testing.T) {
+		require.NotEmpty(t, noteID)
+		show, err := ipc.Request(ctx, sock, ipc.Message{Name: "note.show", ID: noteID})
+		require.NoError(t, err)
+		require.True(t, show.OK)
+		require.NotNil(t, show.Entry)
+		cur := show.Entry
+		resp, err := ipc.Request(ctx, sock, ipc.Message{
+			Name:      "note.edit",
+			ID:        cur.ID,
+			IfVersion: cur.Version,
+			Title:     cur.Title,
+			Body:      "Body line one\nBody line two",
+			Tags:      cur.Tags,
+		})
+		require.NoError(t, err)
+		require.True(t, resp.OK)
+		require.NotNil(t, resp.Entry)
 	})
 
 	// 4. Test: Verify with List
@@ -111,5 +136,22 @@ func TestE2E_NoteAdd(t *testing.T) {
 		require.NoError(t, err)
 		assert.Contains(t, out, "My First Note")
 		assert.Contains(t, out, "alpha,beta")
+	})
+
+	// 5. Test: Verify export includes body
+	t.Run("Verify Export List", func(t *testing.T) {
+		out, _, err := runCLI(t, "--config", cfgPath, "note", "list", "--output", "json", "--export")
+		require.NoError(t, err)
+		var entries []api.Entry
+		require.NoError(t, json.Unmarshal([]byte(out), &entries))
+		var got *api.Entry
+		for i := range entries {
+			if entries[i].ID == noteID {
+				got = &entries[i]
+				break
+			}
+		}
+		require.NotNil(t, got)
+		assert.Contains(t, got.Body, "Body line one")
 	})
 }
