@@ -122,6 +122,10 @@ func (s *Server) applyUpsert(ctx context.Context, e api.Entry) error {
 	if err != nil {
 		return err
 	}
+	if e.Version <= cur.Version {
+		// Ignore stale or duplicate events; newest version wins.
+		return nil
+	}
 	// advance to the incoming version; CAS on current version
 	_, err = s.store.Entries.UpdateEntryCAS(ctx, e, cur.Version)
 	if err != nil {
