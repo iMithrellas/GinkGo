@@ -173,9 +173,9 @@ Active roadmap is tracked in GitHub Issues:
 
 Upcoming highlights from the roadmap:
 
-- Glamour-based Markdown rendering for note bodies (themeable).
-- Background sync service and export commands.
-- `note delete` and additional quality-of-life improvements.
+- Notification scheduler and delivery.
+- Multi-user ACLs for shared namespaces.
+- Release packaging (archives, checksums, install script).
 
 ## Contributing
 
