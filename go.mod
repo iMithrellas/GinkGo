@@ -20,9 +20,7 @@ require (
 	modernc.org/sqlite v1.39.1
 )
 
-replace github.com/rmhubbert/bubbletea-overlay => /dev/null
-
-replace github.com/charmbracelet/bubbles => /home/mithrel/dev/bubbles
+replace github.com/charmbracelet/bubbles => github.com/iMithrellas/bubbles v0.0.1
 
 require (
 	github.com/alecthomas/chroma/v2 v2.14.0 // indirect
