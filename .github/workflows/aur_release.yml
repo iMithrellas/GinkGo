@@ -27,7 +27,7 @@ jobs:
       - name: Install build + release deps
         run: |
           pacman -Syu --noconfirm --needed \
-            base-devel git openssh github-cli pacman-contrib namcap
+            base-devel git openssh github-cli pacman-contrib namcap go
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -38,6 +38,15 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Generate docs
+        run: |
+          make docs
+          if ! git diff --quiet; then
+            git add docs/man docs/markdown
+            git commit -m "docs: regenerate"
+            git push origin HEAD
+          fi
 
       - name: Create and push tag
         run: |
