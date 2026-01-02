@@ -1,0 +1,104 @@
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to create (e.g., v1.3.0)"
+        required: true
+      notes_file:
+        description: "Path to release notes markdown file"
+        required: true
+        default: "RELEASE.md"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+    env:
+      TAG: ${{ inputs.tag }}
+      NOTES_FILE: ${{ inputs.notes_file }}
+      AUR_REPO: "ssh://aur@aur.archlinux.org/ginkgo-cli.git"
+    steps:
+      - name: Install build + release deps
+        run: |
+          pacman -Syu --noconfirm --needed \
+            base-devel git openssh github-cli pacman-contrib namcap
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Create and push tag
+        run: |
+          if [[ "$TAG" != v* ]]; then
+            echo "Tag must start with 'v' (e.g., v1.3.0)"
+            exit 1
+          fi
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists locally"
+          else
+            git tag -a "$TAG" -m "$TAG"
+          fi
+          if git ls-remote --tags origin "$TAG" | grep -q "$TAG"; then
+            echo "Tag $TAG already exists on origin"
+          else
+            git push origin "$TAG"
+          fi
+
+      - name: Create GitHub release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file "$NOTES_FILE"
+
+      - name: Prepare PKGBUILD update for AUR
+        run: |
+          set -euo pipefail
+          PKGVER="${TAG#v}"
+          echo "PKGVER=${PKGVER}" >> "$GITHUB_ENV"
+
+      - name: Configure SSH for AUR
+        run: |
+          install -d -m 700 /root/.ssh
+          echo "${AUR_SSH_KEY}" > /root/.ssh/id_ed25519
+          chmod 600 /root/.ssh/id_ed25519
+          ssh-keyscan -H aur.archlinux.org >> /root/.ssh/known_hosts
+        env:
+          AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
+
+      - name: Update AUR repo (PKGBUILD + .SRCINFO)
+        run: |
+          set -euo pipefail
+          git clone "$AUR_REPO" /tmp/aur
+          cd /tmp/aur
+          git pull --rebase origin master
+          if [ ! -f PKGBUILD ]; then
+            echo "PKGBUILD not found in AUR repo"
+            exit 1
+          fi
+          sed -i "s/^pkgver=.*/pkgver=${PKGVER}/" PKGBUILD
+          sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+          updpkgsums
+          makepkg -od --noprepare
+          makepkg --printsrcinfo > .SRCINFO
+          namcap PKGBUILD .SRCINFO
+          git add PKGBUILD .SRCINFO
+          if git diff --quiet; then
+            echo "No PKGBUILD changes to commit"
+            exit 0
+          fi
+          git commit -m "upstream release ${PKGVER}"
+          git push origin HEAD
