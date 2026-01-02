@@ -54,6 +54,61 @@ Entries can be created as quick one-liners or rich Markdown notes via `$EDITOR`.
 
 ---
 
+## Install
+
+### Arch Linux (AUR)
+
+```bash
+yay -S ginkgo-cli # or AUR helper of your choice
+```
+- https://aur.archlinux.org/packages/ginkgo-cli
+
+### Docker (sync remote)
+
+Build and run the HTTP replication server using Docker:
+
+```bash
+# Clone repo
+git clone https://github.com/iMithrellas/GinkGo.git
+cd GinkGo
+
+# Build image
+docker build -t ginkgo-server .
+
+# Run: map host 8080 and provide an auth token for replication clients
+docker run --rm \
+  -p 8080:8080/tcp \
+  -e GINKGO_AUTH_TOKEN="replace-me" \
+  -v ginkgo-data:/data \
+  ginkgo-server
+```
+
+- Volume `ginkgo-data` persists the server SQLite DB and state under `/data`.
+
+### Manual install
+
+Dependencies:
+- Go 1.24+ (per `go.mod`)
+- `make`
+- `gzip` (for `make install-man`)
+- `mandb` (optional, for updating man page cache)
+- systemd user service (optional, for `make install-service`)
+
+```bash
+git clone https://github.com/iMithrellas/GinkGo.git
+cd GinkGo
+make build
+make install-binary
+make install-man      # optional
+make install-service  # optional
+```
+
+Running without systemd (e.g., Hyprland autostart):
+
+```bash
+exec-once = ginkgod
+```
+
 ## Why the Name GinkGo
 
 The **Ginkgo tree** is a symbol of memory, resilience, and longevity — a natural metaphor for journaling. The capitalized “Go” highlights the language of implementation.
@@ -83,35 +138,6 @@ ginkgo-cli completion generate zsh fish
 - `make docs`: generate Markdown + man pages
 - `make install-man`: install man pages
 - `make uninstall-man`: remove man pages
-
-## Arch Linux (AUR)
-
-```bash
-yay -S ginkgo-cli # or AUR helper of your choice
-```
-- https://aur.archlinux.org/packages/ginkgo-cli
-
-## Docker (sync remote)
-
-Build and run the HTTP replication server using Docker:
-
-```bash
-# Clone repo
-git clone https://github.com/iMitherall/GinkGo.git
-cd GinkGo
-
-# Build image
-docker build -t ginkgo-server .
-
-# Run: map host 8080 and provide an auth token for replication clients
-docker run --rm \
-  -p 8080:8080/tcp \
-  -e GINKGO_AUTH_TOKEN="replace-me" \
-  -v ginkgo-data:/data \
-  ginkgo-server
-```
-
-- Volume `ginkgo-data` persists the server SQLite DB and state under `/data`.
 
 ## Bubble UI
 
