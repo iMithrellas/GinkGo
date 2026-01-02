@@ -18,7 +18,7 @@ MANOUT := $(DOCDIR)/man
 GO_TAGS ?=
 
 .PHONY: build install-binary install-service reload-service run dev setup-precommit \
-        docs install-man uninstall-man install
+        docs install-man uninstall-man install uninstall
 
 # Generate Markdown + man pages from cmd/ginkgo-cli/doc_gen.go (build-tagged //go:build ignore)
 docs:
@@ -73,6 +73,15 @@ reload-service:
 
 # one-shot local install: binary + man
 install: build install-binary install-man
+
+uninstall: uninstall-man
+	@echo "Removing binary symlinks..."
+	@rm -f $(BIN_SYMLINK) $(BIN_DAEMON_SYMLINK)
+	@echo "Removing systemd user service symlink..."
+	@rm -f $(SERVICE_DIR)/ginkgo.service
+	@echo "Reloading systemd user daemon..."
+	-@command -v systemctl >/dev/null 2>&1 && systemctl --user daemon-reload || true
+	@echo "Uninstall complete"
 
 run: build install-binary install-service reload-service
 
