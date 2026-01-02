@@ -35,6 +35,4 @@ Thumbs.db
 .pre-commit-cache/
 
 # generated files
-docs/man/
-docs/markdown/
 RELEASE.md
