@@ -6,10 +6,9 @@ on:
       tag:
         description: "Tag to create (e.g., v1.3.0)"
         required: true
-      notes_file:
-        description: "Path to release notes markdown file"
+      notes:
+        description: "Release notes markdown content"
         required: true
-        default: "RELEASE.md"
 
 permissions:
   contents: write
@@ -21,7 +20,7 @@ jobs:
       image: archlinux:latest
     env:
       TAG: ${{ inputs.tag }}
-      NOTES_FILE: ${{ inputs.notes_file }}
+      NOTES: ${{ inputs.notes }}
       AUR_REPO: "ssh://aur@aur.archlinux.org/ginkgo-cli.git"
     steps:
       - name: Install build + release deps
@@ -34,10 +33,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Mark workspace as safe for git
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config --global --add safe.directory /tmp/aur
+
       - name: Configure git identity
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Generate docs
         run: |
@@ -69,9 +73,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          printf '%s\n' "$NOTES" > /tmp/RELEASE.md
           gh release create "$TAG" \
             --title "$TAG" \
-            --notes-file "$NOTES_FILE"
+            --notes-file /tmp/RELEASE.md
 
       - name: Prepare PKGBUILD update for AUR
         run: |
@@ -94,18 +99,19 @@ jobs:
           git clone "$AUR_REPO" /tmp/aur
           cd /tmp/aur
           git pull --rebase origin master
+          useradd -m -u 1000 builder
+          chown -R builder:builder /tmp/aur
           if [ ! -f PKGBUILD ]; then
             echo "PKGBUILD not found in AUR repo"
             exit 1
           fi
-          sed -i "s/^pkgver=.*/pkgver=${PKGVER}/" PKGBUILD
-          sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
-          updpkgsums
-          makepkg -od --noprepare
-          makepkg --printsrcinfo > .SRCINFO
-          namcap PKGBUILD .SRCINFO
+          runuser -u builder -- sed -i "s/^pkgver=.*/pkgver=${PKGVER}/" PKGBUILD
+          runuser -u builder -- sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+          runuser -u builder -- updpkgsums
+          runuser -u builder -- makepkg -od --noprepare
+          runuser -u builder -- makepkg --printsrcinfo > .SRCINFO
           git add PKGBUILD .SRCINFO
-          if git diff --quiet; then
+          if git diff --cached --quiet; then
             echo "No PKGBUILD changes to commit"
             exit 0
           fi
