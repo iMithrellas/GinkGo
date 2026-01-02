@@ -51,7 +51,7 @@ jobs:
             exit 1
           fi
           if ! git diff --quiet; then
-            git add docs/man docs/markdown
+            git add -f docs/man docs/markdown
             git commit -m "docs: regenerate"
             git push origin HEAD
           fi
