@@ -34,16 +34,17 @@ type Cursor struct {
 
 // SearchQuery models a query for entry search.
 type SearchQuery struct {
-	Namespace string    `json:"namespace"`
-	Query     string    `json:"query"`
-	Regex     bool      `json:"regex"`
-	Limit     int       `json:"limit"`
-	Any       []string  `json:"any"`
-	All       []string  `json:"all"`
-	Since     time.Time `json:"since"`
-	Until     time.Time `json:"until"`
-	Cursor    string    `json:"cursor,omitempty"`
-	Reverse   bool      `json:"reverse,omitempty"`
+	Namespace   string    `json:"namespace"`
+	Query       string    `json:"query"`
+	Regex       bool      `json:"regex"`
+	Limit       int       `json:"limit"`
+	Any         []string  `json:"any"`
+	All         []string  `json:"all"`
+	Since       time.Time `json:"since"`
+	Until       time.Time `json:"until"`
+	Cursor      string    `json:"cursor,omitempty"`
+	Reverse     bool      `json:"reverse,omitempty"`
+	IncludeBody bool      `json:"include_body,omitempty"`
 }
 
 // Page describes pagination cursors for list/search results.
@@ -72,12 +73,13 @@ type TagsQuery struct {
 // Any: match if note contains at least one of these tags.
 // All: match if note contains all of these tags.
 type ListQuery struct {
-	Namespace string    `json:"namespace"`
-	Any       []string  `json:"any,omitempty"`
-	All       []string  `json:"all,omitempty"`
-	Limit     int       `json:"limit"`
-	Since     time.Time `json:"since,omitempty"`
-	Until     time.Time `json:"until,omitempty"`
-	Cursor    string    `json:"cursor,omitempty"`
-	Reverse   bool      `json:"reverse,omitempty"`
+	Namespace   string    `json:"namespace"`
+	Any         []string  `json:"any,omitempty"`
+	All         []string  `json:"all,omitempty"`
+	Limit       int       `json:"limit"`
+	Since       time.Time `json:"since,omitempty"`
+	Until       time.Time `json:"until,omitempty"`
+	Cursor      string    `json:"cursor,omitempty"`
+	Reverse     bool      `json:"reverse,omitempty"`
+	IncludeBody bool      `json:"include_body,omitempty"`
 }

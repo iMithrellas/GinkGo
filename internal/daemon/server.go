@@ -128,14 +128,15 @@ func Run(ctx context.Context, app *wire.App) error {
 			var err error
 			since, until := parseBounds(m.Since, m.Until)
 			entries, page, err = app.Store.Entries.ListEntries(ctx, api.ListQuery{
-				Namespace: ns,
-				Any:       m.TagsAny,
-				All:       m.TagsAll,
-				Since:     since,
-				Until:     until,
-				Limit:     m.Limit,
-				Cursor:    m.Cursor,
-				Reverse:   m.Reverse,
+				Namespace:   ns,
+				Any:         m.TagsAny,
+				All:         m.TagsAll,
+				Since:       since,
+				Until:       until,
+				Limit:       m.Limit,
+				Cursor:      m.Cursor,
+				Reverse:     m.Reverse,
+				IncludeBody: m.IncludeBody,
 			})
 			if err != nil {
 				return ipc.Response{OK: false, Msg: err.Error()}

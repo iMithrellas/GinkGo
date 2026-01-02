@@ -388,6 +388,7 @@ type ListFilter struct {
 	Limit         int32                  `protobuf:"varint,6,opt,name=limit,proto3" json:"limit,omitempty"`
 	Cursor        string                 `protobuf:"bytes,7,opt,name=cursor,proto3" json:"cursor,omitempty"`
 	Reverse       bool                   `protobuf:"varint,8,opt,name=reverse,proto3" json:"reverse,omitempty"`
+	IncludeBody   bool                   `protobuf:"varint,9,opt,name=include_body,json=includeBody,proto3" json:"include_body,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -474,6 +475,13 @@ func (x *ListFilter) GetCursor() string {
 func (x *ListFilter) GetReverse() bool {
 	if x != nil {
 		return x.Reverse
+	}
+	return false
+}
+
+func (x *ListFilter) GetIncludeBody() bool {
+	if x != nil {
+		return x.IncludeBody
 	}
 	return false
 }
@@ -1671,7 +1679,7 @@ const file_internal_ipc_pb_ipc_proto_rawDesc = "" +
 	"\tnamespace\x18\x02 \x01(\tR\tnamespace\"8\n" +
 	"\bNoteShow\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1c\n" +
-	"\tnamespace\x18\x02 \x01(\tR\tnamespace\"\x8c\x02\n" +
+	"\tnamespace\x18\x02 \x01(\tR\tnamespace\"\xaf\x02\n" +
 	"\n" +
 	"ListFilter\x12\x1c\n" +
 	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12\x19\n" +
@@ -1681,7 +1689,8 @@ const file_internal_ipc_pb_ipc_proto_rawDesc = "" +
 	"\x05until\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\x05until\x12\x14\n" +
 	"\x05limit\x18\x06 \x01(\x05R\x05limit\x12\x16\n" +
 	"\x06cursor\x18\a \x01(\tR\x06cursor\x12\x18\n" +
-	"\areverse\x18\b \x01(\bR\areverse\"J\n" +
+	"\areverse\x18\b \x01(\bR\areverse\x12!\n" +
+	"\finclude_body\x18\t \x01(\bR\vincludeBody\"J\n" +
 	"\tSearchFTS\x12\x14\n" +
 	"\x05query\x18\x01 \x01(\tR\x05query\x12'\n" +
 	"\x06filter\x18\x02 \x01(\v2\x0f.ipc.ListFilterR\x06filter\"P\n" +

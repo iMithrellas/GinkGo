@@ -93,7 +93,7 @@ func Request(ctx context.Context, path string, m Message) (Response, error) {
 }
 
 func toPbListFilter(m Message) *pb.ListFilter {
-	lf := &pb.ListFilter{Namespace: m.Namespace, TagsAny: m.TagsAny, TagsAll: m.TagsAll, Limit: int32(m.Limit), Cursor: m.Cursor, Reverse: m.Reverse}
+	lf := &pb.ListFilter{Namespace: m.Namespace, TagsAny: m.TagsAny, TagsAll: m.TagsAll, Limit: int32(m.Limit), Cursor: m.Cursor, Reverse: m.Reverse, IncludeBody: m.IncludeBody}
 	if ts := parseRFC3339OrEmpty(m.Since); !ts.IsZero() {
 		lf.Since = timestamppb.New(ts)
 	}
