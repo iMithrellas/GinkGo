@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/mithrel/ginkgo/internal/present"
 	"github.com/mithrel/ginkgo/internal/util"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 func newNoteListCmd() *cobra.Command {
@@ -40,6 +42,11 @@ func newNoteListCmd() *cobra.Command {
 			mode, ok := present.ParseMode(strings.ToLower(outputMode))
 			if !ok {
 				return fmt.Errorf("invalid --output: %s", outputMode)
+			}
+			if mode == present.ModeTUI {
+				if outFile, ok := cmd.OutOrStdout().(*os.File); !ok || !term.IsTerminal(int(outFile.Fd())) {
+					mode = present.ModePlain
+				}
 			}
 			dur := time.Duration(0)
 			if !ok {
@@ -77,10 +84,10 @@ func newNoteListCmd() *cobra.Command {
 		},
 	}
 	addFilterFlags(cmd, &filters)
-	cmd.Flags().StringVar(&outputMode, "output", "tui", "output mode: plain|pretty|json|tui")
+	cmd.Flags().StringVar(&outputMode, "output", "tui", "output mode: plain|pretty|json|ndjson|tui")
 	cmd.Flags().IntVar(&pageSize, "page-size", 0, "page size for export paging (0 uses config)")
 	_ = cmd.RegisterFlagCompletionFunc("output", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		return []string{"plain", "pretty", "json", "tui"}, cobra.ShellCompDirectiveNoFileComp
+		return []string{"plain", "pretty", "json", "ndjson", "tui"}, cobra.ShellCompDirectiveNoFileComp
 	})
 	cmd.Flags().BoolVar(&noHeaders, "noheaders", false, "hide column headers (plain/tui)")
 	return cmd

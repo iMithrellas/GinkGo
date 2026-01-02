@@ -17,6 +17,7 @@ const (
 	ModePlain Mode = iota
 	ModePretty
 	ModeJSON
+	ModeNDJSON
 	ModeTUI
 )
 
@@ -34,7 +35,7 @@ type Options struct {
 	TUIBufferRatio  float64
 }
 
-// ParseMode parses a string like "plain", "pretty", "json", "tui".
+// ParseMode parses a string like "plain", "pretty", "json", "ndjson", "tui".
 func ParseMode(s string) (Mode, bool) {
 	switch s {
 	case "plain":
@@ -43,6 +44,8 @@ func ParseMode(s string) (Mode, bool) {
 		return ModePretty, true
 	case "json":
 		return ModeJSON, true
+	case "ndjson":
+		return ModeNDJSON, true
 	case "tui":
 		return ModeTUI, true
 	default:
@@ -55,6 +58,8 @@ func RenderEntries(ctx context.Context, w io.Writer, entries []api.Entry, opts O
 	switch opts.Mode {
 	case ModeJSON:
 		return format.WriteJSONEntries(w, entries, opts.JSONIndent)
+	case ModeNDJSON:
+		return format.WriteNDJSONEntries(w, entries)
 	case ModePlain:
 		return format.WritePlainEntries(w, entries, opts.Headers)
 	case ModePretty:
@@ -73,6 +78,8 @@ func RenderEntry(ctx context.Context, w io.Writer, e api.Entry, opts Options) er
 	switch opts.Mode {
 	case ModeJSON:
 		return format.WriteJSONEntry(w, e, opts.JSONIndent)
+	case ModeNDJSON:
+		return format.WriteNDJSONEntry(w, e)
 	case ModePlain:
 		return format.WritePlainEntry(w, e, opts.Headers)
 	case ModePretty:
