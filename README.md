@@ -37,15 +37,15 @@ Entries can be created as quick one-liners or rich Markdown notes via `$EDITOR`.
 - Full-text and regex search with date range and tag filters.
 - Markdown rendering in the terminal for single-entry “pretty” output (Glamour-based).
 - Export entries to Markdown, JSON, or NDJSON.
-- Optional interactive list table using Bubble Tea (`ginkgo-cli note list --bubble`).
+- Interactive list table using Bubble Tea (`ginkgo-cli note list`).
 
 ### Sync
 - Local outbox queues edits when offline.
 - Same permanent storage as offline cache — no special cases.
-- Manual or background sync (`ginkgo-cli sync --daemon`).
+- Manual one shot or background sync (`ginkgo-cli sync`).
 - Bulk note import/export (NDJSON, Markdown directories).
 
-### Notifications
+### Notifications (Planned)
 - Configurable nudges if no notes are created for N days.
 - Delivered via the local daemon; can snooze or mute.
 
@@ -84,86 +84,38 @@ ginkgo-cli completion generate zsh fish
 - `make install-man`: install man pages
 - `make uninstall-man`: remove man pages
 
-## QUIC (Experimental)
-
-An experimental QUIC endpoint and ping utility are available to explore remote connectivity and future sync transport.
-
-Start a QUIC server (TLS required; choose one method):
+## Arch Linux (AUR)
 
 ```bash
-# 1) ACME via CertMagic (Let's Encrypt by default)
-ginkgo-cli quic serve \
-  --domain sync.example.com \
-  --email you@example.com \
-  --http-addr :80                   # serve HTTP-01 challenge
-
-# Options:
-#   --acme-ca <dirURL>              # custom ACME directory URL
-#   --storage-dir <path>            # cert storage (default XDG cache)
-#   --enable-tls-alpn --alpn-port 443  # enable TLS-ALPN-01 challenge
-
-# 2) ZeroSSL API (no ACME challenge)
-ginkgo-cli quic serve \
-  --domain sync.example.com \
-  --zerossl-api-key <API_KEY>
-
-# 3) Bring-your-own certificate
-ginkgo-cli quic serve \
-  --cert /etc/ginkgo/tls/fullchain.pem \
-  --key  /etc/ginkgo/tls/privkey.pem
-
-# 4) Self-signed (testing only; not recommended)
-ginkgo-cli quic serve --insecure-self-signed
+yay -S ginkgo-cli # or AUR helper of your choice
 ```
+- https://aur.archlinux.org/packages/ginkgo-cli
 
-Ping a server and check RTT:
+## Docker (sync remote)
 
-```bash
-ginkgo-cli quic ping 127.0.0.1:7845                 # skip verify (no SNI)
-ginkgo-cli quic ping sync.example.com:7845 \
-  --server-name sync.example.com                    # verify cert
-```
-
-Notes:
-
-- QUIC server listens on `--addr` (default `:7845`).
-- ACME HTTP-01 requires `:80` reachable for the configured domain (or a reverse proxy).
-- Non–Let’s Encrypt ACME providers and the ZeroSSL API path are currently untested.
-
-### Docker
-
-Build and run the QUIC server with ACME (Let’s Encrypt) using Docker:
+Build and run the HTTP replication server using Docker:
 
 ```bash
+# Clone repo
+git clone https://github.com/iMitherall/GinkGo.git
+cd GinkGo
+
 # Build image
-docker build -t ginkgo-quic .
+docker build -t ginkgo-server .
 
-# Run: map host 80 -> container 8080 for HTTP-01, and expose QUIC UDP 7845
+# Run: map host 8080 and provide an auth token for replication clients
 docker run --rm \
-  -p 80:8080/tcp \
-  -p 7845:7845/udp \
+  -p 8080:8080/tcp \
+  -e GINKGO_AUTH_TOKEN="replace-me" \
   -v ginkgo-data:/data \
-  ginkgo-quic \
-  --domain sync.example.com \
-  --email you@example.com \
-  --addr :7845 \
-  --http-addr :8080
+  ginkgo-server
 ```
 
-- Volume `ginkgo-data` persists CertMagic certificate storage (`$XDG_CACHE_HOME`, default `/data/cache`).
-- Adjust `--acme-ca`, `--storage-dir`, or use `--zerossl-api-key` as needed.
+- Volume `ginkgo-data` persists the server SQLite DB and state under `/data`.
 
 ## Bubble UI
 
-`note list` supports an interactive table powered by Bubble Tea. It is enabled via `--output=tui` (no build tags required):
-
-```bash
-make build
-ginkgo-cli note list --output=tui
-```
-
-- The first build will fetch Charmbracelet deps automatically via Go modules.
-- Use `--output=tui` for the interactive UI, or omit it for plain tab-separated output.
+`note list` supports an interactive table powered by Bubble Tea. It is enabled by default, can be overridden with `--output=json/pretty/plain`.
 
 ## Roadmap
 
