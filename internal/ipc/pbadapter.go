@@ -156,4 +156,5 @@ func fillFilter(m *Message, f *pb.ListFilter) {
 	m.Limit = int(f.Limit)
 	m.Cursor = f.Cursor
 	m.Reverse = f.Reverse
+	m.IncludeBody = f.IncludeBody
 }

@@ -303,11 +303,15 @@ func (s *sqliteStore) DeleteEntry(ctx context.Context, id string) error {
 }
 
 // ListEntries retrieves entries based on provided filters, including namespace, time ranges, and tags.
-// Note: For efficiency, this summary listing does NOT load the entry body; Body will be empty.
+// Note: By default, this summary listing does not load the entry body; set IncludeBody to include it.
 func (s *sqliteStore) ListEntries(ctx context.Context, q api.ListQuery) ([]api.Entry, api.Page, error) {
 	limit := q.Limit
 	if limit <= 0 {
 		limit = 1000
+	}
+	bodySelect := "'' AS body"
+	if q.IncludeBody {
+		bodySelect = "e.body"
 	}
 	pf := buildPrefilter(filter{
 		Namespace: q.Namespace,
@@ -320,7 +324,7 @@ func (s *sqliteStore) ListEntries(ctx context.Context, q api.ListQuery) ([]api.E
 	cursorClause, cursorArgs := cursorWhereClause(cursor, hasCursor, q.Reverse)
 	orderClause := orderByClause(q.Reverse)
 	pageLimit := limit + 1
-	sqlq := pf.CTE + `SELECT e.id, e.version, e.title, '' AS body, e.tags, e.created_at, e.updated_at, e.namespace
+	sqlq := pf.CTE + `SELECT e.id, e.version, e.title, ` + bodySelect + `, e.tags, e.created_at, e.updated_at, e.namespace
 FROM filtered f
 JOIN entries e ON e.id = f.id
 ` + cursorClause + `
@@ -355,7 +359,6 @@ LIMIT ?`
 	page := buildPage(out, hasMore, q.Reverse, q.Cursor != "")
 	return out, page, nil
 }
-
 func (s *sqliteStore) Search(ctx context.Context, q api.SearchQuery) ([]api.Entry, api.Page, error) {
 	limit := q.Limit
 	if limit <= 0 {

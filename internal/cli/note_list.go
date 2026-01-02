@@ -19,6 +19,7 @@ func newNoteListCmd() *cobra.Command {
 	var outputMode string
 	var noHeaders bool
 	var pageSize int
+	var export bool
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List notes",
@@ -72,12 +73,13 @@ func newNoteListCmd() *cobra.Command {
 				writer := newEntryStreamWriter(w, opts)
 				return streamEntries(cmd.Context(), sock, pageSize, func(cursor string) ipc.Message {
 					return ipc.Message{
-						Name:      "note.list",
-						Namespace: resolveNamespace(cmd),
-						TagsAny:   any,
-						TagsAll:   all,
-						Since:     sinceStr, // RFC3339 string or ""
-						Until:     untilStr, // RFC3339 string or ""
+						Name:        "note.list",
+						Namespace:   resolveNamespace(cmd),
+						TagsAny:     any,
+						TagsAll:     all,
+						Since:       sinceStr, // RFC3339 string or ""
+						Until:       untilStr, // RFC3339 string or ""
+						IncludeBody: export,
 					}
 				}, writer)
 			})
@@ -86,6 +88,7 @@ func newNoteListCmd() *cobra.Command {
 	addFilterFlags(cmd, &filters)
 	cmd.Flags().StringVar(&outputMode, "output", "tui", "output mode: plain|pretty|json|ndjson|tui")
 	cmd.Flags().IntVar(&pageSize, "page-size", 0, "page size for export paging (0 uses config)")
+	cmd.Flags().BoolVar(&export, "export", false, "include note bodies in output")
 	_ = cmd.RegisterFlagCompletionFunc("output", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return []string{"plain", "pretty", "json", "ndjson", "tui"}, cobra.ShellCompDirectiveNoFileComp
 	})
