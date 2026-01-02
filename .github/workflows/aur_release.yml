@@ -46,16 +46,28 @@ jobs:
       - name: Generate docs
         run: |
           make docs
+          if ! ls docs/man/*.1 >/dev/null 2>&1; then
+            echo "docs/man/*.1 missing after docs generation"
+            exit 1
+          fi
           if ! git diff --quiet; then
             git add docs/man docs/markdown
             git commit -m "docs: regenerate"
             git push origin HEAD
+          fi
+          if ! git diff --quiet || ! git diff --cached --quiet; then
+            echo "Working tree not clean after docs commit"
+            exit 1
           fi
 
       - name: Create and push tag
         run: |
           if [[ "$TAG" != v* ]]; then
             echo "Tag must start with 'v' (e.g., v1.3.0)"
+            exit 1
+          fi
+          if ! ls docs/man/*.1 >/dev/null 2>&1; then
+            echo "docs/man/*.1 missing; refusing to tag"
             exit 1
           fi
           if git rev-parse "$TAG" >/dev/null 2>&1; then
