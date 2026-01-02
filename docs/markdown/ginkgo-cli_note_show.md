@@ -11,7 +11,7 @@ ginkgo-cli note show <id> [flags]
 ```
       --headers         print header row in plain mode
   -h, --help            help for show
-      --output string   output mode: plain|pretty|json (default "pretty")
+      --output string   output mode: plain|pretty|json|ndjson (default "pretty")
 ```
 
 ### Options inherited from parent commands
