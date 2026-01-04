@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/help"
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -69,6 +71,9 @@ type model struct {
 	showIdx       int
 	deleteIdx     int
 	editIdx       int
+	showHelp      bool
+	help          help.Model
+	keys          keyMap
 	showModal     bool
 	modal         *noteModal
 	showFilter    bool
@@ -96,6 +101,9 @@ type model struct {
 }
 
 func (m *model) initTable() {
+	m.keys = newKeyMap()
+	m.help = help.New()
+	m.help.ShowAll = true
 	cols := m.columnsFor(m.headers, 12, 40, 20, 19)
 	m.table = table.New(table.WithColumns(cols), table.WithFocused(true))
 	m.titleWidth = 40
@@ -111,6 +119,7 @@ func (m *model) initTable() {
 	m.loaded = len(m.entries) > 0
 	m.updateRows(0)
 	m.applyStyles()
+	m.updateKeyStates()
 }
 
 func (m *model) updateRows(prepended int) {
@@ -134,6 +143,7 @@ func (m *model) updateRows(prepended int) {
 func (m model) Init() tea.Cmd { return nil }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	m.updateKeyStates()
 	switch msg := msg.(type) {
 	case showNoteResultMsg:
 		// Full note fetch completed
@@ -143,6 +153,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.status = "Load failed"
 			m.lastDuration = msg.dur
+			m.updateKeyStates()
 			return m, nil
 		}
 		if msg.entry != nil && m.modal != nil {
@@ -150,6 +161,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = "Loaded note"
 			m.lastDuration = msg.dur
 		}
+		m.updateKeyStates()
 		return m, nil
 	case deleteResultMsg:
 		// Handle delete completion
@@ -157,6 +169,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = fmt.Sprintf("Delete failed: %v", msg.err)
 			m.lastDuration = msg.dur
 			m.deleteIdx = -1
+			m.updateKeyStates()
 			return m, nil
 		}
 		// Remove from entries if still valid
@@ -176,12 +189,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = fmt.Sprintf("Deleted %s", msg.id)
 		m.lastDuration = msg.dur
 		m.deleteIdx = -1
+		m.updateKeyStates()
 		return m, nil
 	case editResultMsg:
 		if msg.err != nil {
 			m.status = fmt.Sprintf("Edit failed: %v", msg.err)
 			m.lastDuration = msg.dur
 			m.editIdx = -1
+			m.updateKeyStates()
 			return m, nil
 		}
 		// If updated is nil, consider it a no-op
@@ -195,6 +210,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.lastDuration = msg.dur
 		m.editIdx = -1
+		m.updateKeyStates()
 		return m, nil
 	case editPrepMsg:
 		// Launch external editor and handle save on completion
@@ -279,12 +295,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = "Sync triggered"
 		}
 		m.lastDuration = msg.dur
+		m.updateKeyStates()
 		return m, nil
 	case windowResultMsg:
 		if msg.err != nil {
 			m.status = fmt.Sprintf("Load failed: %v", msg.err)
 			m.lastDuration = msg.dur
 			m.loadingWindow = false
+			m.updateKeyStates()
 			return m, nil
 		}
 		m.entries = msg.entries
@@ -315,6 +333,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.lastDuration = msg.dur
 		m.loadingWindow = false
+		m.updateKeyStates()
 		return m, nil
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -334,18 +353,30 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.loaded && m.viewSize > 0 {
 			m.status = "Loading..."
 			side := m.windowSide()
+			m.updateKeyStates()
 			return m, windowCmd(m.ctx, m.namespace, splitCSV(m.tagsAny), splitCSV(m.tagsAll), m.since, m.until, api.Entry{}, side, side, "Loaded")
 		}
+		m.updateKeyStates()
 		return m, nil
 	case tea.KeyMsg:
+		if m.showHelp {
+			switch msg.String() {
+			case "?", "q", "esc", "enter":
+				m.showHelp = false
+			}
+			m.updateKeyStates()
+			return m, nil
+		}
 		if m.showModal && m.modal != nil {
 			switch msg.String() {
 			case "q", "esc", "enter", "i", "I":
 				m.showModal = false
+				m.updateKeyStates()
 				return m, nil
 			default:
 				var cmd tea.Cmd
 				m.modal, cmd = m.modal.update(msg)
+				m.updateKeyStates()
 				return m, cmd
 			}
 		}
@@ -353,6 +384,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "esc", "ctrl+q":
 				m.showFilter = false
+				m.updateKeyStates()
 				return m, nil
 			case "ctrl+x":
 				m.tagsAny = ""
@@ -363,6 +395,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.status = "Clearing filters..."
 				m.loaded = false
 				side := m.windowSide()
+				m.updateKeyStates()
 				return m, windowCmd(m.ctx, m.namespace, nil, nil, "", "", api.Entry{}, side, side, "Filters cleared")
 			case "enter":
 				tagsAny, tagsAll, since, until := m.filterModal.values()
@@ -380,10 +413,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.status = "Filtering..."
 				m.loaded = false
 				side := m.windowSide()
+				m.updateKeyStates()
 				return m, windowCmd(m.ctx, m.namespace, splitCSV(tagsAny), splitCSV(tagsAll), normalizedSince, normalizedUntil, api.Entry{}, side, side, "Filters applied")
 			default:
 				var cmd tea.Cmd
 				m.filterModal, cmd = m.filterModal.update(msg)
+				m.updateKeyStates()
 				return m, cmd
 			}
 		}
@@ -391,12 +426,23 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "esc", "ctrl+c", "ctrl+q":
 			if m.showModal {
 				m.showModal = false
+				m.updateKeyStates()
 				return m, nil
 			}
+			m.updateKeyStates()
 			return m, tea.Quit
+		case "?":
+			if m.showModal || m.showFilter {
+				m.updateKeyStates()
+				return m, nil
+			}
+			m.showHelp = true
+			m.updateKeyStates()
+			return m, nil
 		case "i", "I", "enter":
 			// Toggle content modal for the selected entry (rendered + scrollable)
 			if len(m.entries) == 0 {
+				m.updateKeyStates()
 				return m, nil
 			}
 			if !m.showModal {
@@ -409,14 +455,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.showModal = true
 				m.status = "Loading note…"
 				m.lastDuration = 0
+				m.updateKeyStates()
 				return m, showNoteCmd(m.ctx, sel.ID)
 			} else {
 				m.showModal = false
 			}
+			m.updateKeyStates()
 			return m, nil
 		case "e":
 			if m.editIdx >= 1 || m.deleteIdx >= 1 {
 				// another operation in progress
+				m.updateKeyStates()
 				return m, nil
 			}
 			idx := m.table.Cursor()
@@ -424,18 +473,23 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.editIdx = idx
 				sel := m.entries[idx]
 				m.status = fmt.Sprintf("Editing %s…", sel.ID)
+				m.updateKeyStates()
 				return m, editCmd(m.ctx, sel.ID, idx)
 			}
+			m.updateKeyStates()
 			return m, nil
 		case "s", "S":
 			m.status = "Triggering sync..."
+			m.updateKeyStates()
 			return m, manualSyncCmd(m.ctx)
 		case "f":
 			if m.showModal {
+				m.updateKeyStates()
 				return m, nil
 			}
 			m.filterModal = newFilterModal(m.tagsAny, m.tagsAll, m.since, m.until, m.namespace, m.width, m.height)
 			m.showFilter = true
+			m.updateKeyStates()
 			return m, nil
 		case "d":
 			idx := m.table.Cursor()
@@ -443,13 +497,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.deleteIdx = idx
 				sel := m.entries[idx]
 				m.status = fmt.Sprintf("Deleting %s…", sel.ID)
+				m.updateKeyStates()
 				return m, deleteCmd(m.ctx, sel.ID, idx)
 			}
+			m.updateKeyStates()
 			return m, nil
 		}
 	}
 	var cmd tea.Cmd
 	m.table, cmd = m.table.Update(msg)
+	m.updateKeyStates()
 	if refetchCmd := m.maybeRefetchWindow(); refetchCmd != nil {
 		return m, tea.Batch(cmd, refetchCmd)
 	}
@@ -457,7 +514,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) renderFooter() string {
-	left := "↑/↓ to navigate • d=delete • q=exit • e=edit • i/enter=inspect • s=sync • f=filter"
+	left := " press ? for help"
 
 	var right string
 	if m.status != "" {
@@ -479,6 +536,11 @@ func (m model) renderFooter() string {
 }
 
 func (m model) View() string {
+	if m.showHelp {
+		helpView, w, h := m.helpModalView()
+		base := m.table.View() + "\n" + m.renderFooter() + "\n"
+		return m.renderOverlay(base, helpView, w, h)
+	}
 	if m.table.Height() < 3 {
 		base := "(no entries) \n"
 		if m.showModal && m.modal != nil {
@@ -572,6 +634,23 @@ func (m *model) updateWindowSize() {
 	m.bufferSize = max(1, int(float64(m.viewSize)*m.bufferRatio))
 }
 
+func (m *model) updateKeyStates() {
+	hasEntries := len(m.entries) > 0
+	m.keys.Show.SetEnabled(hasEntries)
+	m.keys.Edit.SetEnabled(hasEntries)
+	m.keys.Delete.SetEnabled(hasEntries)
+}
+
+func (m model) helpModalView() (string, int, int) {
+	content := m.help.View(m.keys)
+	box := lipgloss.NewStyle().
+		Padding(1, 2).
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("63"))
+	view := box.Render(content)
+	return view, lipgloss.Width(view), lipgloss.Height(view)
+}
+
 func (m *model) requiredSide() int {
 	return m.viewSize + m.bufferSize
 }
@@ -652,5 +731,70 @@ func (m *model) columnsFor(headers bool, idW, titleW, tagsW, createdW int) []tab
 		{Title: "", Width: titleW},
 		{Title: "", Width: tagsW},
 		{Title: "", Width: createdW},
+	}
+}
+
+type keyMap struct {
+	Up     key.Binding
+	Down   key.Binding
+	Show   key.Binding
+	Edit   key.Binding
+	Delete key.Binding
+	Sync   key.Binding
+	Filter key.Binding
+	Help   key.Binding
+	Quit   key.Binding
+}
+
+func newKeyMap() keyMap {
+	return keyMap{
+		Up: key.NewBinding(
+			key.WithKeys("k", "up"),
+			key.WithHelp("k/↑", "move up"),
+		),
+		Down: key.NewBinding(
+			key.WithKeys("j", "down"),
+			key.WithHelp("j/↓", "move down"),
+		),
+		Show: key.NewBinding(
+			key.WithKeys("enter", "i"),
+			key.WithHelp("enter/i", "inspect"),
+		),
+		Edit: key.NewBinding(
+			key.WithKeys("e"),
+			key.WithHelp("e", "edit"),
+		),
+		Delete: key.NewBinding(
+			key.WithKeys("d"),
+			key.WithHelp("d", "delete"),
+		),
+		Sync: key.NewBinding(
+			key.WithKeys("s"),
+			key.WithHelp("s", "sync now"),
+		),
+		Filter: key.NewBinding(
+			key.WithKeys("f"),
+			key.WithHelp("f", "filter"),
+		),
+		Help: key.NewBinding(
+			key.WithKeys("?"),
+			key.WithHelp("?", "help"),
+		),
+		Quit: key.NewBinding(
+			key.WithKeys("q", "esc"),
+			key.WithHelp("q/esc", "quit"),
+		),
+	}
+}
+
+func (k keyMap) ShortHelp() []key.Binding {
+	return []key.Binding{k.Up, k.Down, k.Show, k.Edit, k.Delete, k.Help, k.Quit}
+}
+
+func (k keyMap) FullHelp() [][]key.Binding {
+	return [][]key.Binding{
+		{k.Up, k.Down, k.Show, k.Edit},
+		{k.Delete, k.Filter, k.Sync},
+		{k.Help, k.Quit},
 	}
 }

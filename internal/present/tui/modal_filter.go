@@ -59,12 +59,18 @@ func (m *filterModal) resizeForTerm(termW, termH int) {
 	if w < 46 {
 		w = max(42, termW-2)
 	}
+	if w > 90 {
+		w = 90
+	}
 	h := int(float64(termH) * 0.45)
 	if termH < 20 {
 		h = termH - 4
 	}
 	if h < 12 {
 		h = max(10, termH-1)
+	}
+	if h > 22 {
+		h = 22
 	}
 	m.width, m.height = w, h
 	m.box = lipglossv2.NewStyle().
