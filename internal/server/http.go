@@ -1,10 +1,10 @@
 package server
 
 import (
-	"context"
-	"errors"
+	"crypto/ed25519"
+	"encoding/base64"
+	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -15,6 +15,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	gcrypto "github.com/mithrel/ginkgo/internal/crypto"
 	"github.com/mithrel/ginkgo/internal/db"
 	pbmsg "github.com/mithrel/ginkgo/internal/ipc/pb"
 	"github.com/mithrel/ginkgo/pkg/api"
@@ -72,33 +73,40 @@ func (s *Server) handlePush(w http.ResponseWriter, r *http.Request) {
 	var last time.Time
 	for _, pev := range batch.Events {
 		st := &pbmsg.ItemStatus{Id: pev.GetId(), Ok: true}
+		var evTime time.Time
 		if t := pev.GetTime(); t != nil {
-			tt := t.AsTime()
-			if tt.After(last) {
-				last = tt
+			evTime = t.AsTime()
+			if evTime.After(last) {
+				last = evTime
 			}
 		}
-		switch strings.ToLower(pev.GetType()) {
-		case string(api.EventUpsert):
-			if pev.Entry == nil {
-				st.Ok = false
-				st.Msg = "missing entry"
-			} else if err := s.applyUpsert(r.Context(), fromPbEntry(pev.Entry)); err != nil {
-				st.Ok = false
-				st.Msg = err.Error()
-			}
-		case string(api.EventDelete):
-			if err := s.store.Entries.DeleteEntry(r.Context(), pev.GetId()); err != nil {
-				if !errors.Is(err, db.ErrNotFound) {
-					st.Ok = false
-					st.Msg = err.Error()
-				}
-			} else {
-				log.Printf("replicate: deleted id=%s", pev.GetId())
-			}
-		default:
+		evType := api.EventType(strings.ToLower(pev.GetType()))
+		if pev.GetPayloadType() == "" || len(pev.GetPayload()) == 0 {
 			st.Ok = false
-			st.Msg = "unknown event"
+			st.Msg = "missing payload"
+			out = append(out, st)
+			continue
+		}
+		if err := s.verifyRepEventSignature(pev); err != nil {
+			st.Ok = false
+			st.Msg = err.Error()
+			out = append(out, st)
+			continue
+		}
+		ev := api.Event{
+			Time:        evTime,
+			Type:        evType,
+			ID:          pev.GetId(),
+			Namespace:   pev.GetNamespaceId(),
+			PayloadType: pev.GetPayloadType(),
+			Payload:     append([]byte(nil), pev.GetPayload()...),
+			OriginLabel: pev.GetOriginLabel(),
+			SignerID:    pev.GetSignerId(),
+			Sig:         append([]byte(nil), pev.GetSig()...),
+		}
+		if err := s.store.Events.Append(r.Context(), ev); err != nil {
+			st.Ok = false
+			st.Msg = err.Error()
 		}
 		out = append(out, st)
 	}
@@ -108,31 +116,75 @@ func (s *Server) handlePush(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(enc)
 }
 
-func (s *Server) applyUpsert(ctx context.Context, e api.Entry) error {
-	// Try create; on conflict, fetch and CAS update
-	_, err := s.store.Entries.CreateEntry(ctx, e)
-	if err == nil {
-		log.Printf("replicate: created id=%s", e.ID)
-		return nil
-	}
-	if !errors.Is(err, db.ErrConflict) {
-		return err
-	}
-	cur, err := s.store.Entries.GetEntry(ctx, e.ID)
+func (s *Server) verifyRepEventSignature(pev *pbmsg.RepEvent) error {
+	ns := strings.TrimSpace(pev.GetNamespaceId())
+	trusted, err := s.trustedSigners(ns)
 	if err != nil {
 		return err
 	}
-	if e.Version <= cur.Version {
-		// Ignore stale or duplicate events; newest version wins.
+	if len(trusted) == 0 {
 		return nil
 	}
-	// advance to the incoming version; CAS on current version
-	_, err = s.store.Entries.UpdateEntryCAS(ctx, e, cur.Version)
+	if len(pev.GetSig()) == 0 || strings.TrimSpace(pev.GetSignerId()) == "" {
+		return fmt.Errorf("missing signature")
+	}
+	if pev.GetTime() == nil {
+		return fmt.Errorf("missing time")
+	}
+	signBytes, err := gcrypto.SignPayload(
+		1,
+		pev.GetTime().AsTime().UnixNano(),
+		strings.ToLower(pev.GetType()),
+		pev.GetId(),
+		ns,
+		pev.GetPayloadType(),
+		pev.GetOriginLabel(),
+		pev.GetPayload(),
+	)
 	if err != nil {
 		return err
 	}
-	log.Printf("replicate: updated id=%s", e.ID)
+	pub, ok := trusted[pev.GetSignerId()]
+	if !ok {
+		return fmt.Errorf("untrusted signer")
+	}
+	if err := gcrypto.VerifyEvent(pub, signBytes, pev.GetSig()); err != nil {
+		return err
+	}
 	return nil
+}
+
+func (s *Server) trustedSigners(ns string) (map[string]ed25519.PublicKey, error) {
+	base := "namespaces." + ns + ".trusted_signers"
+	values := s.cfg.GetStringSlice(base)
+	if len(values) == 0 {
+		if raw := strings.TrimSpace(s.cfg.GetString(base)); raw != "" {
+			values = strings.Split(raw, ",")
+		}
+	}
+	if len(values) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]ed25519.PublicKey, len(values))
+	for _, v := range values {
+		trim := strings.TrimSpace(v)
+		if trim == "" {
+			continue
+		}
+		b, err := base64.StdEncoding.DecodeString(trim)
+		if err != nil {
+			return nil, fmt.Errorf("invalid trusted signer key")
+		}
+		if len(b) != ed25519.PublicKeySize {
+			return nil, fmt.Errorf("invalid trusted signer key length")
+		}
+		id := gcrypto.SignerID(ed25519.PublicKey(b))
+		out[id] = ed25519.PublicKey(b)
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
 }
 
 func (s *Server) handlePull(w http.ResponseWriter, r *http.Request) {
@@ -165,24 +217,16 @@ func (s *Server) handlePull(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]*pbmsg.RepEvent, 0, len(evs))
 	for _, e := range evs {
-		var pe *pbmsg.Entry
-		if e.Entry != nil {
-			pe = &pbmsg.Entry{
-				Id:        e.Entry.ID,
-				Version:   e.Entry.Version,
-				Title:     e.Entry.Title,
-				Body:      e.Entry.Body,
-				Tags:      append([]string(nil), e.Entry.Tags...),
-				CreatedAt: timestamppb.New(e.Entry.CreatedAt),
-				UpdatedAt: timestamppb.New(e.Entry.UpdatedAt),
-				Namespace: e.Entry.Namespace,
-			}
-		}
 		out = append(out, &pbmsg.RepEvent{
-			Time:  timestamppb.New(e.Time),
-			Type:  string(e.Type),
-			Id:    e.ID,
-			Entry: pe,
+			Time:        timestamppb.New(e.Time),
+			Type:        string(e.Type),
+			Id:          e.ID,
+			NamespaceId: e.Namespace,
+			PayloadType: e.PayloadType,
+			Payload:     e.Payload,
+			OriginLabel: e.OriginLabel,
+			SignerId:    e.SignerID,
+			Sig:         e.Sig,
 		})
 	}
 	resp := &pbmsg.PullResult{Events: out}
@@ -192,24 +236,4 @@ func (s *Server) handlePull(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/x-protobuf")
 	b, _ := proto.Marshal(resp)
 	_, _ = w.Write(b)
-}
-
-func fromPbEntry(in *pbmsg.Entry) api.Entry {
-	var c, u time.Time
-	if in.GetCreatedAt() != nil {
-		c = in.GetCreatedAt().AsTime()
-	}
-	if in.GetUpdatedAt() != nil {
-		u = in.GetUpdatedAt().AsTime()
-	}
-	return api.Entry{
-		ID:        in.GetId(),
-		Version:   in.GetVersion(),
-		Title:     in.GetTitle(),
-		Body:      in.GetBody(),
-		Tags:      append([]string(nil), in.GetTags()...),
-		CreatedAt: c,
-		UpdatedAt: u,
-		Namespace: in.GetNamespace(),
-	}
 }

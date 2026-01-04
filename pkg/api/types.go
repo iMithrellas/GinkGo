@@ -21,10 +21,16 @@ const (
 )
 
 type Event struct {
-	Time  time.Time `json:"time"`
-	Type  EventType `json:"type"`
-	Entry *Entry    `json:"entry,omitempty"`
-	ID    string    `json:"id"`
+	Time        time.Time `json:"time"`
+	Type        EventType `json:"type"`
+	Entry       *Entry    `json:"entry,omitempty"`
+	ID          string    `json:"id"`
+	Namespace   string    `json:"namespace,omitempty"`
+	PayloadType string    `json:"payload_type,omitempty"`
+	Payload     []byte    `json:"payload,omitempty"`
+	OriginLabel string    `json:"origin_label,omitempty"`
+	SignerID    string    `json:"signer_id,omitempty"`
+	Sig         []byte    `json:"sig,omitempty"`
 }
 
 // Cursor can be extended later for pagination.

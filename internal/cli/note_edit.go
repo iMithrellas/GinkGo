@@ -23,11 +23,15 @@ func newNoteEditCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := args[0]
+			ns := resolveNamespace(cmd)
+			if err := ensureNamespaceConfigured(cmd, ns); err != nil {
+				return err
+			}
 			sock, err := ipc.SocketPath()
 			if err != nil {
 				return err
 			}
-			show, err := ipc.Request(cmd.Context(), sock, ipc.Message{Name: "note.show", ID: id, Namespace: resolveNamespace(cmd)})
+			show, err := ipc.Request(cmd.Context(), sock, ipc.Message{Name: "note.show", ID: id, Namespace: ns})
 			if err != nil {
 				return err
 			}
@@ -83,7 +87,7 @@ func newNoteEditCmd() *cobra.Command {
 			cur.Tags = tags
 			cur.Body = body
 			cur.UpdatedAt = time.Now().UTC()
-			eResp, err := ipc.Request(cmd.Context(), sock, ipc.Message{Name: "note.edit", ID: cur.ID, IfVersion: cur.Version, Title: cur.Title, Body: cur.Body, Tags: cur.Tags, Namespace: resolveNamespace(cmd)})
+			eResp, err := ipc.Request(cmd.Context(), sock, ipc.Message{Name: "note.edit", ID: cur.ID, IfVersion: cur.Version, Title: cur.Title, Body: cur.Body, Tags: cur.Tags, Namespace: ns})
 			if err != nil {
 				return err
 			}
@@ -100,7 +104,7 @@ func newNoteEditCmd() *cobra.Command {
 
 			// Conflict: load latest and optionally reopen
 			latest := cur
-			if show2, gerr := ipc.Request(cmd.Context(), sock, ipc.Message{Name: "note.show", ID: id, Namespace: resolveNamespace(cmd)}); gerr == nil && show2.Entry != nil {
+			if show2, gerr := ipc.Request(cmd.Context(), sock, ipc.Message{Name: "note.show", ID: id, Namespace: ns}); gerr == nil && show2.Entry != nil {
 				latest = *show2.Entry
 			}
 			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Conflict: note has changed since you opened it.")
@@ -136,7 +140,7 @@ func newNoteEditCmd() *cobra.Command {
 			}
 			latest.Title, latest.Tags, latest.Body = t2, tg2, b2
 			latest.UpdatedAt = time.Now().UTC()
-			e2, err := ipc.Request(cmd.Context(), sock, ipc.Message{Name: "note.edit", ID: latest.ID, IfVersion: latest.Version, Title: latest.Title, Body: latest.Body, Tags: latest.Tags, Namespace: resolveNamespace(cmd)})
+			e2, err := ipc.Request(cmd.Context(), sock, ipc.Message{Name: "note.edit", ID: latest.ID, IfVersion: latest.Version, Title: latest.Title, Body: latest.Body, Tags: latest.Tags, Namespace: ns})
 			if err != nil {
 				return err
 			}

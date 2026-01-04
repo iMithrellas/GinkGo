@@ -3,6 +3,9 @@ package sync
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -18,11 +21,14 @@ import (
 
 	"github.com/spf13/viper"
 
+	"golang.org/x/crypto/chacha20poly1305"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	gcrypto "github.com/mithrel/ginkgo/internal/crypto"
 	"github.com/mithrel/ginkgo/internal/db"
 	pbmsg "github.com/mithrel/ginkgo/internal/ipc/pb"
+	"github.com/mithrel/ginkgo/internal/keys"
 	"github.com/mithrel/ginkgo/pkg/api"
 )
 
@@ -31,6 +37,13 @@ type Service struct {
 	store      *db.Store
 	httpClient *http.Client
 }
+
+const (
+	// payloadTypePlainV1 stores JSON entry upsert/delete payloads.
+	payloadTypePlainV1 = "plain_v1"
+	// payloadTypeEncV1 stores encrypted payloads (opaque to the server).
+	payloadTypeEncV1 = "enc_v1"
+)
 
 type remoteConfig struct {
 	Name      string
@@ -159,7 +172,10 @@ func (s *Service) pushRemote(ctx context.Context, rc remoteConfig, pushAfter tim
 		return nil
 	}
 
-	pbBatch := s.eventsToProto(evs)
+	pbBatch, err := s.eventsToProto(evs)
+	if err != nil {
+		return err
+	}
 	body, _ := proto.Marshal(pbBatch)
 
 	respBody, code, err := s.execRequest(ctx, http.MethodPost, rc.URL+"/v1/replicate/push", rc.Token, "application/x-protobuf", body)
@@ -229,62 +245,392 @@ func (s *Service) pullRemote(ctx context.Context, rc remoteConfig, pullAfter tim
 }
 
 // eventsToProto handles verbose mapping logic
-func (s *Service) eventsToProto(evs []api.Event) *pbmsg.PushBatch {
+func (s *Service) eventsToProto(evs []api.Event) (*pbmsg.PushBatch, error) {
 	pbBatch := &pbmsg.PushBatch{Events: make([]*pbmsg.RepEvent, 0, len(evs))}
+	signerCache := map[string]*signerInfo{}
+	originCache := map[string]string{}
 	for _, e := range evs {
-		var pe *pbmsg.Entry
-		if e.Entry != nil {
-			pe = &pbmsg.Entry{
-				Id:        e.Entry.ID,
-				Version:   e.Entry.Version,
-				Title:     e.Entry.Title,
-				Body:      e.Entry.Body,
-				Tags:      append([]string(nil), e.Entry.Tags...),
-				CreatedAt: timestamppb.New(e.Entry.CreatedAt),
-				UpdatedAt: timestamppb.New(e.Entry.UpdatedAt),
-				Namespace: e.Entry.Namespace,
+		ns := e.Namespace
+		if ns == "" && e.Entry != nil {
+			ns = e.Entry.Namespace
+		}
+		payloadType := e.PayloadType
+		payload := e.Payload
+		if payloadType == "" || len(payload) == 0 {
+			var err error
+			payloadType, payload, err = encodePlainPayload(e, ns)
+			if err != nil {
+				return nil, err
 			}
 		}
+		if s.e2eeEnabled(ns) && payloadType == payloadTypePlainV1 {
+			var err error
+			payloadType, payload, err = s.encryptPayload(ns, payload)
+			if err != nil {
+				return nil, err
+			}
+		}
+		origin := originCache[ns]
+		if origin == "" {
+			origin = s.originLabel(ns)
+			originCache[ns] = origin
+		}
+
+		var signerID string
+		var sig []byte
+		if signerCache[ns] == nil {
+			info, err := s.signerForNamespace(ns)
+			if err != nil {
+				return nil, err
+			}
+			signerCache[ns] = info
+		}
+		if signerCache[ns] != nil {
+			info := signerCache[ns]
+			signBytes, err := gcrypto.SignPayload(1, e.Time.UnixNano(), string(e.Type), e.ID, ns, payloadType, origin, payload)
+			if err != nil {
+				return nil, err
+			}
+			sig, err = gcrypto.SignEvent(info.Priv, signBytes)
+			if err != nil {
+				return nil, err
+			}
+			signerID = info.ID
+		}
 		pbBatch.Events = append(pbBatch.Events, &pbmsg.RepEvent{
-			Time:  timestamppb.New(e.Time),
-			Type:  string(e.Type),
-			Id:    e.ID,
-			Entry: pe,
+			Time:        timestamppb.New(e.Time),
+			Type:        string(e.Type),
+			Id:          e.ID,
+			NamespaceId: ns,
+			PayloadType: payloadType,
+			Payload:     payload,
+			SignerId:    signerID,
+			Sig:         sig,
+			OriginLabel: origin,
 		})
 	}
-	return pbBatch
+	return pbBatch, nil
 }
 
 // repEventToAPI converts a pulled RepEvent into a local api.Event.
-func (s *Service) repEventToAPI(pev *pbmsg.RepEvent) api.Event {
-	var e *api.Entry
-	if pev.Entry != nil {
-		ee := api.Entry{
-			ID: pev.Entry.GetId(), Version: pev.Entry.GetVersion(), Title: pev.Entry.GetTitle(), Body: pev.Entry.GetBody(),
-			Tags: append([]string(nil), pev.Entry.GetTags()...), Namespace: pev.Entry.GetNamespace(),
-		}
-		if pev.Entry.GetCreatedAt() != nil {
-			ee.CreatedAt = pev.Entry.GetCreatedAt().AsTime()
-		}
-		if pev.Entry.GetUpdatedAt() != nil {
-			ee.UpdatedAt = pev.Entry.GetUpdatedAt().AsTime()
-		}
-		e = &ee
+func (s *Service) repEventToAPI(pev *pbmsg.RepEvent) (api.Event, error) {
+	ev := api.Event{
+		ID:          pev.GetId(),
+		Type:        api.EventType(strings.ToLower(pev.GetType())),
+		Namespace:   pev.GetNamespaceId(),
+		PayloadType: pev.GetPayloadType(),
+		Payload:     append([]byte(nil), pev.GetPayload()...),
+		OriginLabel: pev.GetOriginLabel(),
+		SignerID:    pev.GetSignerId(),
+		Sig:         append([]byte(nil), pev.GetSig()...),
 	}
-	ev := api.Event{ID: pev.GetId(), Type: api.EventType(strings.ToLower(pev.GetType())), Entry: e}
 	if pev.GetTime() != nil {
 		ev.Time = pev.GetTime().AsTime()
 	}
-	return ev
+	switch ev.PayloadType {
+	case payloadTypePlainV1:
+		if len(ev.Payload) > 0 {
+			entry, ns, err := decodePlainPayload(ev.Type, ev.Payload)
+			if err != nil {
+				return api.Event{}, err
+			}
+			ev.Entry = entry
+			if ev.Namespace == "" {
+				ev.Namespace = ns
+			}
+		}
+	case payloadTypeEncV1:
+		if len(ev.Payload) > 0 {
+			plain, err := s.decryptPayload(ev.Namespace, ev.Payload)
+			if err != nil {
+				return api.Event{}, err
+			}
+			entry, ns, err := decodePlainPayload(ev.Type, plain)
+			if err != nil {
+				return api.Event{}, err
+			}
+			ev.Entry = entry
+			if ev.Namespace == "" {
+				ev.Namespace = ns
+			}
+		}
+	}
+	return ev, nil
 }
 
 // applyPullBatch applies pulled events without re-logging them locally.
 func (s *Service) applyPullBatch(ctx context.Context, in []*pbmsg.RepEvent) error {
+	evs := make([]api.Event, 0, len(in))
 	for _, pev := range in {
-		ev := s.repEventToAPI(pev)
-		if err := s.store.ApplyReplication(ctx, ev); err != nil && err != db.ErrConflict && err != db.ErrNotFound {
+		ev, err := s.repEventToAPI(pev)
+		if err != nil {
 			return err
 		}
+		evs = append(evs, ev)
+	}
+	if err := s.store.ApplyReplicationBatch(ctx, evs); err != nil && err != db.ErrConflict && err != db.ErrNotFound {
+		return err
+	}
+	return nil
+}
+
+func encodePlainPayload(ev api.Event, ns string) (string, []byte, error) {
+	switch ev.Type {
+	case api.EventUpsert:
+		if ev.Entry == nil {
+			return "", nil, fmt.Errorf("%s upsert requires entry", payloadTypePlainV1)
+		}
+		b, err := json.Marshal(ev.Entry)
+		return payloadTypePlainV1, b, err
+	case api.EventDelete:
+		dp := struct {
+			ID        string `json:"id"`
+			Namespace string `json:"namespace"`
+		}{ID: ev.ID, Namespace: ns}
+		b, err := json.Marshal(dp)
+		return payloadTypePlainV1, b, err
+	default:
+		return "", nil, fmt.Errorf("unknown event type %q", ev.Type)
+	}
+}
+
+func decodePlainPayload(evType api.EventType, payload []byte) (*api.Entry, string, error) {
+	switch evType {
+	case api.EventUpsert:
+		var e api.Entry
+		if err := json.Unmarshal(payload, &e); err != nil {
+			return nil, "", err
+		}
+		return &e, e.Namespace, nil
+	case api.EventDelete:
+		var dp struct {
+			ID        string `json:"id"`
+			Namespace string `json:"namespace"`
+		}
+		if err := json.Unmarshal(payload, &dp); err != nil {
+			return nil, "", err
+		}
+		return nil, dp.Namespace, nil
+	default:
+		return nil, "", fmt.Errorf("unknown event type %q", evType)
+	}
+}
+
+type encryptedPayloadV1 struct {
+	Version    uint8  `json:"version"`
+	KeyID      string `json:"key_id,omitempty"`
+	Alg        string `json:"alg"`
+	Nonce      []byte `json:"nonce"`
+	Ciphertext []byte `json:"ciphertext"`
+}
+
+func (s *Service) encryptPayload(ns string, payload []byte) (string, []byte, error) {
+	key, keyID, err := s.keyForNamespace(ns, "write")
+	if err != nil {
+		return "", nil, err
+	}
+	aead, err := chacha20poly1305.NewX(key)
+	if err != nil {
+		return "", nil, err
+	}
+	nonce := make([]byte, aead.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return "", nil, err
+	}
+	ciphertext := aead.Seal(nil, nonce, payload, nil)
+	env := encryptedPayloadV1{
+		Version:    1,
+		KeyID:      keyID,
+		Alg:        "xchacha20poly1305",
+		Nonce:      nonce,
+		Ciphertext: ciphertext,
+	}
+	b, err := json.Marshal(env)
+	if err != nil {
+		return "", nil, err
+	}
+	return payloadTypeEncV1, b, nil
+}
+
+func (s *Service) decryptPayload(ns string, payload []byte) ([]byte, error) {
+	var env encryptedPayloadV1
+	if err := json.Unmarshal(payload, &env); err != nil {
+		return nil, err
+	}
+	if env.Version != 1 {
+		return nil, fmt.Errorf("unsupported enc_v1 version %d", env.Version)
+	}
+	if env.Alg != "xchacha20poly1305" {
+		return nil, fmt.Errorf("unsupported enc_v1 alg %s", env.Alg)
+	}
+	key, _, err := s.keyForNamespace(ns, "read")
+	if err != nil {
+		return nil, err
+	}
+	aead, err := chacha20poly1305.NewX(key)
+	if err != nil {
+		return nil, err
+	}
+	if len(env.Nonce) != aead.NonceSize() {
+		return nil, fmt.Errorf("invalid enc_v1 nonce length")
+	}
+	plain, err := aead.Open(nil, env.Nonce, env.Ciphertext, nil)
+	if err != nil {
+		return nil, err
+	}
+	return plain, nil
+}
+
+type signerInfo struct {
+	ID     string
+	Priv   ed25519.PrivateKey
+	Origin string
+}
+
+func (s *Service) e2eeEnabled(ns string) bool {
+	if strings.TrimSpace(ns) == "" {
+		return false
+	}
+	return s.cfg.GetBool("namespaces." + ns + ".e2ee")
+}
+
+func (s *Service) keyForNamespace(ns, kind string) ([]byte, string, error) {
+	if strings.TrimSpace(ns) == "" {
+		return nil, "", fmt.Errorf("namespace is required")
+	}
+	base := "namespaces." + ns + "."
+	provider := strings.TrimSpace(s.cfg.GetString(base + "key_provider"))
+	if provider == "" {
+		provider = "config"
+	}
+	keyID := strings.TrimSpace(s.cfg.GetString(base + "key_id"))
+	switch provider {
+	case "system":
+		if keyID == "" {
+			return nil, "", fmt.Errorf("namespace %s missing key_id", ns)
+		}
+		ks := &keys.KeyringStore{}
+		key, err := ks.Get(keyID + "/" + kind)
+		if err != nil {
+			return nil, "", err
+		}
+		return key, keyID, nil
+	case "config":
+		var b64 string
+		if kind == "read" {
+			b64 = strings.TrimSpace(s.cfg.GetString(base + "read_key"))
+		} else {
+			b64 = strings.TrimSpace(s.cfg.GetString(base + "write_key"))
+		}
+		if b64 == "" {
+			return nil, "", fmt.Errorf("namespace %s missing %s_key", ns, kind)
+		}
+		key, err := base64.StdEncoding.DecodeString(b64)
+		if err != nil {
+			return nil, "", err
+		}
+		return key, keyID, nil
+	default:
+		return nil, "", fmt.Errorf("unsupported key_provider %q for namespace %s", provider, ns)
+	}
+}
+
+func (s *Service) originLabel(ns string) string {
+	base := "namespaces." + ns + ".origin_label"
+	if v := strings.TrimSpace(s.cfg.GetString(base)); v != "" {
+		return v
+	}
+	host, err := os.Hostname()
+	if err != nil || strings.TrimSpace(host) == "" {
+		return "ginkgo-device"
+	}
+	return host
+}
+
+func (s *Service) signerForNamespace(ns string) (*signerInfo, error) {
+	base := "namespaces." + ns + "."
+	provider := strings.TrimSpace(s.cfg.GetString(base + "signer_key_provider"))
+	if provider == "" {
+		return nil, nil
+	}
+	switch provider {
+	case "system":
+		keyID := strings.TrimSpace(s.cfg.GetString(base + "signer_key_id"))
+		if keyID == "" {
+			return nil, fmt.Errorf("namespace %s missing signer_key_id", ns)
+		}
+		ks := &keys.KeyringStore{}
+		privBytes, err := ks.Get(keyID + "/priv")
+		if err != nil {
+			return nil, err
+		}
+		priv := normalizePrivKey(privBytes)
+		if priv == nil {
+			return nil, fmt.Errorf("invalid signer private key")
+		}
+		pub := derivePubFromPriv(priv)
+		if pub == nil {
+			return nil, fmt.Errorf("invalid signer public key")
+		}
+		id := gcrypto.SignerID(pub)
+		return &signerInfo{ID: id, Priv: priv}, nil
+	case "config":
+		privB64 := strings.TrimSpace(s.cfg.GetString(base + "signer_priv"))
+		if privB64 == "" {
+			return nil, fmt.Errorf("namespace %s missing signer_priv", ns)
+		}
+		privBytes, err := decodeKeyB64(privB64)
+		if err != nil {
+			return nil, err
+		}
+		priv := normalizePrivKey(privBytes)
+		if priv == nil {
+			return nil, fmt.Errorf("invalid signer private key")
+		}
+		pubB64 := strings.TrimSpace(s.cfg.GetString(base + "signer_pub"))
+		var pub []byte
+		if pubB64 != "" {
+			pub, err = decodeKeyB64(pubB64)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			pub = derivePubFromPriv(priv)
+		}
+		if pub == nil {
+			return nil, fmt.Errorf("invalid signer public key")
+		}
+		id := gcrypto.SignerID(pub)
+		return &signerInfo{ID: id, Priv: priv}, nil
+	default:
+		return nil, fmt.Errorf("unsupported signer_key_provider %q for namespace %s", provider, ns)
+	}
+}
+
+func decodeKeyB64(v string) ([]byte, error) {
+	b, err := base64.StdEncoding.DecodeString(v)
+	if err != nil {
+		return nil, fmt.Errorf("invalid base64 key")
+	}
+	return b, nil
+}
+
+func normalizePrivKey(priv []byte) ed25519.PrivateKey {
+	if len(priv) == ed25519.SeedSize {
+		return ed25519.NewKeyFromSeed(priv)
+	}
+	if len(priv) == ed25519.PrivateKeySize {
+		return ed25519.PrivateKey(priv)
+	}
+	return nil
+}
+
+func derivePubFromPriv(priv ed25519.PrivateKey) []byte {
+	if len(priv) == ed25519.SeedSize {
+		priv = ed25519.NewKeyFromSeed(priv)
+	}
+	if len(priv) == ed25519.PrivateKeySize {
+		return priv.Public().(ed25519.PublicKey)
 	}
 	return nil
 }

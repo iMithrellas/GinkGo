@@ -72,6 +72,9 @@ func (h pbHandler) Handle(ctx context.Context, req any) (any, error) {
 		}
 	case *pb.Request_NamespaceList:
 		m.Name = "namespace.list"
+	case *pb.Request_NamespaceDelete:
+		m.Name = "namespace.delete"
+		m.Namespace = x.NamespaceDelete.Namespace
 	case *pb.Request_TagList:
 		m.Name = "tag.list"
 		if x.TagList != nil {

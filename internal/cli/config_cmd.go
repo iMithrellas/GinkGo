@@ -16,6 +16,7 @@ func newConfigCmd() *cobra.Command {
 		Short: "Manage configuration",
 	}
 	cmd.AddCommand(newConfigGenerateCmd())
+	cmd.AddCommand(newConfigNamespaceCmd())
 	return cmd
 }
 

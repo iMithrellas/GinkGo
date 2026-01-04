@@ -20,6 +20,7 @@ type EntryRepo interface {
 	CreateEntry(ctx context.Context, e api.Entry) (api.Entry, error)
 	UpdateEntryCAS(ctx context.Context, e api.Entry, ifVersion int64) (api.Entry, error)
 	DeleteEntry(ctx context.Context, id string) error
+	DeleteNamespace(ctx context.Context, namespace string) (int64, error)
 	ListEntries(ctx context.Context, q api.ListQuery) ([]api.Entry, api.Page, error)
 	Search(ctx context.Context, q api.SearchQuery) ([]api.Entry, api.Page, error)
 	ListTags(ctx context.Context, q api.TagsQuery) ([]api.TagStat, error)
@@ -104,4 +105,32 @@ func (s *Store) ApplyReplication(ctx context.Context, ev api.Event) error {
 	default:
 		return nil
 	}
+}
+
+// ApplyReplicationBatch applies a batch of events using a single transaction when supported.
+func (s *Store) ApplyReplicationBatch(ctx context.Context, evs []api.Event) error {
+	if len(evs) == 0 {
+		return nil
+	}
+	ctx = WithNoEventLog(ctx)
+	if tp, ok := s.Entries.(TxProvider); ok {
+		tx, err := tp.BeginTx(ctx)
+		if err != nil {
+			return err
+		}
+		ctx = WithTx(ctx, tx)
+		for _, ev := range evs {
+			if err := s.ApplyReplication(ctx, ev); err != nil {
+				_ = tx.Rollback()
+				return err
+			}
+		}
+		return tx.Commit()
+	}
+	for _, ev := range evs {
+		if err := s.ApplyReplication(ctx, ev); err != nil {
+			return err
+		}
+	}
+	return nil
 }

@@ -69,6 +69,9 @@ func writeConfigTOML(t *testing.T, dir string) string {
 	cfg := filepath.Join(dir, "config.toml")
 	content := `data_dir = "` + strings.ReplaceAll(dir, "\\", "\\\\") + `"
 default_namespace = "testcli"
+namespace = "testcli"
+[namespaces.testcli]
+e2ee = false
 `
 	if err := os.WriteFile(cfg, []byte(content), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -138,5 +141,102 @@ func TestCLIAddShowDeleteJSON(t *testing.T) {
 	root4.SetArgs([]string{"--config", cfgPath, "note", "show", id})
 	if err := root4.Execute(); err == nil {
 		t.Fatalf("expected show to fail after delete, output=%q", out4.String())
+	}
+}
+
+func TestConfigNamespaceKey(t *testing.T) {
+	cancel, _, dataDir := startTestDaemon(t)
+	defer cancel()
+
+	cfgPath := writeConfigTOML(t, dataDir)
+
+	root := NewRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"--config", cfgPath, "config", "namespace", "key"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("key execute: %v\n%s", err, out.String())
+	}
+	got := out.String()
+	if !strings.Contains(got, "namespace: testcli") {
+		t.Fatalf("missing namespace output: %q", got)
+	}
+	if !strings.Contains(got, "key_provider: config") {
+		t.Fatalf("missing key_provider output: %q", got)
+	}
+	if !strings.Contains(got, "read_key: (missing)") {
+		t.Fatalf("missing read_key placeholder: %q", got)
+	}
+	if !strings.Contains(got, "write_key: (missing)") {
+		t.Fatalf("missing write_key placeholder: %q", got)
+	}
+
+	withKeys := `data_dir = "` + strings.ReplaceAll(dataDir, "\\", "\\\\") + `"
+default_namespace = "testcli"
+namespace = "testcli"
+[namespaces.testcli]
+e2ee = true
+key_provider = "config"
+read_key = "cmVhZA=="
+write_key = "d3JpdGU="
+`
+	if err := os.WriteFile(cfgPath, []byte(withKeys), 0o600); err != nil {
+		t.Fatalf("rewrite config: %v", err)
+	}
+
+	root2 := NewRootCmd()
+	var out2 bytes.Buffer
+	root2.SetOut(&out2)
+	root2.SetErr(&out2)
+	root2.SetArgs([]string{"--config", cfgPath, "config", "namespace", "key"})
+	if err := root2.Execute(); err != nil {
+		t.Fatalf("key execute with keys: %v\n%s", err, out2.String())
+	}
+	got2 := out2.String()
+	if !strings.Contains(got2, "read_key: cmVhZA==") {
+		t.Fatalf("missing read_key: %q", got2)
+	}
+	if !strings.Contains(got2, "write_key: d3JpdGU=") {
+		t.Fatalf("missing write_key: %q", got2)
+	}
+}
+
+func TestConfigNamespaceDelete(t *testing.T) {
+	cancel, sock, dataDir := startTestDaemon(t)
+	defer cancel()
+
+	cfgPath := writeConfigTOML(t, dataDir)
+
+	// Seed a note in the namespace.
+	root := NewRootCmd()
+	root.SetArgs([]string{"--config", cfgPath, "note", "add", "Delete Me"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("add execute: %v", err)
+	}
+
+	// Delete the namespace.
+	root2 := NewRootCmd()
+	root2.SetArgs([]string{"--config", cfgPath, "note", "delete", "--namespace-delete", "--yes"})
+	if err := root2.Execute(); err != nil {
+		t.Fatalf("delete execute: %v", err)
+	}
+
+	// Verify list is empty.
+	resp, err := ipc.Request(context.Background(), sock, ipc.Message{Name: "note.list", Namespace: "testcli"})
+	if err != nil {
+		t.Fatalf("list execute: %v", err)
+	}
+	if len(resp.Entries) != 0 {
+		t.Fatalf("expected 0 entries, got %d", len(resp.Entries))
+	}
+
+	// Verify config section is removed.
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if strings.Contains(string(data), "[namespaces.testcli]") {
+		t.Fatalf("namespace config still present")
 	}
 }

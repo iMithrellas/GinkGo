@@ -21,6 +21,21 @@ import (
 
 type sqliteStore struct{ db *sql.DB }
 
+func (s *sqliteStore) BeginTx(ctx context.Context) (*sql.Tx, error) {
+	return s.db.BeginTx(ctx, nil)
+}
+
+func (s *sqliteStore) txFor(ctx context.Context) (*sql.Tx, bool, error) {
+	if tx := TxFromContext(ctx); tx != nil {
+		return tx, false, nil
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, false, err
+	}
+	return tx, true, nil
+}
+
 // filter and prefilter help compose a reusable CTE for namespace/time/tag constraints.
 type filter struct {
 	Namespace string
@@ -114,18 +129,25 @@ func buildPrefilter(f filter) prefilter {
 
 // EventLog
 func (s *sqliteStore) Append(ctx context.Context, ev api.Event) error {
-	var entryJSON []byte
-	if ev.Entry != nil {
-		b, _ := json.Marshal(ev.Entry)
-		entryJSON = b
+	tx, owned, err := s.txFor(ctx)
+	if err != nil {
+		return err
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO events(time, type, id, entry_json) VALUES(?,?,?,?)`, ev.Time.UTC(), string(ev.Type), ev.ID, entryJSON)
-	return err
+	if owned {
+		defer tx.Rollback()
+	}
+	if err := appendEventTx(ctx, tx, ev); err != nil {
+		return err
+	}
+	if owned {
+		return tx.Commit()
+	}
+	return nil
 }
 
 func (s *sqliteStore) List(ctx context.Context, cur api.Cursor, limit int) ([]api.Event, api.Cursor, error) {
 	// Apply simple cursor and limit.
-	q := `SELECT time, type, id, entry_json FROM events`
+	q := `SELECT time, type, id, namespace, payload_type, payload, origin_label, signer_id, sig FROM events`
 	args := []any{}
 	if !cur.After.IsZero() {
 		q += ` WHERE time > ?`
@@ -147,15 +169,26 @@ func (s *sqliteStore) List(ctx context.Context, cur api.Cursor, limit int) ([]ap
 		var t time.Time
 		var typ string
 		var id string
-		var ej []byte
-		if err := rows.Scan(&t, &typ, &id, &ej); err != nil {
+		var ns sql.NullString
+		var payloadType sql.NullString
+		var payload []byte
+		var originLabel sql.NullString
+		var signerID sql.NullString
+		var sig []byte
+		if err := rows.Scan(&t, &typ, &id, &ns, &payloadType, &payload, &originLabel, &signerID, &sig); err != nil {
 			return nil, api.Cursor{}, err
 		}
-		var e *api.Entry
-		if len(ej) > 0 {
-			_ = json.Unmarshal(ej, &e)
-		}
-		out = append(out, api.Event{Time: t, Type: api.EventType(typ), ID: id, Entry: e})
+		out = append(out, api.Event{
+			Time:        t,
+			Type:        api.EventType(typ),
+			ID:          id,
+			Namespace:   ns.String,
+			PayloadType: payloadType.String,
+			Payload:     payload,
+			OriginLabel: originLabel.String,
+			SignerID:    signerID.String,
+			Sig:         sig,
+		})
 	}
 	var next api.Cursor
 	if len(out) > 0 {
@@ -167,7 +200,14 @@ func (s *sqliteStore) List(ctx context.Context, cur api.Cursor, limit int) ([]ap
 func (s *sqliteStore) GetEntry(ctx context.Context, id string) (api.Entry, error) {
 	var e api.Entry
 	var tagsJSON string
-	row := s.db.QueryRowContext(ctx, `SELECT id, version, title, body, tags, created_at, updated_at, namespace FROM entries WHERE id=?`, id)
+	tx, owned, err := s.txFor(ctx)
+	if err != nil {
+		return api.Entry{}, err
+	}
+	if owned {
+		defer tx.Rollback()
+	}
+	row := tx.QueryRowContext(ctx, `SELECT id, version, title, body, tags, created_at, updated_at, namespace FROM entries WHERE id=?`, id)
 	if err := row.Scan(&e.ID, &e.Version, &e.Title, &e.Body, &tagsJSON, &e.CreatedAt, &e.UpdatedAt, &e.Namespace); err != nil {
 		if err == sql.ErrNoRows {
 			return api.Entry{}, ErrNotFound
@@ -175,6 +215,11 @@ func (s *sqliteStore) GetEntry(ctx context.Context, id string) (api.Entry, error
 		return api.Entry{}, err
 	}
 	_ = json.Unmarshal([]byte(tagsJSON), &e.Tags)
+	if owned {
+		if err := tx.Commit(); err != nil {
+			return api.Entry{}, err
+		}
+	}
 	return e, nil
 }
 
@@ -187,11 +232,13 @@ func (s *sqliteStore) CreateEntry(ctx context.Context, e api.Entry) (api.Entry, 
 	}
 	tagsJSON, _ := json.Marshal(e.Tags)
 	tagsTokens := strings.Join(e.Tags, " ")
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, owned, err := s.txFor(ctx)
 	if err != nil {
 		return api.Entry{}, err
 	}
-	defer tx.Rollback()
+	if owned {
+		defer tx.Rollback()
+	}
 
 	if _, err = tx.ExecContext(ctx, `INSERT INTO entries(id, version, title, body, tags, created_at, updated_at, namespace) VALUES(?,?,?,?,?,?,?,?)`,
 		e.ID, e.Version, e.Title, e.Body, string(tagsJSON), e.CreatedAt.UTC(), e.UpdatedAt.UTC(), e.Namespace); err != nil {
@@ -214,8 +261,10 @@ func (s *sqliteStore) CreateEntry(ctx context.Context, e api.Entry) (api.Entry, 
 	if _, err = tx.ExecContext(ctx, `INSERT INTO entries_fts(rowid, title, body, tags, namespace, id) VALUES((SELECT rowid FROM entries WHERE id=?), ?, ?, ?, ?, ?)`, e.ID, e.Title, e.Body, tagsTokens, e.Namespace, e.ID); err != nil {
 		return api.Entry{}, err
 	}
-	if err := tx.Commit(); err != nil {
-		return api.Entry{}, err
+	if owned {
+		if err := tx.Commit(); err != nil {
+			return api.Entry{}, err
+		}
 	}
 	return e, nil
 }
@@ -223,11 +272,13 @@ func (s *sqliteStore) CreateEntry(ctx context.Context, e api.Entry) (api.Entry, 
 func (s *sqliteStore) UpdateEntryCAS(ctx context.Context, e api.Entry, ifVersion int64) (api.Entry, error) {
 	tagsJSON, _ := json.Marshal(e.Tags)
 	tagsTokens := strings.Join(e.Tags, " ")
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, owned, err := s.txFor(ctx)
 	if err != nil {
 		return api.Entry{}, err
 	}
-	defer tx.Rollback()
+	if owned {
+		defer tx.Rollback()
+	}
 
 	// Update using explicit version from 'e'
 	res, err := tx.ExecContext(ctx, `UPDATE entries SET version=?, title=?, body=?, tags=?, updated_at=?, namespace=? WHERE id=? AND version=?`,
@@ -269,18 +320,29 @@ func (s *sqliteStore) UpdateEntryCAS(ctx context.Context, e api.Entry, ifVersion
 			return api.Entry{}, err
 		}
 	}
-	if err := tx.Commit(); err != nil {
-		return api.Entry{}, err
+	if owned {
+		if err := tx.Commit(); err != nil {
+			return api.Entry{}, err
+		}
 	}
 	return ne, nil
 }
 
 func (s *sqliteStore) DeleteEntry(ctx context.Context, id string) error {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, owned, err := s.txFor(ctx)
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	if owned {
+		defer tx.Rollback()
+	}
+	var ns string
+	if err := tx.QueryRowContext(ctx, `SELECT namespace FROM entries WHERE id=?`, id).Scan(&ns); err != nil {
+		if err == sql.ErrNoRows {
+			return ErrNotFound
+		}
+		return err
+	}
 	res, err := tx.ExecContext(ctx, `DELETE FROM entries WHERE id=?`, id)
 	if err != nil {
 		return err
@@ -295,11 +357,69 @@ func (s *sqliteStore) DeleteEntry(ctx context.Context, id string) error {
 		return err
 	}
 	if shouldLog(ctx) {
-		if err = appendEventTx(ctx, tx, api.Event{Time: time.Now().UTC(), Type: api.EventDelete, ID: id}); err != nil {
+		if err = appendEventTx(ctx, tx, api.Event{Time: time.Now().UTC(), Type: api.EventDelete, ID: id, Namespace: ns}); err != nil {
 			return err
 		}
 	}
-	return tx.Commit()
+	if owned {
+		return tx.Commit()
+	}
+	return nil
+}
+
+func (s *sqliteStore) DeleteNamespace(ctx context.Context, namespace string) (int64, error) {
+	if strings.TrimSpace(namespace) == "" {
+		return 0, fmt.Errorf("namespace is required")
+	}
+	tx, owned, err := s.txFor(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if owned {
+		defer tx.Rollback()
+	}
+
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM entries WHERE namespace=?`, namespace)
+	if err != nil {
+		return 0, err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			_ = rows.Close()
+			return 0, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	_ = rows.Close()
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM entries_fts WHERE namespace=?`, namespace); err != nil {
+		return 0, err
+	}
+	res, err := tx.ExecContext(ctx, `DELETE FROM entries WHERE namespace=?`, namespace)
+	if err != nil {
+		return 0, err
+	}
+	deleted, _ := res.RowsAffected()
+
+	if shouldLog(ctx) {
+		for _, id := range ids {
+			if err := appendEventTx(ctx, tx, api.Event{Time: time.Now().UTC(), Type: api.EventDelete, ID: id, Namespace: namespace}); err != nil {
+				return 0, err
+			}
+		}
+	}
+
+	if owned {
+		if err := tx.Commit(); err != nil {
+			return 0, err
+		}
+	}
+	return deleted, nil
 }
 
 // ListEntries retrieves entries based on provided filters, including namespace, time ranges, and tags.
@@ -737,7 +857,12 @@ CREATE TABLE IF NOT EXISTS events (
   time TIMESTAMP NOT NULL,
   type TEXT NOT NULL,
   id TEXT NOT NULL,
-  entry_json BLOB
+  namespace TEXT,
+  payload_type TEXT,
+  payload BLOB,
+  origin_label TEXT,
+  signer_id TEXT,
+  sig BLOB
 );
 -- Tags projection and metadata
 CREATE TABLE IF NOT EXISTS note_tags (
@@ -757,17 +882,91 @@ CREATE VIRTUAL TABLE IF NOT EXISTS entries_fts USING fts5(
   tokenize='unicode61'
 );
 `)
-	return err
+	if err != nil {
+		return err
+	}
+	return ensureEventColumns(ctx, db)
+}
+
+func ensureEventColumns(ctx context.Context, db *sql.DB) error {
+	rows, err := db.QueryContext(ctx, `PRAGMA table_info(events)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	existing := map[string]bool{}
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull, pk int
+		var dflt any
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			return err
+		}
+		existing[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	columns := []struct {
+		Name string
+		DDL  string
+	}{
+		{Name: "namespace", DDL: "ALTER TABLE events ADD COLUMN namespace TEXT"},
+		{Name: "payload_type", DDL: "ALTER TABLE events ADD COLUMN payload_type TEXT"},
+		{Name: "payload", DDL: "ALTER TABLE events ADD COLUMN payload BLOB"},
+		{Name: "origin_label", DDL: "ALTER TABLE events ADD COLUMN origin_label TEXT"},
+		{Name: "signer_id", DDL: "ALTER TABLE events ADD COLUMN signer_id TEXT"},
+		{Name: "sig", DDL: "ALTER TABLE events ADD COLUMN sig BLOB"},
+	}
+	for _, col := range columns {
+		if existing[col.Name] {
+			continue
+		}
+		if _, err := db.ExecContext(ctx, col.DDL); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // appendEventTx writes to events within the provided transaction.
 func appendEventTx(ctx context.Context, tx *sql.Tx, ev api.Event) error {
-	var entryJSON []byte
-	if ev.Entry != nil {
-		b, _ := json.Marshal(ev.Entry)
-		entryJSON = b
+	var err error
+	ns := ev.Namespace
+	if ns == "" && ev.Entry != nil {
+		ns = ev.Entry.Namespace
 	}
-	_, err := tx.ExecContext(ctx, `INSERT INTO events(time, type, id, entry_json) VALUES(?,?,?,?)`, ev.Time.UTC(), string(ev.Type), ev.ID, entryJSON)
+	// payload_type is a replication hint: plain_v1 (JSON entry payload) or enc_v1 (encrypted payload).
+	payloadType := ev.PayloadType
+	payload := ev.Payload
+	if payloadType == "" && len(payload) == 0 {
+		switch ev.Type {
+		case api.EventUpsert:
+			if ev.Entry != nil {
+				payloadType = "plain_v1"
+				payload, err = json.Marshal(ev.Entry)
+				if err != nil {
+					return err
+				}
+			}
+		case api.EventDelete:
+			payloadType = "plain_v1"
+			dp := struct {
+				ID        string `json:"id"`
+				Namespace string `json:"namespace"`
+			}{ID: ev.ID, Namespace: ns}
+			payload, err = json.Marshal(dp)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	_, err = tx.ExecContext(ctx, `INSERT INTO events(time, type, id, namespace, payload_type, payload, origin_label, signer_id, sig) VALUES(?,?,?,?,?,?,?,?,?)`,
+		ev.Time.UTC(), string(ev.Type), ev.ID, ns, payloadType, payload, ev.OriginLabel, ev.SignerID, ev.Sig)
 	return err
 }
 

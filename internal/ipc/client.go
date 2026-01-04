@@ -37,6 +37,8 @@ func Request(ctx context.Context, path string, m Message) (Response, error) {
 		preq.Cmd = &pb.Request_QueueList{QueueList: &pb.QueueRequest{Limit: int32(m.Limit), Remote: m.Remote}}
 	case "namespace.list":
 		preq.Cmd = &pb.Request_NamespaceList{NamespaceList: &pb.NamespaceList{}}
+	case "namespace.delete":
+		preq.Cmd = &pb.Request_NamespaceDelete{NamespaceDelete: &pb.NamespaceDelete{Namespace: m.Namespace}}
 	case "tag.list":
 		preq.Cmd = &pb.Request_TagList{TagList: &pb.TagList{Namespace: m.Namespace}}
 	}

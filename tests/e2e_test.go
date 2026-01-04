@@ -63,6 +63,10 @@ func TestE2E_NoteAdd(t *testing.T) {
 	cfgContent := "\n"
 	cfgContent += "data_dir: \"" + dataDir + "\"\n"
 	cfgContent += "default_namespace: \"test\"\n"
+	cfgContent += "namespace: \"test\"\n"
+	cfgContent += "namespaces:\n"
+	cfgContent += "  test:\n"
+	cfgContent += "    e2ee: false\n"
 	cfgContent += "http_addr: \"127.0.0.1:0\"\n"
 	os.WriteFile(cfgPath, []byte(cfgContent), 0o600)
 

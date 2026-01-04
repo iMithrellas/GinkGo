@@ -43,17 +43,7 @@ func newNoteCmd() *cobra.Command {
 	cmd.Flags().StringSliceVarP(&tagsFlag, "tags", "t", nil, "tags for one-liner add (comma-separated or repeated)")
 	cmd.PersistentFlags().StringVarP(&nsFlag, "namespace", "n", "", "override namespace for this command")
 
-	_ = cmd.RegisterFlagCompletionFunc("namespace", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		sock, err := ipc.SocketPath()
-		if err != nil {
-			return nil, cobra.ShellCompDirectiveError
-		}
-		resp, err := ipc.Request(cmd.Context(), sock, ipc.Message{Name: "namespace.list"})
-		if err != nil || !resp.OK {
-			return nil, cobra.ShellCompDirectiveError
-		}
-		return resp.Namespaces, cobra.ShellCompDirectiveNoFileComp
-	})
+	registerNamespaceCompletion(cmd)
 
 	_ = cmd.RegisterFlagCompletionFunc("tags", completeTags)
 
