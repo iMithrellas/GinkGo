@@ -20,6 +20,7 @@ type EntryRepo interface {
 	CreateEntry(ctx context.Context, e api.Entry) (api.Entry, error)
 	UpdateEntryCAS(ctx context.Context, e api.Entry, ifVersion int64) (api.Entry, error)
 	DeleteEntry(ctx context.Context, id string) error
+	DeleteNamespace(ctx context.Context, namespace string) (int64, error)
 	ListEntries(ctx context.Context, q api.ListQuery) ([]api.Entry, api.Page, error)
 	Search(ctx context.Context, q api.SearchQuery) ([]api.Entry, api.Page, error)
 	ListTags(ctx context.Context, q api.TagsQuery) ([]api.TagStat, error)

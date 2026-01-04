@@ -201,3 +201,42 @@ write_key = "d3JpdGU="
 		t.Fatalf("missing write_key: %q", got2)
 	}
 }
+
+func TestConfigNamespaceDelete(t *testing.T) {
+	cancel, sock, dataDir := startTestDaemon(t)
+	defer cancel()
+
+	cfgPath := writeConfigTOML(t, dataDir)
+
+	// Seed a note in the namespace.
+	root := NewRootCmd()
+	root.SetArgs([]string{"--config", cfgPath, "note", "add", "Delete Me"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("add execute: %v", err)
+	}
+
+	// Delete the namespace.
+	root2 := NewRootCmd()
+	root2.SetArgs([]string{"--config", cfgPath, "note", "delete", "--namespace-delete", "--yes"})
+	if err := root2.Execute(); err != nil {
+		t.Fatalf("delete execute: %v", err)
+	}
+
+	// Verify list is empty.
+	resp, err := ipc.Request(context.Background(), sock, ipc.Message{Name: "note.list", Namespace: "testcli"})
+	if err != nil {
+		t.Fatalf("list execute: %v", err)
+	}
+	if len(resp.Entries) != 0 {
+		t.Fatalf("expected 0 entries, got %d", len(resp.Entries))
+	}
+
+	// Verify config section is removed.
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if strings.Contains(string(data), "[namespaces.testcli]") {
+		t.Fatalf("namespace config still present")
+	}
+}
