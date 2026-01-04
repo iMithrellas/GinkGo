@@ -213,6 +213,15 @@ func Run(ctx context.Context, app *wire.App) error {
 				return ipc.Response{OK: false, Msg: err.Error()}
 			}
 			return ipc.Response{OK: true, Namespaces: nss}
+		case "namespace.delete":
+			if strings.TrimSpace(m.Namespace) == "" {
+				return ipc.Response{OK: false, Msg: "missing namespace"}
+			}
+			n, err := app.Store.Entries.DeleteNamespace(ctx, m.Namespace)
+			if err != nil {
+				return ipc.Response{OK: false, Msg: err.Error()}
+			}
+			return ipc.Response{OK: true, Msg: fmt.Sprintf("deleted %d entries", n)}
 		case "tag.list":
 			tags, err := app.Store.Entries.ListTags(ctx, api.TagsQuery{Namespace: ns})
 			if err != nil {

@@ -22,14 +22,16 @@ func applyDefaults(v *viper.Viper) {
 func Load(ctx context.Context, v *viper.Viper) error {
 	// Configure Viper search paths. If SetConfigFile was provided upstream,
 	// it takes precedence; these paths are harmless fallbacks.
-	v.SetConfigName("config")
-	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-		v.AddConfigPath(filepath.Join(xdg, "ginkgo"))
+	if v.ConfigFileUsed() == "" {
+		v.SetConfigName("config")
+		if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+			v.AddConfigPath(filepath.Join(xdg, "ginkgo"))
+		}
+		if home, err := os.UserHomeDir(); err == nil {
+			v.AddConfigPath(filepath.Join(home, ".config", "ginkgo"))
+		}
+		v.AddConfigPath(".")
 	}
-	if home, err := os.UserHomeDir(); err == nil {
-		v.AddConfigPath(filepath.Join(home, ".config", "ginkgo"))
-	}
-	v.AddConfigPath(".")
 
 	// Apply centralized defaults (lowest precedence)
 	applyDefaults(v)
@@ -78,6 +80,16 @@ func defaultDataDir() string {
 	return filepath.Join(home, ".local", "share", "ginkgo")
 }
 
+// DefaultConfigPath resolves the standard config.toml location.
+func DefaultConfigPath() string {
+	xdg := os.Getenv("XDG_CONFIG_HOME")
+	if xdg == "" {
+		home, _ := os.UserHomeDir()
+		xdg = filepath.Join(home, ".config")
+	}
+	return filepath.Join(xdg, "ginkgo", "config.toml")
+}
+
 type ConfigOption struct {
 	Key     string
 	Default any
@@ -103,6 +115,7 @@ func GetConfigOptions() []ConfigOption {
 		{Key: "auth.token", Default: "", Comment: "Shared token required by replication server"},
 		{Key: "sync.batch_size", Default: 256, Comment: "Batch size for remote sync operations"},
 		{Key: "remotes", Default: map[string]any{}, Comment: "Named remotes: [remotes.<name>] url/token/enabled"},
+		{Key: "namespaces", Default: map[string]any{}, Comment: "Per-namespace settings: [namespaces.<name>] e2ee/key_provider/key_id/read_key/write_key/signer_key_provider/signer_key_id/origin_label/trusted_signers"},
 		{Key: "export.page_size", Default: 200, Comment: "Batch size for list/search export paging"},
 		{Key: "tui.buffer_ratio", Default: 2.0, Comment: "TUI paging buffer ratio; increases the safe window before refetch (0.4-4)"},
 

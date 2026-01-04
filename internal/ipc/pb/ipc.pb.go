@@ -649,6 +649,7 @@ type Request struct {
 	//	*Request_QueueList
 	//	*Request_NamespaceList
 	//	*Request_TagList
+	//	*Request_NamespaceDelete
 	Cmd           isRequest_Cmd `protobuf_oneof:"cmd"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -790,6 +791,15 @@ func (x *Request) GetTagList() *TagList {
 	return nil
 }
 
+func (x *Request) GetNamespaceDelete() *NamespaceDelete {
+	if x != nil {
+		if x, ok := x.Cmd.(*Request_NamespaceDelete); ok {
+			return x.NamespaceDelete
+		}
+	}
+	return nil
+}
+
 type isRequest_Cmd interface {
 	isRequest_Cmd()
 }
@@ -838,6 +848,10 @@ type Request_TagList struct {
 	TagList *TagList `protobuf:"bytes,11,opt,name=tag_list,json=tagList,proto3,oneof"`
 }
 
+type Request_NamespaceDelete struct {
+	NamespaceDelete *NamespaceDelete `protobuf:"bytes,12,opt,name=namespace_delete,json=namespaceDelete,proto3,oneof"`
+}
+
 func (*Request_NoteAdd) isRequest_Cmd() {}
 
 func (*Request_NoteEdit) isRequest_Cmd() {}
@@ -859,6 +873,8 @@ func (*Request_QueueList) isRequest_Cmd() {}
 func (*Request_NamespaceList) isRequest_Cmd() {}
 
 func (*Request_TagList) isRequest_Cmd() {}
+
+func (*Request_NamespaceDelete) isRequest_Cmd() {}
 
 type TagStat struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1077,7 +1093,12 @@ type RepEvent struct {
 	Time          *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=time,proto3" json:"time,omitempty"`
 	Type          string                 `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"`
 	Id            string                 `protobuf:"bytes,3,opt,name=id,proto3" json:"id,omitempty"`
-	Entry         *Entry                 `protobuf:"bytes,4,opt,name=entry,proto3" json:"entry,omitempty"`
+	NamespaceId   string                 `protobuf:"bytes,4,opt,name=namespace_id,json=namespaceId,proto3" json:"namespace_id,omitempty"`
+	PayloadType   string                 `protobuf:"bytes,5,opt,name=payload_type,json=payloadType,proto3" json:"payload_type,omitempty"`
+	Payload       []byte                 `protobuf:"bytes,6,opt,name=payload,proto3" json:"payload,omitempty"`
+	SignerId      string                 `protobuf:"bytes,7,opt,name=signer_id,json=signerId,proto3" json:"signer_id,omitempty"`
+	Sig           []byte                 `protobuf:"bytes,8,opt,name=sig,proto3" json:"sig,omitempty"`
+	OriginLabel   string                 `protobuf:"bytes,9,opt,name=origin_label,json=originLabel,proto3" json:"origin_label,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1133,11 +1154,46 @@ func (x *RepEvent) GetId() string {
 	return ""
 }
 
-func (x *RepEvent) GetEntry() *Entry {
+func (x *RepEvent) GetNamespaceId() string {
 	if x != nil {
-		return x.Entry
+		return x.NamespaceId
+	}
+	return ""
+}
+
+func (x *RepEvent) GetPayloadType() string {
+	if x != nil {
+		return x.PayloadType
+	}
+	return ""
+}
+
+func (x *RepEvent) GetPayload() []byte {
+	if x != nil {
+		return x.Payload
 	}
 	return nil
+}
+
+func (x *RepEvent) GetSignerId() string {
+	if x != nil {
+		return x.SignerId
+	}
+	return ""
+}
+
+func (x *RepEvent) GetSig() []byte {
+	if x != nil {
+		return x.Sig
+	}
+	return nil
+}
+
+func (x *RepEvent) GetOriginLabel() string {
+	if x != nil {
+		return x.OriginLabel
+	}
+	return ""
 }
 
 type PushBatch struct {
@@ -1464,6 +1520,50 @@ func (*NamespaceList) Descriptor() ([]byte, []int) {
 	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{20}
 }
 
+type NamespaceDelete struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Namespace     string                 `protobuf:"bytes,1,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NamespaceDelete) Reset() {
+	*x = NamespaceDelete{}
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NamespaceDelete) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NamespaceDelete) ProtoMessage() {}
+
+func (x *NamespaceDelete) ProtoReflect() protoreflect.Message {
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NamespaceDelete.ProtoReflect.Descriptor instead.
+func (*NamespaceDelete) Descriptor() ([]byte, []int) {
+	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *NamespaceDelete) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
 type QueueRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Limit         int32                  `protobuf:"varint,1,opt,name=limit,proto3" json:"limit,omitempty"`
@@ -1474,7 +1574,7 @@ type QueueRequest struct {
 
 func (x *QueueRequest) Reset() {
 	*x = QueueRequest{}
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[21]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1486,7 +1586,7 @@ func (x *QueueRequest) String() string {
 func (*QueueRequest) ProtoMessage() {}
 
 func (x *QueueRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[21]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1499,7 +1599,7 @@ func (x *QueueRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueueRequest.ProtoReflect.Descriptor instead.
 func (*QueueRequest) Descriptor() ([]byte, []int) {
-	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{21}
+	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *QueueRequest) GetLimit() int32 {
@@ -1527,7 +1627,7 @@ type QueueEvent struct {
 
 func (x *QueueEvent) Reset() {
 	*x = QueueEvent{}
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[22]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1539,7 +1639,7 @@ func (x *QueueEvent) String() string {
 func (*QueueEvent) ProtoMessage() {}
 
 func (x *QueueEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[22]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1552,7 +1652,7 @@ func (x *QueueEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueueEvent.ProtoReflect.Descriptor instead.
 func (*QueueEvent) Descriptor() ([]byte, []int) {
-	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{22}
+	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *QueueEvent) GetTime() *timestamppb.Timestamp {
@@ -1588,7 +1688,7 @@ type QueueRemote struct {
 
 func (x *QueueRemote) Reset() {
 	*x = QueueRemote{}
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[23]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1600,7 +1700,7 @@ func (x *QueueRemote) String() string {
 func (*QueueRemote) ProtoMessage() {}
 
 func (x *QueueRemote) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[23]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1613,7 +1713,7 @@ func (x *QueueRemote) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueueRemote.ProtoReflect.Descriptor instead.
 func (*QueueRemote) Descriptor() ([]byte, []int) {
-	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{23}
+	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *QueueRemote) GetName() string {
@@ -1698,7 +1798,7 @@ const file_internal_ipc_pb_ipc_proto_rawDesc = "" +
 	"\apattern\x18\x01 \x01(\tR\apattern\x12'\n" +
 	"\x06filter\x18\x02 \x01(\v2\x0f.ipc.ListFilterR\x06filter\"'\n" +
 	"\aTagList\x12\x1c\n" +
-	"\tnamespace\x18\x01 \x01(\tR\tnamespace\"\xbc\x04\n" +
+	"\tnamespace\x18\x01 \x01(\tR\tnamespace\"\xff\x04\n" +
 	"\aRequest\x12)\n" +
 	"\bnote_add\x18\x01 \x01(\v2\f.ipc.NoteAddH\x00R\anoteAdd\x12,\n" +
 	"\tnote_edit\x18\x02 \x01(\v2\r.ipc.NoteEditH\x00R\bnoteEdit\x122\n" +
@@ -1713,7 +1813,8 @@ const file_internal_ipc_pb_ipc_proto_rawDesc = "" +
 	"queue_list\x18\t \x01(\v2\x11.ipc.QueueRequestH\x00R\tqueueList\x12;\n" +
 	"\x0enamespace_list\x18\n" +
 	" \x01(\v2\x12.ipc.NamespaceListH\x00R\rnamespaceList\x12)\n" +
-	"\btag_list\x18\v \x01(\v2\f.ipc.TagListH\x00R\atagListB\x05\n" +
+	"\btag_list\x18\v \x01(\v2\f.ipc.TagListH\x00R\atagList\x12A\n" +
+	"\x10namespace_delete\x18\f \x01(\v2\x14.ipc.NamespaceDeleteH\x00R\x0fnamespaceDeleteB\x05\n" +
 	"\x03cmd\"S\n" +
 	"\aTagStat\x12\x10\n" +
 	"\x03tag\x18\x01 \x01(\tR\x03tag\x12\x14\n" +
@@ -1734,13 +1835,17 @@ const file_internal_ipc_pb_ipc_proto_rawDesc = "" +
 	"\x04page\x18\b \x01(\v2\t.ipc.PageR\x04page\".\n" +
 	"\x04Page\x12\x12\n" +
 	"\x04next\x18\x01 \x01(\tR\x04next\x12\x12\n" +
-	"\x04prev\x18\x02 \x01(\tR\x04prev\"\x80\x01\n" +
+	"\x04prev\x18\x02 \x01(\tR\x04prev\"\x90\x02\n" +
 	"\bRepEvent\x12.\n" +
 	"\x04time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12\x12\n" +
 	"\x04type\x18\x02 \x01(\tR\x04type\x12\x0e\n" +
-	"\x02id\x18\x03 \x01(\tR\x02id\x12 \n" +
-	"\x05entry\x18\x04 \x01(\v2\n" +
-	".ipc.EntryR\x05entry\"2\n" +
+	"\x02id\x18\x03 \x01(\tR\x02id\x12!\n" +
+	"\fnamespace_id\x18\x04 \x01(\tR\vnamespaceId\x12!\n" +
+	"\fpayload_type\x18\x05 \x01(\tR\vpayloadType\x12\x18\n" +
+	"\apayload\x18\x06 \x01(\fR\apayload\x12\x1b\n" +
+	"\tsigner_id\x18\a \x01(\tR\bsignerId\x12\x10\n" +
+	"\x03sig\x18\b \x01(\fR\x03sig\x12!\n" +
+	"\forigin_label\x18\t \x01(\tR\voriginLabel\"2\n" +
 	"\tPushBatch\x12%\n" +
 	"\x06events\x18\x01 \x03(\v2\r.ipc.RepEventR\x06events\">\n" +
 	"\n" +
@@ -1759,7 +1864,9 @@ const file_internal_ipc_pb_ipc_proto_rawDesc = "" +
 	"\x06events\x18\x01 \x03(\v2\r.ipc.RepEventR\x06events\x12\x1f\n" +
 	"\x04next\x18\x02 \x01(\v2\v.ipc.CursorR\x04next\"\t\n" +
 	"\aSyncRun\"\x0f\n" +
-	"\rNamespaceList\"<\n" +
+	"\rNamespaceList\"/\n" +
+	"\x0fNamespaceDelete\x12\x1c\n" +
+	"\tnamespace\x18\x01 \x01(\tR\tnamespace\"<\n" +
 	"\fQueueRequest\x12\x14\n" +
 	"\x05limit\x18\x01 \x01(\x05R\x05limit\x12\x16\n" +
 	"\x06remote\x18\x02 \x01(\tR\x06remote\"`\n" +
@@ -1786,7 +1893,7 @@ func file_internal_ipc_pb_ipc_proto_rawDescGZIP() []byte {
 	return file_internal_ipc_pb_ipc_proto_rawDescData
 }
 
-var file_internal_ipc_pb_ipc_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
+var file_internal_ipc_pb_ipc_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
 var file_internal_ipc_pb_ipc_proto_goTypes = []any{
 	(*Entry)(nil),                 // 0: ipc.Entry
 	(*NoteAdd)(nil),               // 1: ipc.NoteAdd
@@ -1809,16 +1916,17 @@ var file_internal_ipc_pb_ipc_proto_goTypes = []any{
 	(*PullResult)(nil),            // 18: ipc.PullResult
 	(*SyncRun)(nil),               // 19: ipc.SyncRun
 	(*NamespaceList)(nil),         // 20: ipc.NamespaceList
-	(*QueueRequest)(nil),          // 21: ipc.QueueRequest
-	(*QueueEvent)(nil),            // 22: ipc.QueueEvent
-	(*QueueRemote)(nil),           // 23: ipc.QueueRemote
-	(*timestamppb.Timestamp)(nil), // 24: google.protobuf.Timestamp
+	(*NamespaceDelete)(nil),       // 21: ipc.NamespaceDelete
+	(*QueueRequest)(nil),          // 22: ipc.QueueRequest
+	(*QueueEvent)(nil),            // 23: ipc.QueueEvent
+	(*QueueRemote)(nil),           // 24: ipc.QueueRemote
+	(*timestamppb.Timestamp)(nil), // 25: google.protobuf.Timestamp
 }
 var file_internal_ipc_pb_ipc_proto_depIdxs = []int32{
-	24, // 0: ipc.Entry.created_at:type_name -> google.protobuf.Timestamp
-	24, // 1: ipc.Entry.updated_at:type_name -> google.protobuf.Timestamp
-	24, // 2: ipc.ListFilter.since:type_name -> google.protobuf.Timestamp
-	24, // 3: ipc.ListFilter.until:type_name -> google.protobuf.Timestamp
+	25, // 0: ipc.Entry.created_at:type_name -> google.protobuf.Timestamp
+	25, // 1: ipc.Entry.updated_at:type_name -> google.protobuf.Timestamp
+	25, // 2: ipc.ListFilter.since:type_name -> google.protobuf.Timestamp
+	25, // 3: ipc.ListFilter.until:type_name -> google.protobuf.Timestamp
 	5,  // 4: ipc.SearchFTS.filter:type_name -> ipc.ListFilter
 	5,  // 5: ipc.SearchRegex.filter:type_name -> ipc.ListFilter
 	1,  // 6: ipc.Request.note_add:type_name -> ipc.NoteAdd
@@ -1829,24 +1937,24 @@ var file_internal_ipc_pb_ipc_proto_depIdxs = []int32{
 	6,  // 11: ipc.Request.note_search_fts:type_name -> ipc.SearchFTS
 	7,  // 12: ipc.Request.note_search_regex:type_name -> ipc.SearchRegex
 	19, // 13: ipc.Request.sync_run:type_name -> ipc.SyncRun
-	21, // 14: ipc.Request.queue_list:type_name -> ipc.QueueRequest
+	22, // 14: ipc.Request.queue_list:type_name -> ipc.QueueRequest
 	20, // 15: ipc.Request.namespace_list:type_name -> ipc.NamespaceList
 	8,  // 16: ipc.Request.tag_list:type_name -> ipc.TagList
-	0,  // 17: ipc.Response.entry:type_name -> ipc.Entry
-	0,  // 18: ipc.Response.entries:type_name -> ipc.Entry
-	23, // 19: ipc.Response.queue:type_name -> ipc.QueueRemote
-	10, // 20: ipc.Response.tags:type_name -> ipc.TagStat
-	12, // 21: ipc.Response.page:type_name -> ipc.Page
-	24, // 22: ipc.RepEvent.time:type_name -> google.protobuf.Timestamp
-	0,  // 23: ipc.RepEvent.entry:type_name -> ipc.Entry
+	21, // 17: ipc.Request.namespace_delete:type_name -> ipc.NamespaceDelete
+	0,  // 18: ipc.Response.entry:type_name -> ipc.Entry
+	0,  // 19: ipc.Response.entries:type_name -> ipc.Entry
+	24, // 20: ipc.Response.queue:type_name -> ipc.QueueRemote
+	10, // 21: ipc.Response.tags:type_name -> ipc.TagStat
+	12, // 22: ipc.Response.page:type_name -> ipc.Page
+	25, // 23: ipc.RepEvent.time:type_name -> google.protobuf.Timestamp
 	13, // 24: ipc.PushBatch.events:type_name -> ipc.RepEvent
-	24, // 25: ipc.Cursor.after:type_name -> google.protobuf.Timestamp
+	25, // 25: ipc.Cursor.after:type_name -> google.protobuf.Timestamp
 	15, // 26: ipc.PushResult.items:type_name -> ipc.ItemStatus
 	16, // 27: ipc.PushResult.next:type_name -> ipc.Cursor
 	13, // 28: ipc.PullResult.events:type_name -> ipc.RepEvent
 	16, // 29: ipc.PullResult.next:type_name -> ipc.Cursor
-	24, // 30: ipc.QueueEvent.time:type_name -> google.protobuf.Timestamp
-	22, // 31: ipc.QueueRemote.events:type_name -> ipc.QueueEvent
+	25, // 30: ipc.QueueEvent.time:type_name -> google.protobuf.Timestamp
+	23, // 31: ipc.QueueRemote.events:type_name -> ipc.QueueEvent
 	32, // [32:32] is the sub-list for method output_type
 	32, // [32:32] is the sub-list for method input_type
 	32, // [32:32] is the sub-list for extension type_name
@@ -1871,6 +1979,7 @@ func file_internal_ipc_pb_ipc_proto_init() {
 		(*Request_QueueList)(nil),
 		(*Request_NamespaceList)(nil),
 		(*Request_TagList)(nil),
+		(*Request_NamespaceDelete)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1878,7 +1987,7 @@ func file_internal_ipc_pb_ipc_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_internal_ipc_pb_ipc_proto_rawDesc), len(file_internal_ipc_pb_ipc_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   24,
+			NumMessages:   25,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -63,6 +63,10 @@ func TestE2E_NoteAdd(t *testing.T) {
 	cfgContent := "\n"
 	cfgContent += "data_dir: \"" + dataDir + "\"\n"
 	cfgContent += "default_namespace: \"test\"\n"
+	cfgContent += "namespace: \"test\"\n"
+	cfgContent += "namespaces:\n"
+	cfgContent += "  test:\n"
+	cfgContent += "    e2ee: false\n"
 	cfgContent += "http_addr: \"127.0.0.1:0\"\n"
 	os.WriteFile(cfgPath, []byte(cfgContent), 0o600)
 
@@ -112,7 +116,7 @@ func TestE2E_NoteAdd(t *testing.T) {
 	// 3b. Test: Add body via IPC for export test
 	t.Run("Add Body", func(t *testing.T) {
 		require.NotEmpty(t, noteID)
-		show, err := ipc.Request(ctx, sock, ipc.Message{Name: "note.show", ID: noteID, Namespace: "test"})
+		show, err := ipc.Request(ctx, sock, ipc.Message{Name: "note.show", ID: noteID})
 		require.NoError(t, err)
 		require.True(t, show.OK)
 		require.NotNil(t, show.Entry)
@@ -124,7 +128,6 @@ func TestE2E_NoteAdd(t *testing.T) {
 			Title:     cur.Title,
 			Body:      "Body line one\nBody line two",
 			Tags:      cur.Tags,
-			Namespace: "test",
 		})
 		require.NoError(t, err)
 		require.True(t, resp.OK)

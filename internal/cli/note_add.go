@@ -28,6 +28,10 @@ func newNoteAddCmd() *cobra.Command {
 // runNoteAdd is the default behavior used by both parent RunE and `note add`.
 func runNoteAdd(cmd *cobra.Command, args []string) error {
 	app := getApp(cmd)
+	ns := resolveNamespace(cmd)
+	if err := ensureNamespaceConfigured(cmd, ns); err != nil {
+		return err
+	}
 
 	sock, err := ipc.SocketPath()
 	if err != nil {
@@ -48,7 +52,7 @@ func runNoteAdd(cmd *cobra.Command, args []string) error {
 			Name:      "note.add",
 			Title:     title,
 			Tags:      tags,
-			Namespace: resolveNamespace(cmd),
+			Namespace: ns,
 		})
 		if err != nil {
 			return err
@@ -66,7 +70,7 @@ func runNoteAdd(cmd *cobra.Command, args []string) error {
 	// Editor flow
 	resp, err := ipc.Request(cmd.Context(), sock, ipc.Message{
 		Name:      "note.add",
-		Namespace: resolveNamespace(cmd),
+		Namespace: ns,
 	})
 	if err != nil {
 		return err
@@ -95,7 +99,7 @@ func runNoteAdd(cmd *cobra.Command, args []string) error {
 			_, _ = ipc.Request(cmd.Context(), sock, ipc.Message{
 				Name:      "note.delete",
 				ID:        e.ID,
-				Namespace: resolveNamespace(cmd),
+				Namespace: ns,
 			})
 		}
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "No edits; note unchanged.")
@@ -108,7 +112,7 @@ func runNoteAdd(cmd *cobra.Command, args []string) error {
 			_, _ = ipc.Request(cmd.Context(), sock, ipc.Message{
 				Name:      "note.delete",
 				ID:        e.ID,
-				Namespace: resolveNamespace(cmd),
+				Namespace: ns,
 			})
 		}
 		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Note aborted: empty content.")
@@ -126,7 +130,7 @@ func runNoteAdd(cmd *cobra.Command, args []string) error {
 			_, _ = ipc.Request(cmd.Context(), sock, ipc.Message{
 				Name:      "note.delete",
 				ID:        e.ID,
-				Namespace: resolveNamespace(cmd),
+				Namespace: ns,
 			})
 		}
 		return fmt.Errorf("note aborted: empty content")
@@ -139,7 +143,7 @@ func runNoteAdd(cmd *cobra.Command, args []string) error {
 		Title:     title,
 		Body:      body,
 		Tags:      tags,
-		Namespace: resolveNamespace(cmd),
+		Namespace: ns,
 	})
 	if err != nil {
 		return err
