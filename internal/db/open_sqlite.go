@@ -114,18 +114,20 @@ func buildPrefilter(f filter) prefilter {
 
 // EventLog
 func (s *sqliteStore) Append(ctx context.Context, ev api.Event) error {
-	var entryJSON []byte
-	if ev.Entry != nil {
-		b, _ := json.Marshal(ev.Entry)
-		entryJSON = b
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO events(time, type, id, entry_json) VALUES(?,?,?,?)`, ev.Time.UTC(), string(ev.Type), ev.ID, entryJSON)
-	return err
+	defer tx.Rollback()
+	if err := appendEventTx(ctx, tx, ev); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *sqliteStore) List(ctx context.Context, cur api.Cursor, limit int) ([]api.Event, api.Cursor, error) {
 	// Apply simple cursor and limit.
-	q := `SELECT time, type, id, entry_json FROM events`
+	q := `SELECT time, type, id, namespace, payload_type, payload FROM events`
 	args := []any{}
 	if !cur.After.IsZero() {
 		q += ` WHERE time > ?`
@@ -147,15 +149,20 @@ func (s *sqliteStore) List(ctx context.Context, cur api.Cursor, limit int) ([]ap
 		var t time.Time
 		var typ string
 		var id string
-		var ej []byte
-		if err := rows.Scan(&t, &typ, &id, &ej); err != nil {
+		var ns sql.NullString
+		var payloadType sql.NullString
+		var payload []byte
+		if err := rows.Scan(&t, &typ, &id, &ns, &payloadType, &payload); err != nil {
 			return nil, api.Cursor{}, err
 		}
-		var e *api.Entry
-		if len(ej) > 0 {
-			_ = json.Unmarshal(ej, &e)
-		}
-		out = append(out, api.Event{Time: t, Type: api.EventType(typ), ID: id, Entry: e})
+		out = append(out, api.Event{
+			Time:        t,
+			Type:        api.EventType(typ),
+			ID:          id,
+			Namespace:   ns.String,
+			PayloadType: payloadType.String,
+			Payload:     payload,
+		})
 	}
 	var next api.Cursor
 	if len(out) > 0 {
@@ -281,6 +288,13 @@ func (s *sqliteStore) DeleteEntry(ctx context.Context, id string) error {
 		return err
 	}
 	defer tx.Rollback()
+	var ns string
+	if err := tx.QueryRowContext(ctx, `SELECT namespace FROM entries WHERE id=?`, id).Scan(&ns); err != nil {
+		if err == sql.ErrNoRows {
+			return ErrNotFound
+		}
+		return err
+	}
 	res, err := tx.ExecContext(ctx, `DELETE FROM entries WHERE id=?`, id)
 	if err != nil {
 		return err
@@ -295,7 +309,7 @@ func (s *sqliteStore) DeleteEntry(ctx context.Context, id string) error {
 		return err
 	}
 	if shouldLog(ctx) {
-		if err = appendEventTx(ctx, tx, api.Event{Time: time.Now().UTC(), Type: api.EventDelete, ID: id}); err != nil {
+		if err = appendEventTx(ctx, tx, api.Event{Time: time.Now().UTC(), Type: api.EventDelete, ID: id, Namespace: ns}); err != nil {
 			return err
 		}
 	}
@@ -737,7 +751,9 @@ CREATE TABLE IF NOT EXISTS events (
   time TIMESTAMP NOT NULL,
   type TEXT NOT NULL,
   id TEXT NOT NULL,
-  entry_json BLOB
+  namespace TEXT,
+  payload_type TEXT,
+  payload BLOB
 );
 -- Tags projection and metadata
 CREATE TABLE IF NOT EXISTS note_tags (
@@ -762,12 +778,37 @@ CREATE VIRTUAL TABLE IF NOT EXISTS entries_fts USING fts5(
 
 // appendEventTx writes to events within the provided transaction.
 func appendEventTx(ctx context.Context, tx *sql.Tx, ev api.Event) error {
-	var entryJSON []byte
-	if ev.Entry != nil {
-		b, _ := json.Marshal(ev.Entry)
-		entryJSON = b
+	var err error
+	ns := ev.Namespace
+	if ns == "" && ev.Entry != nil {
+		ns = ev.Entry.Namespace
 	}
-	_, err := tx.ExecContext(ctx, `INSERT INTO events(time, type, id, entry_json) VALUES(?,?,?,?)`, ev.Time.UTC(), string(ev.Type), ev.ID, entryJSON)
+	payloadType := ev.PayloadType
+	payload := ev.Payload
+	if payloadType == "" && len(payload) == 0 {
+		switch ev.Type {
+		case api.EventUpsert:
+			if ev.Entry != nil {
+				payloadType = "plain_v1"
+				payload, err = json.Marshal(ev.Entry)
+				if err != nil {
+					return err
+				}
+			}
+		case api.EventDelete:
+			payloadType = "plain_v1"
+			dp := struct {
+				ID        string `json:"id"`
+				Namespace string `json:"namespace"`
+			}{ID: ev.ID, Namespace: ns}
+			payload, err = json.Marshal(dp)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	_, err = tx.ExecContext(ctx, `INSERT INTO events(time, type, id, namespace, payload_type, payload) VALUES(?,?,?,?,?,?)`, ev.Time.UTC(), string(ev.Type), ev.ID, ns, payloadType, payload)
 	return err
 }
 

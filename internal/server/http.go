@@ -1,10 +1,7 @@
 package server
 
 import (
-	"context"
-	"errors"
 	"io"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -72,33 +69,31 @@ func (s *Server) handlePush(w http.ResponseWriter, r *http.Request) {
 	var last time.Time
 	for _, pev := range batch.Events {
 		st := &pbmsg.ItemStatus{Id: pev.GetId(), Ok: true}
+		var evTime time.Time
 		if t := pev.GetTime(); t != nil {
-			tt := t.AsTime()
-			if tt.After(last) {
-				last = tt
+			evTime = t.AsTime()
+			if evTime.After(last) {
+				last = evTime
 			}
 		}
-		switch strings.ToLower(pev.GetType()) {
-		case string(api.EventUpsert):
-			if pev.Entry == nil {
-				st.Ok = false
-				st.Msg = "missing entry"
-			} else if err := s.applyUpsert(r.Context(), fromPbEntry(pev.Entry)); err != nil {
-				st.Ok = false
-				st.Msg = err.Error()
-			}
-		case string(api.EventDelete):
-			if err := s.store.Entries.DeleteEntry(r.Context(), pev.GetId()); err != nil {
-				if !errors.Is(err, db.ErrNotFound) {
-					st.Ok = false
-					st.Msg = err.Error()
-				}
-			} else {
-				log.Printf("replicate: deleted id=%s", pev.GetId())
-			}
-		default:
+		evType := api.EventType(strings.ToLower(pev.GetType()))
+		if pev.GetPayloadType() == "" || len(pev.GetPayload()) == 0 {
 			st.Ok = false
-			st.Msg = "unknown event"
+			st.Msg = "missing payload"
+			out = append(out, st)
+			continue
+		}
+		ev := api.Event{
+			Time:        evTime,
+			Type:        evType,
+			ID:          pev.GetId(),
+			Namespace:   pev.GetNamespaceId(),
+			PayloadType: pev.GetPayloadType(),
+			Payload:     append([]byte(nil), pev.GetPayload()...),
+		}
+		if err := s.store.Events.Append(r.Context(), ev); err != nil {
+			st.Ok = false
+			st.Msg = err.Error()
 		}
 		out = append(out, st)
 	}
@@ -106,33 +101,6 @@ func (s *Server) handlePush(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/x-protobuf")
 	enc, _ := proto.Marshal(resp)
 	_, _ = w.Write(enc)
-}
-
-func (s *Server) applyUpsert(ctx context.Context, e api.Entry) error {
-	// Try create; on conflict, fetch and CAS update
-	_, err := s.store.Entries.CreateEntry(ctx, e)
-	if err == nil {
-		log.Printf("replicate: created id=%s", e.ID)
-		return nil
-	}
-	if !errors.Is(err, db.ErrConflict) {
-		return err
-	}
-	cur, err := s.store.Entries.GetEntry(ctx, e.ID)
-	if err != nil {
-		return err
-	}
-	if e.Version <= cur.Version {
-		// Ignore stale or duplicate events; newest version wins.
-		return nil
-	}
-	// advance to the incoming version; CAS on current version
-	_, err = s.store.Entries.UpdateEntryCAS(ctx, e, cur.Version)
-	if err != nil {
-		return err
-	}
-	log.Printf("replicate: updated id=%s", e.ID)
-	return nil
 }
 
 func (s *Server) handlePull(w http.ResponseWriter, r *http.Request) {
@@ -165,24 +133,13 @@ func (s *Server) handlePull(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]*pbmsg.RepEvent, 0, len(evs))
 	for _, e := range evs {
-		var pe *pbmsg.Entry
-		if e.Entry != nil {
-			pe = &pbmsg.Entry{
-				Id:        e.Entry.ID,
-				Version:   e.Entry.Version,
-				Title:     e.Entry.Title,
-				Body:      e.Entry.Body,
-				Tags:      append([]string(nil), e.Entry.Tags...),
-				CreatedAt: timestamppb.New(e.Entry.CreatedAt),
-				UpdatedAt: timestamppb.New(e.Entry.UpdatedAt),
-				Namespace: e.Entry.Namespace,
-			}
-		}
 		out = append(out, &pbmsg.RepEvent{
-			Time:  timestamppb.New(e.Time),
-			Type:  string(e.Type),
-			Id:    e.ID,
-			Entry: pe,
+			Time:        timestamppb.New(e.Time),
+			Type:        string(e.Type),
+			Id:          e.ID,
+			NamespaceId: e.Namespace,
+			PayloadType: e.PayloadType,
+			Payload:     e.Payload,
 		})
 	}
 	resp := &pbmsg.PullResult{Events: out}
@@ -192,24 +149,4 @@ func (s *Server) handlePull(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/x-protobuf")
 	b, _ := proto.Marshal(resp)
 	_, _ = w.Write(b)
-}
-
-func fromPbEntry(in *pbmsg.Entry) api.Entry {
-	var c, u time.Time
-	if in.GetCreatedAt() != nil {
-		c = in.GetCreatedAt().AsTime()
-	}
-	if in.GetUpdatedAt() != nil {
-		u = in.GetUpdatedAt().AsTime()
-	}
-	return api.Entry{
-		ID:        in.GetId(),
-		Version:   in.GetVersion(),
-		Title:     in.GetTitle(),
-		Body:      in.GetBody(),
-		Tags:      append([]string(nil), in.GetTags()...),
-		CreatedAt: c,
-		UpdatedAt: u,
-		Namespace: in.GetNamespace(),
-	}
 }

@@ -67,17 +67,17 @@ func TestSyncBidirectional(t *testing.T) {
 	err = client1Sync.SyncNow(ctx)
 	require.NoError(t, err)
 
-	s1, err := serverStore.Entries.GetEntry(ctx, "note1")
+	evs1, _, err := serverStore.Events.List(ctx, api.Cursor{}, 100)
 	require.NoError(t, err)
-	require.Equal(t, "Note 1", s1.Title)
+	require.NotEmpty(t, evs1)
 
 	// 4. Client 2 Syncs (Push Note 2, Pull Note 1)
 	err = client2Sync.SyncNow(ctx)
 	require.NoError(t, err)
 
-	s2, err := serverStore.Entries.GetEntry(ctx, "note2")
+	evs2, _, err := serverStore.Events.List(ctx, api.Cursor{}, 100)
 	require.NoError(t, err)
-	require.Equal(t, "Note 2", s2.Title)
+	require.Len(t, evs2, 2)
 
 	c2n1, err := client2Store.Entries.GetEntry(ctx, "note1")
 	require.NoError(t, err)

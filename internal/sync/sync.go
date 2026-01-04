@@ -159,7 +159,10 @@ func (s *Service) pushRemote(ctx context.Context, rc remoteConfig, pushAfter tim
 		return nil
 	}
 
-	pbBatch := s.eventsToProto(evs)
+	pbBatch, err := s.eventsToProto(evs)
+	if err != nil {
+		return err
+	}
 	body, _ := proto.Marshal(pbBatch)
 
 	respBody, code, err := s.execRequest(ctx, http.MethodPost, rc.URL+"/v1/replicate/push", rc.Token, "application/x-protobuf", body)
@@ -229,64 +232,113 @@ func (s *Service) pullRemote(ctx context.Context, rc remoteConfig, pullAfter tim
 }
 
 // eventsToProto handles verbose mapping logic
-func (s *Service) eventsToProto(evs []api.Event) *pbmsg.PushBatch {
+func (s *Service) eventsToProto(evs []api.Event) (*pbmsg.PushBatch, error) {
 	pbBatch := &pbmsg.PushBatch{Events: make([]*pbmsg.RepEvent, 0, len(evs))}
 	for _, e := range evs {
-		var pe *pbmsg.Entry
-		if e.Entry != nil {
-			pe = &pbmsg.Entry{
-				Id:        e.Entry.ID,
-				Version:   e.Entry.Version,
-				Title:     e.Entry.Title,
-				Body:      e.Entry.Body,
-				Tags:      append([]string(nil), e.Entry.Tags...),
-				CreatedAt: timestamppb.New(e.Entry.CreatedAt),
-				UpdatedAt: timestamppb.New(e.Entry.UpdatedAt),
-				Namespace: e.Entry.Namespace,
+		ns := e.Namespace
+		if ns == "" && e.Entry != nil {
+			ns = e.Entry.Namespace
+		}
+		payloadType := e.PayloadType
+		payload := e.Payload
+		if payloadType == "" && len(payload) == 0 {
+			var err error
+			payloadType, payload, err = encodePlainPayload(e, ns)
+			if err != nil {
+				return nil, err
 			}
 		}
 		pbBatch.Events = append(pbBatch.Events, &pbmsg.RepEvent{
-			Time:  timestamppb.New(e.Time),
-			Type:  string(e.Type),
-			Id:    e.ID,
-			Entry: pe,
+			Time:        timestamppb.New(e.Time),
+			Type:        string(e.Type),
+			Id:          e.ID,
+			NamespaceId: ns,
+			PayloadType: payloadType,
+			Payload:     payload,
 		})
 	}
-	return pbBatch
+	return pbBatch, nil
 }
 
 // repEventToAPI converts a pulled RepEvent into a local api.Event.
-func (s *Service) repEventToAPI(pev *pbmsg.RepEvent) api.Event {
-	var e *api.Entry
-	if pev.Entry != nil {
-		ee := api.Entry{
-			ID: pev.Entry.GetId(), Version: pev.Entry.GetVersion(), Title: pev.Entry.GetTitle(), Body: pev.Entry.GetBody(),
-			Tags: append([]string(nil), pev.Entry.GetTags()...), Namespace: pev.Entry.GetNamespace(),
-		}
-		if pev.Entry.GetCreatedAt() != nil {
-			ee.CreatedAt = pev.Entry.GetCreatedAt().AsTime()
-		}
-		if pev.Entry.GetUpdatedAt() != nil {
-			ee.UpdatedAt = pev.Entry.GetUpdatedAt().AsTime()
-		}
-		e = &ee
+func (s *Service) repEventToAPI(pev *pbmsg.RepEvent) (api.Event, error) {
+	ev := api.Event{
+		ID:          pev.GetId(),
+		Type:        api.EventType(strings.ToLower(pev.GetType())),
+		Namespace:   pev.GetNamespaceId(),
+		PayloadType: pev.GetPayloadType(),
+		Payload:     append([]byte(nil), pev.GetPayload()...),
 	}
-	ev := api.Event{ID: pev.GetId(), Type: api.EventType(strings.ToLower(pev.GetType())), Entry: e}
 	if pev.GetTime() != nil {
 		ev.Time = pev.GetTime().AsTime()
 	}
-	return ev
+	if ev.PayloadType == "plain_v1" && len(ev.Payload) > 0 {
+		entry, ns, err := decodePlainPayload(ev.Type, ev.Payload)
+		if err != nil {
+			return api.Event{}, err
+		}
+		ev.Entry = entry
+		if ev.Namespace == "" {
+			ev.Namespace = ns
+		}
+	}
+	return ev, nil
 }
 
 // applyPullBatch applies pulled events without re-logging them locally.
 func (s *Service) applyPullBatch(ctx context.Context, in []*pbmsg.RepEvent) error {
 	for _, pev := range in {
-		ev := s.repEventToAPI(pev)
+		ev, err := s.repEventToAPI(pev)
+		if err != nil {
+			return err
+		}
 		if err := s.store.ApplyReplication(ctx, ev); err != nil && err != db.ErrConflict && err != db.ErrNotFound {
 			return err
 		}
 	}
 	return nil
+}
+
+func encodePlainPayload(ev api.Event, ns string) (string, []byte, error) {
+	switch ev.Type {
+	case api.EventUpsert:
+		if ev.Entry == nil {
+			return "", nil, fmt.Errorf("plain_v1 upsert requires entry")
+		}
+		b, err := json.Marshal(ev.Entry)
+		return "plain_v1", b, err
+	case api.EventDelete:
+		dp := struct {
+			ID        string `json:"id"`
+			Namespace string `json:"namespace"`
+		}{ID: ev.ID, Namespace: ns}
+		b, err := json.Marshal(dp)
+		return "plain_v1", b, err
+	default:
+		return "", nil, fmt.Errorf("unknown event type %q", ev.Type)
+	}
+}
+
+func decodePlainPayload(evType api.EventType, payload []byte) (*api.Entry, string, error) {
+	switch evType {
+	case api.EventUpsert:
+		var e api.Entry
+		if err := json.Unmarshal(payload, &e); err != nil {
+			return nil, "", err
+		}
+		return &e, e.Namespace, nil
+	case api.EventDelete:
+		var dp struct {
+			ID        string `json:"id"`
+			Namespace string `json:"namespace"`
+		}
+		if err := json.Unmarshal(payload, &dp); err != nil {
+			return nil, "", err
+		}
+		return nil, dp.Namespace, nil
+	default:
+		return nil, "", fmt.Errorf("unknown event type %q", evType)
+	}
 }
 
 func (s *Service) cursorPath(name string) string {
