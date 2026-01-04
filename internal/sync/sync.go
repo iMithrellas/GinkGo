@@ -326,14 +326,16 @@ func (s *Service) repEventToAPI(pev *pbmsg.RepEvent) (api.Event, error) {
 
 // applyPullBatch applies pulled events without re-logging them locally.
 func (s *Service) applyPullBatch(ctx context.Context, in []*pbmsg.RepEvent) error {
+	evs := make([]api.Event, 0, len(in))
 	for _, pev := range in {
 		ev, err := s.repEventToAPI(pev)
 		if err != nil {
 			return err
 		}
-		if err := s.store.ApplyReplication(ctx, ev); err != nil && err != db.ErrConflict && err != db.ErrNotFound {
-			return err
-		}
+		evs = append(evs, ev)
+	}
+	if err := s.store.ApplyReplicationBatch(ctx, evs); err != nil && err != db.ErrConflict && err != db.ErrNotFound {
+		return err
 	}
 	return nil
 }
