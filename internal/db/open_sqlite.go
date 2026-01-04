@@ -939,6 +939,7 @@ func appendEventTx(ctx context.Context, tx *sql.Tx, ev api.Event) error {
 	if ns == "" && ev.Entry != nil {
 		ns = ev.Entry.Namespace
 	}
+	// payload_type is a replication hint: plain_v1 (JSON entry payload) or enc_v1 (encrypted payload).
 	payloadType := ev.PayloadType
 	payload := ev.Payload
 	if payloadType == "" && len(payload) == 0 {
