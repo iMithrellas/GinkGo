@@ -22,14 +22,16 @@ func applyDefaults(v *viper.Viper) {
 func Load(ctx context.Context, v *viper.Viper) error {
 	// Configure Viper search paths. If SetConfigFile was provided upstream,
 	// it takes precedence; these paths are harmless fallbacks.
-	v.SetConfigName("config")
-	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-		v.AddConfigPath(filepath.Join(xdg, "ginkgo"))
+	if v.ConfigFileUsed() == "" {
+		v.SetConfigName("config")
+		if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+			v.AddConfigPath(filepath.Join(xdg, "ginkgo"))
+		}
+		if home, err := os.UserHomeDir(); err == nil {
+			v.AddConfigPath(filepath.Join(home, ".config", "ginkgo"))
+		}
+		v.AddConfigPath(".")
 	}
-	if home, err := os.UserHomeDir(); err == nil {
-		v.AddConfigPath(filepath.Join(home, ".config", "ginkgo"))
-	}
-	v.AddConfigPath(".")
 
 	// Apply centralized defaults (lowest precedence)
 	applyDefaults(v)
