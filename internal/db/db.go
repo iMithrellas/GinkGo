@@ -106,3 +106,31 @@ func (s *Store) ApplyReplication(ctx context.Context, ev api.Event) error {
 		return nil
 	}
 }
+
+// ApplyReplicationBatch applies a batch of events using a single transaction when supported.
+func (s *Store) ApplyReplicationBatch(ctx context.Context, evs []api.Event) error {
+	if len(evs) == 0 {
+		return nil
+	}
+	ctx = WithNoEventLog(ctx)
+	if tp, ok := s.Entries.(TxProvider); ok {
+		tx, err := tp.BeginTx(ctx)
+		if err != nil {
+			return err
+		}
+		ctx = WithTx(ctx, tx)
+		for _, ev := range evs {
+			if err := s.ApplyReplication(ctx, ev); err != nil {
+				_ = tx.Rollback()
+				return err
+			}
+		}
+		return tx.Commit()
+	}
+	for _, ev := range evs {
+		if err := s.ApplyReplication(ctx, ev); err != nil {
+			return err
+		}
+	}
+	return nil
+}

@@ -21,6 +21,21 @@ import (
 
 type sqliteStore struct{ db *sql.DB }
 
+func (s *sqliteStore) BeginTx(ctx context.Context) (*sql.Tx, error) {
+	return s.db.BeginTx(ctx, nil)
+}
+
+func (s *sqliteStore) txFor(ctx context.Context) (*sql.Tx, bool, error) {
+	if tx := TxFromContext(ctx); tx != nil {
+		return tx, false, nil
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, false, err
+	}
+	return tx, true, nil
+}
+
 // filter and prefilter help compose a reusable CTE for namespace/time/tag constraints.
 type filter struct {
 	Namespace string
@@ -114,15 +129,20 @@ func buildPrefilter(f filter) prefilter {
 
 // EventLog
 func (s *sqliteStore) Append(ctx context.Context, ev api.Event) error {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, owned, err := s.txFor(ctx)
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	if owned {
+		defer tx.Rollback()
+	}
 	if err := appendEventTx(ctx, tx, ev); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if owned {
+		return tx.Commit()
+	}
+	return nil
 }
 
 func (s *sqliteStore) List(ctx context.Context, cur api.Cursor, limit int) ([]api.Event, api.Cursor, error) {
@@ -180,7 +200,14 @@ func (s *sqliteStore) List(ctx context.Context, cur api.Cursor, limit int) ([]ap
 func (s *sqliteStore) GetEntry(ctx context.Context, id string) (api.Entry, error) {
 	var e api.Entry
 	var tagsJSON string
-	row := s.db.QueryRowContext(ctx, `SELECT id, version, title, body, tags, created_at, updated_at, namespace FROM entries WHERE id=?`, id)
+	tx, owned, err := s.txFor(ctx)
+	if err != nil {
+		return api.Entry{}, err
+	}
+	if owned {
+		defer tx.Rollback()
+	}
+	row := tx.QueryRowContext(ctx, `SELECT id, version, title, body, tags, created_at, updated_at, namespace FROM entries WHERE id=?`, id)
 	if err := row.Scan(&e.ID, &e.Version, &e.Title, &e.Body, &tagsJSON, &e.CreatedAt, &e.UpdatedAt, &e.Namespace); err != nil {
 		if err == sql.ErrNoRows {
 			return api.Entry{}, ErrNotFound
@@ -188,6 +215,11 @@ func (s *sqliteStore) GetEntry(ctx context.Context, id string) (api.Entry, error
 		return api.Entry{}, err
 	}
 	_ = json.Unmarshal([]byte(tagsJSON), &e.Tags)
+	if owned {
+		if err := tx.Commit(); err != nil {
+			return api.Entry{}, err
+		}
+	}
 	return e, nil
 }
 
@@ -200,11 +232,13 @@ func (s *sqliteStore) CreateEntry(ctx context.Context, e api.Entry) (api.Entry, 
 	}
 	tagsJSON, _ := json.Marshal(e.Tags)
 	tagsTokens := strings.Join(e.Tags, " ")
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, owned, err := s.txFor(ctx)
 	if err != nil {
 		return api.Entry{}, err
 	}
-	defer tx.Rollback()
+	if owned {
+		defer tx.Rollback()
+	}
 
 	if _, err = tx.ExecContext(ctx, `INSERT INTO entries(id, version, title, body, tags, created_at, updated_at, namespace) VALUES(?,?,?,?,?,?,?,?)`,
 		e.ID, e.Version, e.Title, e.Body, string(tagsJSON), e.CreatedAt.UTC(), e.UpdatedAt.UTC(), e.Namespace); err != nil {
@@ -227,8 +261,10 @@ func (s *sqliteStore) CreateEntry(ctx context.Context, e api.Entry) (api.Entry, 
 	if _, err = tx.ExecContext(ctx, `INSERT INTO entries_fts(rowid, title, body, tags, namespace, id) VALUES((SELECT rowid FROM entries WHERE id=?), ?, ?, ?, ?, ?)`, e.ID, e.Title, e.Body, tagsTokens, e.Namespace, e.ID); err != nil {
 		return api.Entry{}, err
 	}
-	if err := tx.Commit(); err != nil {
-		return api.Entry{}, err
+	if owned {
+		if err := tx.Commit(); err != nil {
+			return api.Entry{}, err
+		}
 	}
 	return e, nil
 }
@@ -236,11 +272,13 @@ func (s *sqliteStore) CreateEntry(ctx context.Context, e api.Entry) (api.Entry, 
 func (s *sqliteStore) UpdateEntryCAS(ctx context.Context, e api.Entry, ifVersion int64) (api.Entry, error) {
 	tagsJSON, _ := json.Marshal(e.Tags)
 	tagsTokens := strings.Join(e.Tags, " ")
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, owned, err := s.txFor(ctx)
 	if err != nil {
 		return api.Entry{}, err
 	}
-	defer tx.Rollback()
+	if owned {
+		defer tx.Rollback()
+	}
 
 	// Update using explicit version from 'e'
 	res, err := tx.ExecContext(ctx, `UPDATE entries SET version=?, title=?, body=?, tags=?, updated_at=?, namespace=? WHERE id=? AND version=?`,
@@ -282,18 +320,22 @@ func (s *sqliteStore) UpdateEntryCAS(ctx context.Context, e api.Entry, ifVersion
 			return api.Entry{}, err
 		}
 	}
-	if err := tx.Commit(); err != nil {
-		return api.Entry{}, err
+	if owned {
+		if err := tx.Commit(); err != nil {
+			return api.Entry{}, err
+		}
 	}
 	return ne, nil
 }
 
 func (s *sqliteStore) DeleteEntry(ctx context.Context, id string) error {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, owned, err := s.txFor(ctx)
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	if owned {
+		defer tx.Rollback()
+	}
 	var ns string
 	if err := tx.QueryRowContext(ctx, `SELECT namespace FROM entries WHERE id=?`, id).Scan(&ns); err != nil {
 		if err == sql.ErrNoRows {
@@ -319,18 +361,23 @@ func (s *sqliteStore) DeleteEntry(ctx context.Context, id string) error {
 			return err
 		}
 	}
-	return tx.Commit()
+	if owned {
+		return tx.Commit()
+	}
+	return nil
 }
 
 func (s *sqliteStore) DeleteNamespace(ctx context.Context, namespace string) (int64, error) {
 	if strings.TrimSpace(namespace) == "" {
 		return 0, fmt.Errorf("namespace is required")
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, owned, err := s.txFor(ctx)
 	if err != nil {
 		return 0, err
 	}
-	defer tx.Rollback()
+	if owned {
+		defer tx.Rollback()
+	}
 
 	rows, err := tx.QueryContext(ctx, `SELECT id FROM entries WHERE namespace=?`, namespace)
 	if err != nil {
@@ -367,8 +414,10 @@ func (s *sqliteStore) DeleteNamespace(ctx context.Context, namespace string) (in
 		}
 	}
 
-	if err := tx.Commit(); err != nil {
-		return 0, err
+	if owned {
+		if err := tx.Commit(); err != nil {
+			return 0, err
+		}
 	}
 	return deleted, nil
 }
