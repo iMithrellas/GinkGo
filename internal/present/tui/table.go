@@ -394,17 +394,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			return m, tea.Quit
-		case "enter":
-			if m.showModal {
-				m.showModal = false
-				return m, nil
-			}
-			idx := m.table.Cursor()
-			if idx >= 0 && idx < len(m.entries) {
-				m.showIdx = idx
-			}
-			return m, tea.Quit
-		case "i", "I":
+		case "i", "I", "enter":
 			// Toggle content modal for the selected entry (rendered + scrollable)
 			if len(m.entries) == 0 {
 				return m, nil
@@ -467,7 +457,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) renderFooter() string {
-	left := "↑/↓ to navigate • enter=show • d=delete • q=exit • e=edit • i=inspect • s=sync • f=filter"
+	left := "↑/↓ to navigate • d=delete • q=exit • e=edit • i/enter=inspect • s=sync • f=filter"
 
 	var right string
 	if m.status != "" {
