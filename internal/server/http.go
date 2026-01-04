@@ -1,6 +1,9 @@
 package server
 
 import (
+	"crypto/ed25519"
+	"encoding/base64"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -12,6 +15,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	gcrypto "github.com/mithrel/ginkgo/internal/crypto"
 	"github.com/mithrel/ginkgo/internal/db"
 	pbmsg "github.com/mithrel/ginkgo/internal/ipc/pb"
 	"github.com/mithrel/ginkgo/pkg/api"
@@ -83,6 +87,12 @@ func (s *Server) handlePush(w http.ResponseWriter, r *http.Request) {
 			out = append(out, st)
 			continue
 		}
+		if err := s.verifyRepEventSignature(pev); err != nil {
+			st.Ok = false
+			st.Msg = err.Error()
+			out = append(out, st)
+			continue
+		}
 		ev := api.Event{
 			Time:        evTime,
 			Type:        evType,
@@ -104,6 +114,77 @@ func (s *Server) handlePush(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/x-protobuf")
 	enc, _ := proto.Marshal(resp)
 	_, _ = w.Write(enc)
+}
+
+func (s *Server) verifyRepEventSignature(pev *pbmsg.RepEvent) error {
+	ns := strings.TrimSpace(pev.GetNamespaceId())
+	trusted, err := s.trustedSigners(ns)
+	if err != nil {
+		return err
+	}
+	if len(trusted) == 0 {
+		return nil
+	}
+	if len(pev.GetSig()) == 0 || strings.TrimSpace(pev.GetSignerId()) == "" {
+		return fmt.Errorf("missing signature")
+	}
+	if pev.GetTime() == nil {
+		return fmt.Errorf("missing time")
+	}
+	signBytes, err := gcrypto.SignPayload(
+		1,
+		pev.GetTime().AsTime().UnixNano(),
+		strings.ToLower(pev.GetType()),
+		pev.GetId(),
+		ns,
+		pev.GetPayloadType(),
+		pev.GetOriginLabel(),
+		pev.GetPayload(),
+	)
+	if err != nil {
+		return err
+	}
+	pub, ok := trusted[pev.GetSignerId()]
+	if !ok {
+		return fmt.Errorf("untrusted signer")
+	}
+	if err := gcrypto.VerifyEvent(pub, signBytes, pev.GetSig()); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *Server) trustedSigners(ns string) (map[string]ed25519.PublicKey, error) {
+	base := "namespaces." + ns + ".trusted_signers"
+	values := s.cfg.GetStringSlice(base)
+	if len(values) == 0 {
+		if raw := strings.TrimSpace(s.cfg.GetString(base)); raw != "" {
+			values = strings.Split(raw, ",")
+		}
+	}
+	if len(values) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]ed25519.PublicKey, len(values))
+	for _, v := range values {
+		trim := strings.TrimSpace(v)
+		if trim == "" {
+			continue
+		}
+		b, err := base64.StdEncoding.DecodeString(trim)
+		if err != nil {
+			return nil, fmt.Errorf("invalid trusted signer key")
+		}
+		if len(b) != ed25519.PublicKeySize {
+			return nil, fmt.Errorf("invalid trusted signer key length")
+		}
+		id := gcrypto.SignerID(ed25519.PublicKey(b))
+		out[id] = ed25519.PublicKey(b)
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
 }
 
 func (s *Server) handlePull(w http.ResponseWriter, r *http.Request) {
