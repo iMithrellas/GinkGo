@@ -19,7 +19,8 @@ Entries can be created as quick one-liners or rich Markdown notes via `$EDITOR`.
 
 - **Local Daemon**: A background process (`ginkgod`) always runs locally, handling storage, search, and notifications. CLI commands (`ginkgo-cli`) talk to it via IPC.
 - **Event Log Storage**: Entries are stored as immutable events with versions, enabling safe replication and offline buffering.
-- **Replication (Optional)**: The local daemon can sync events to one or more remote servers. If peers aren’t reachable, events stay in the local log until connectivity returns.
+- **Replication (Optional)**: The local daemon can sync events to one or more remote servers. Events carry namespace IDs and payloads; servers treat payloads as opaque.
+- **Security**: Namespace payloads can be end-to-end encrypted (E2EE) and replication events can be signed for trusted signers.
 - **Consistency**: Updates use CAS (compare-and-swap). Conflicts are rare; mismatches are refused rather than silently overwritten.
 
 ---
@@ -44,6 +45,25 @@ Entries can be created as quick one-liners or rich Markdown notes via `$EDITOR`.
 - Same permanent storage as offline cache — no special cases.
 - Manual one shot or background sync (`ginkgo-cli sync`).
 - Bulk note import/export (NDJSON, Markdown directories).
+- Optional E2EE for new namespaces with keyring support.
+
+#### How to Sync Between Two Clients
+1. Run the sync server (see Docker section) and pick a shared auth token.
+   - This is a shared secret that all clients must know.
+   - Set it on the server as `GINKGO_AUTH_TOKEN`.
+   - Use the exact same value in each client config under `remotes.origin.token`.
+   - Optional: configure `namespaces.<name>.trusted_signers` on the server to require signed replication events; only listed signer public keys are accepted.
+2. On both clients, configure the same remote URL + token.
+3. Keep the daemon running; it syncs in the background after local changes.
+4. Optional: use `ginkgo-cli sync` to trigger an immediate foreground sync.
+
+Example config:
+```
+[remotes.origin]
+enabled = true
+url = "https://sync.example.com"
+token = "replace-me"
+```
 
 ### Notifications (Planned)
 - Configurable nudges if no notes are created for N days.
@@ -84,6 +104,8 @@ docker run --rm \
 ```
 
 - Volume `ginkgo-data` persists the server SQLite DB and state under `/data`.
+- The server stores opaque payloads; enable E2EE in client namespaces to keep payload content encrypted end-to-end (use TLS if you want transport encryption too).
+- If you configure `trusted_signers` on the server, replication events must be signed by an approved key.
 
 ### Manual install
 
