@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/spf13/viper"
 
+	"golang.org/x/crypto/chacha20poly1305"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -247,9 +249,16 @@ func (s *Service) eventsToProto(evs []api.Event) (*pbmsg.PushBatch, error) {
 		}
 		payloadType := e.PayloadType
 		payload := e.Payload
-		if payloadType == "" && len(payload) == 0 {
+		if payloadType == "" || len(payload) == 0 {
 			var err error
 			payloadType, payload, err = encodePlainPayload(e, ns)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if s.e2eeEnabled(ns) && payloadType == "plain_v1" {
+			var err error
+			payloadType, payload, err = s.encryptPayload(ns, payload)
 			if err != nil {
 				return nil, err
 			}
@@ -311,14 +320,32 @@ func (s *Service) repEventToAPI(pev *pbmsg.RepEvent) (api.Event, error) {
 	if pev.GetTime() != nil {
 		ev.Time = pev.GetTime().AsTime()
 	}
-	if ev.PayloadType == "plain_v1" && len(ev.Payload) > 0 {
-		entry, ns, err := decodePlainPayload(ev.Type, ev.Payload)
-		if err != nil {
-			return api.Event{}, err
+	switch ev.PayloadType {
+	case "plain_v1":
+		if len(ev.Payload) > 0 {
+			entry, ns, err := decodePlainPayload(ev.Type, ev.Payload)
+			if err != nil {
+				return api.Event{}, err
+			}
+			ev.Entry = entry
+			if ev.Namespace == "" {
+				ev.Namespace = ns
+			}
 		}
-		ev.Entry = entry
-		if ev.Namespace == "" {
-			ev.Namespace = ns
+	case "enc_v1":
+		if len(ev.Payload) > 0 {
+			plain, err := s.decryptPayload(ev.Namespace, ev.Payload)
+			if err != nil {
+				return api.Event{}, err
+			}
+			entry, ns, err := decodePlainPayload(ev.Type, plain)
+			if err != nil {
+				return api.Event{}, err
+			}
+			ev.Entry = entry
+			if ev.Namespace == "" {
+				ev.Namespace = ns
+			}
 		}
 	}
 	return ev, nil
@@ -382,10 +409,123 @@ func decodePlainPayload(evType api.EventType, payload []byte) (*api.Entry, strin
 	}
 }
 
+type encryptedPayloadV1 struct {
+	Version    uint8  `json:"version"`
+	KeyID      string `json:"key_id,omitempty"`
+	Alg        string `json:"alg"`
+	Nonce      []byte `json:"nonce"`
+	Ciphertext []byte `json:"ciphertext"`
+}
+
+func (s *Service) encryptPayload(ns string, payload []byte) (string, []byte, error) {
+	key, keyID, err := s.keyForNamespace(ns, "write")
+	if err != nil {
+		return "", nil, err
+	}
+	aead, err := chacha20poly1305.NewX(key)
+	if err != nil {
+		return "", nil, err
+	}
+	nonce := make([]byte, aead.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return "", nil, err
+	}
+	ciphertext := aead.Seal(nil, nonce, payload, nil)
+	env := encryptedPayloadV1{
+		Version:    1,
+		KeyID:      keyID,
+		Alg:        "xchacha20poly1305",
+		Nonce:      nonce,
+		Ciphertext: ciphertext,
+	}
+	b, err := json.Marshal(env)
+	if err != nil {
+		return "", nil, err
+	}
+	return "enc_v1", b, nil
+}
+
+func (s *Service) decryptPayload(ns string, payload []byte) ([]byte, error) {
+	var env encryptedPayloadV1
+	if err := json.Unmarshal(payload, &env); err != nil {
+		return nil, err
+	}
+	if env.Version != 1 {
+		return nil, fmt.Errorf("unsupported enc_v1 version %d", env.Version)
+	}
+	if env.Alg != "xchacha20poly1305" {
+		return nil, fmt.Errorf("unsupported enc_v1 alg %s", env.Alg)
+	}
+	key, _, err := s.keyForNamespace(ns, "read")
+	if err != nil {
+		return nil, err
+	}
+	aead, err := chacha20poly1305.NewX(key)
+	if err != nil {
+		return nil, err
+	}
+	if len(env.Nonce) != aead.NonceSize() {
+		return nil, fmt.Errorf("invalid enc_v1 nonce length")
+	}
+	plain, err := aead.Open(nil, env.Nonce, env.Ciphertext, nil)
+	if err != nil {
+		return nil, err
+	}
+	return plain, nil
+}
+
 type signerInfo struct {
 	ID     string
 	Priv   ed25519.PrivateKey
 	Origin string
+}
+
+func (s *Service) e2eeEnabled(ns string) bool {
+	if strings.TrimSpace(ns) == "" {
+		return false
+	}
+	return s.cfg.GetBool("namespaces." + ns + ".e2ee")
+}
+
+func (s *Service) keyForNamespace(ns, kind string) ([]byte, string, error) {
+	if strings.TrimSpace(ns) == "" {
+		return nil, "", fmt.Errorf("namespace is required")
+	}
+	base := "namespaces." + ns + "."
+	provider := strings.TrimSpace(s.cfg.GetString(base + "key_provider"))
+	if provider == "" {
+		provider = "config"
+	}
+	keyID := strings.TrimSpace(s.cfg.GetString(base + "key_id"))
+	switch provider {
+	case "system":
+		if keyID == "" {
+			return nil, "", fmt.Errorf("namespace %s missing key_id", ns)
+		}
+		ks := &keys.KeyringStore{}
+		key, err := ks.Get(keyID + "/" + kind)
+		if err != nil {
+			return nil, "", err
+		}
+		return key, keyID, nil
+	case "config":
+		var b64 string
+		if kind == "read" {
+			b64 = strings.TrimSpace(s.cfg.GetString(base + "read_key"))
+		} else {
+			b64 = strings.TrimSpace(s.cfg.GetString(base + "write_key"))
+		}
+		if b64 == "" {
+			return nil, "", fmt.Errorf("namespace %s missing %s_key", ns, kind)
+		}
+		key, err := base64.StdEncoding.DecodeString(b64)
+		if err != nil {
+			return nil, "", err
+		}
+		return key, keyID, nil
+	default:
+		return nil, "", fmt.Errorf("unsupported key_provider %q for namespace %s", provider, ns)
+	}
 }
 
 func (s *Service) originLabel(ns string) string {

@@ -2,6 +2,7 @@ package sync_test
 
 import (
 	"context"
+	"encoding/base64"
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
@@ -25,12 +26,19 @@ func setupDB(t *testing.T, name string) *db.Store {
 }
 
 func setupSyncService(t *testing.T, s *db.Store, remoteURL, token string, dataDir string) *sync.Service {
+	return setupSyncServiceWithConfig(t, s, remoteURL, token, dataDir, nil)
+}
+
+func setupSyncServiceWithConfig(t *testing.T, s *db.Store, remoteURL, token string, dataDir string, configure func(*viper.Viper)) *sync.Service {
 	v := viper.New()
 	v.Set("data_dir", dataDir)
 	v.Set("remotes.origin.url", remoteURL)
 	v.Set("remotes.origin.enabled", true)
 	v.Set("remotes.origin.token", token)
 	v.Set("sync.batch_size", 10)
+	if configure != nil {
+		configure(v)
+	}
 	return sync.New(v, s)
 }
 
@@ -132,4 +140,61 @@ func TestSyncClockSkew(t *testing.T) {
 	c2n, err := client2Store.Entries.GetEntry(ctx, "past_note")
 	require.NoError(t, err)
 	require.Equal(t, "Past Note", c2n.Title)
+}
+
+func TestSyncE2EEPayload(t *testing.T) {
+	ctx := context.Background()
+	token := "test-token"
+
+	serverStore := setupDB(t, "server_e2ee")
+	srvCfg := viper.New()
+	srvCfg.Set("auth.token", token)
+	srv := server.New(srvCfg, serverStore)
+	ts := httptest.NewServer(srv.Router())
+	defer ts.Close()
+
+	key := make([]byte, 32)
+	for i := range key {
+		key[i] = 0x33
+	}
+	keyB64 := base64.StdEncoding.EncodeToString(key)
+
+	configure := func(v *viper.Viper) {
+		v.Set("namespaces.secret.e2ee", true)
+		v.Set("namespaces.secret.key_provider", "config")
+		v.Set("namespaces.secret.read_key", keyB64)
+		v.Set("namespaces.secret.write_key", keyB64)
+	}
+
+	client1Store := setupDB(t, "client1_e2ee")
+	client1Sync := setupSyncServiceWithConfig(t, client1Store, ts.URL, token, t.TempDir(), configure)
+
+	client2Store := setupDB(t, "client2_e2ee")
+	client2Sync := setupSyncServiceWithConfig(t, client2Store, ts.URL, token, t.TempDir(), configure)
+
+	note := api.Entry{
+		ID:        "secret_note",
+		Title:     "Secret",
+		Body:      "Encrypted Body",
+		Namespace: "secret",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	_, err := client1Store.Entries.CreateEntry(ctx, note)
+	require.NoError(t, err)
+
+	err = client1Sync.SyncNow(ctx)
+	require.NoError(t, err)
+
+	evs, _, err := serverStore.Events.List(ctx, api.Cursor{}, 100)
+	require.NoError(t, err)
+	require.NotEmpty(t, evs)
+	require.Equal(t, "enc_v1", evs[0].PayloadType)
+
+	err = client2Sync.SyncNow(ctx)
+	require.NoError(t, err)
+
+	got, err := client2Store.Entries.GetEntry(ctx, "secret_note")
+	require.NoError(t, err)
+	require.Equal(t, "Secret", got.Title)
 }
