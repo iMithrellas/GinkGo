@@ -90,6 +90,9 @@ func (s *Server) handlePush(w http.ResponseWriter, r *http.Request) {
 			Namespace:   pev.GetNamespaceId(),
 			PayloadType: pev.GetPayloadType(),
 			Payload:     append([]byte(nil), pev.GetPayload()...),
+			OriginLabel: pev.GetOriginLabel(),
+			SignerID:    pev.GetSignerId(),
+			Sig:         append([]byte(nil), pev.GetSig()...),
 		}
 		if err := s.store.Events.Append(r.Context(), ev); err != nil {
 			st.Ok = false
@@ -140,6 +143,9 @@ func (s *Server) handlePull(w http.ResponseWriter, r *http.Request) {
 			NamespaceId: e.Namespace,
 			PayloadType: e.PayloadType,
 			Payload:     e.Payload,
+			OriginLabel: e.OriginLabel,
+			SignerId:    e.SignerID,
+			Sig:         e.Sig,
 		})
 	}
 	resp := &pbmsg.PullResult{Events: out}

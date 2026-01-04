@@ -1098,6 +1098,7 @@ type RepEvent struct {
 	Payload       []byte                 `protobuf:"bytes,6,opt,name=payload,proto3" json:"payload,omitempty"`
 	SignerId      string                 `protobuf:"bytes,7,opt,name=signer_id,json=signerId,proto3" json:"signer_id,omitempty"`
 	Sig           []byte                 `protobuf:"bytes,8,opt,name=sig,proto3" json:"sig,omitempty"`
+	OriginLabel   string                 `protobuf:"bytes,9,opt,name=origin_label,json=originLabel,proto3" json:"origin_label,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1186,6 +1187,13 @@ func (x *RepEvent) GetSig() []byte {
 		return x.Sig
 	}
 	return nil
+}
+
+func (x *RepEvent) GetOriginLabel() string {
+	if x != nil {
+		return x.OriginLabel
+	}
+	return ""
 }
 
 type PushBatch struct {
@@ -1827,7 +1835,7 @@ const file_internal_ipc_pb_ipc_proto_rawDesc = "" +
 	"\x04page\x18\b \x01(\v2\t.ipc.PageR\x04page\".\n" +
 	"\x04Page\x12\x12\n" +
 	"\x04next\x18\x01 \x01(\tR\x04next\x12\x12\n" +
-	"\x04prev\x18\x02 \x01(\tR\x04prev\"\xed\x01\n" +
+	"\x04prev\x18\x02 \x01(\tR\x04prev\"\x90\x02\n" +
 	"\bRepEvent\x12.\n" +
 	"\x04time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12\x12\n" +
 	"\x04type\x18\x02 \x01(\tR\x04type\x12\x0e\n" +
@@ -1836,7 +1844,8 @@ const file_internal_ipc_pb_ipc_proto_rawDesc = "" +
 	"\fpayload_type\x18\x05 \x01(\tR\vpayloadType\x12\x18\n" +
 	"\apayload\x18\x06 \x01(\fR\apayload\x12\x1b\n" +
 	"\tsigner_id\x18\a \x01(\tR\bsignerId\x12\x10\n" +
-	"\x03sig\x18\b \x01(\fR\x03sig\"2\n" +
+	"\x03sig\x18\b \x01(\fR\x03sig\x12!\n" +
+	"\forigin_label\x18\t \x01(\tR\voriginLabel\"2\n" +
 	"\tPushBatch\x12%\n" +
 	"\x06events\x18\x01 \x03(\v2\r.ipc.RepEventR\x06events\">\n" +
 	"\n" +

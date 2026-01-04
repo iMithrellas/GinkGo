@@ -89,6 +89,7 @@ message RepEvent {
   bytes payload = 6;
   string signer_id = 7;
   bytes sig = 8;
+  string origin_label = 9;
 }
 
 message PushBatch {

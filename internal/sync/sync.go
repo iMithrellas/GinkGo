@@ -3,6 +3,8 @@ package sync
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -21,8 +23,10 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	gcrypto "github.com/mithrel/ginkgo/internal/crypto"
 	"github.com/mithrel/ginkgo/internal/db"
 	pbmsg "github.com/mithrel/ginkgo/internal/ipc/pb"
+	"github.com/mithrel/ginkgo/internal/keys"
 	"github.com/mithrel/ginkgo/pkg/api"
 )
 
@@ -234,6 +238,8 @@ func (s *Service) pullRemote(ctx context.Context, rc remoteConfig, pullAfter tim
 // eventsToProto handles verbose mapping logic
 func (s *Service) eventsToProto(evs []api.Event) (*pbmsg.PushBatch, error) {
 	pbBatch := &pbmsg.PushBatch{Events: make([]*pbmsg.RepEvent, 0, len(evs))}
+	signerCache := map[string]*signerInfo{}
+	originCache := map[string]string{}
 	for _, e := range evs {
 		ns := e.Namespace
 		if ns == "" && e.Entry != nil {
@@ -248,6 +254,33 @@ func (s *Service) eventsToProto(evs []api.Event) (*pbmsg.PushBatch, error) {
 				return nil, err
 			}
 		}
+		origin := originCache[ns]
+		if origin == "" {
+			origin = s.originLabel(ns)
+			originCache[ns] = origin
+		}
+
+		var signerID string
+		var sig []byte
+		if signerCache[ns] == nil {
+			info, err := s.signerForNamespace(ns)
+			if err != nil {
+				return nil, err
+			}
+			signerCache[ns] = info
+		}
+		if signerCache[ns] != nil {
+			info := signerCache[ns]
+			signBytes, err := gcrypto.SignPayload(1, e.Time.UnixNano(), string(e.Type), e.ID, ns, payloadType, origin, payload)
+			if err != nil {
+				return nil, err
+			}
+			sig, err = gcrypto.SignEvent(info.Priv, signBytes)
+			if err != nil {
+				return nil, err
+			}
+			signerID = info.ID
+		}
 		pbBatch.Events = append(pbBatch.Events, &pbmsg.RepEvent{
 			Time:        timestamppb.New(e.Time),
 			Type:        string(e.Type),
@@ -255,6 +288,9 @@ func (s *Service) eventsToProto(evs []api.Event) (*pbmsg.PushBatch, error) {
 			NamespaceId: ns,
 			PayloadType: payloadType,
 			Payload:     payload,
+			SignerId:    signerID,
+			Sig:         sig,
+			OriginLabel: origin,
 		})
 	}
 	return pbBatch, nil
@@ -268,6 +304,9 @@ func (s *Service) repEventToAPI(pev *pbmsg.RepEvent) (api.Event, error) {
 		Namespace:   pev.GetNamespaceId(),
 		PayloadType: pev.GetPayloadType(),
 		Payload:     append([]byte(nil), pev.GetPayload()...),
+		OriginLabel: pev.GetOriginLabel(),
+		SignerID:    pev.GetSignerId(),
+		Sig:         append([]byte(nil), pev.GetSig()...),
 	}
 	if pev.GetTime() != nil {
 		ev.Time = pev.GetTime().AsTime()
@@ -339,6 +378,112 @@ func decodePlainPayload(evType api.EventType, payload []byte) (*api.Entry, strin
 	default:
 		return nil, "", fmt.Errorf("unknown event type %q", evType)
 	}
+}
+
+type signerInfo struct {
+	ID     string
+	Priv   ed25519.PrivateKey
+	Origin string
+}
+
+func (s *Service) originLabel(ns string) string {
+	base := "namespaces." + ns + ".origin_label"
+	if v := strings.TrimSpace(s.cfg.GetString(base)); v != "" {
+		return v
+	}
+	host, err := os.Hostname()
+	if err != nil || strings.TrimSpace(host) == "" {
+		return "ginkgo-device"
+	}
+	return host
+}
+
+func (s *Service) signerForNamespace(ns string) (*signerInfo, error) {
+	base := "namespaces." + ns + "."
+	provider := strings.TrimSpace(s.cfg.GetString(base + "signer_key_provider"))
+	if provider == "" {
+		return nil, nil
+	}
+	switch provider {
+	case "system":
+		keyID := strings.TrimSpace(s.cfg.GetString(base + "signer_key_id"))
+		if keyID == "" {
+			return nil, fmt.Errorf("namespace %s missing signer_key_id", ns)
+		}
+		ks := &keys.KeyringStore{}
+		privBytes, err := ks.Get(keyID + "/priv")
+		if err != nil {
+			return nil, err
+		}
+		priv := normalizePrivKey(privBytes)
+		if priv == nil {
+			return nil, fmt.Errorf("invalid signer private key")
+		}
+		pub := derivePubFromPriv(priv)
+		if pub == nil {
+			return nil, fmt.Errorf("invalid signer public key")
+		}
+		id := gcrypto.SignerID(pub)
+		return &signerInfo{ID: id, Priv: priv}, nil
+	case "config":
+		privB64 := strings.TrimSpace(s.cfg.GetString(base + "signer_priv"))
+		if privB64 == "" {
+			return nil, fmt.Errorf("namespace %s missing signer_priv", ns)
+		}
+		privBytes, err := decodeKeyB64(privB64)
+		if err != nil {
+			return nil, err
+		}
+		priv := normalizePrivKey(privBytes)
+		if priv == nil {
+			return nil, fmt.Errorf("invalid signer private key")
+		}
+		pubB64 := strings.TrimSpace(s.cfg.GetString(base + "signer_pub"))
+		var pub []byte
+		if pubB64 != "" {
+			pub, err = decodeKeyB64(pubB64)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			pub = derivePubFromPriv(priv)
+		}
+		if pub == nil {
+			return nil, fmt.Errorf("invalid signer public key")
+		}
+		id := gcrypto.SignerID(pub)
+		return &signerInfo{ID: id, Priv: priv}, nil
+	default:
+		return nil, fmt.Errorf("unsupported signer_key_provider %q for namespace %s", provider, ns)
+	}
+}
+
+func decodeKeyB64(v string) ([]byte, error) {
+	b, err := base64.StdEncoding.DecodeString(v)
+	if err != nil {
+		return nil, fmt.Errorf("invalid base64 key")
+	}
+	return b, nil
+}
+
+func normalizePrivKey(priv []byte) ed25519.PrivateKey {
+	if len(priv) == ed25519.SeedSize {
+		return ed25519.NewKeyFromSeed(priv)
+	}
+	if len(priv) == ed25519.PrivateKeySize {
+		return ed25519.PrivateKey(priv)
+	}
+	return nil
+}
+
+func derivePubFromPriv(priv ed25519.PrivateKey) []byte {
+	if len(priv) == ed25519.SeedSize {
+		priv = ed25519.NewKeyFromSeed(priv)
+	}
+	if len(priv) == ed25519.PrivateKeySize {
+		return priv.Public().(ed25519.PublicKey)
+	}
+	return nil
 }
 
 func (s *Service) cursorPath(name string) string {
