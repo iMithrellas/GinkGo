@@ -316,6 +316,57 @@ func (s *sqliteStore) DeleteEntry(ctx context.Context, id string) error {
 	return tx.Commit()
 }
 
+func (s *sqliteStore) DeleteNamespace(ctx context.Context, namespace string) (int64, error) {
+	if strings.TrimSpace(namespace) == "" {
+		return 0, fmt.Errorf("namespace is required")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM entries WHERE namespace=?`, namespace)
+	if err != nil {
+		return 0, err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			_ = rows.Close()
+			return 0, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	_ = rows.Close()
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM entries_fts WHERE namespace=?`, namespace); err != nil {
+		return 0, err
+	}
+	res, err := tx.ExecContext(ctx, `DELETE FROM entries WHERE namespace=?`, namespace)
+	if err != nil {
+		return 0, err
+	}
+	deleted, _ := res.RowsAffected()
+
+	if shouldLog(ctx) {
+		for _, id := range ids {
+			if err := appendEventTx(ctx, tx, api.Event{Time: time.Now().UTC(), Type: api.EventDelete, ID: id, Namespace: namespace}); err != nil {
+				return 0, err
+			}
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return deleted, nil
+}
+
 // ListEntries retrieves entries based on provided filters, including namespace, time ranges, and tags.
 // Note: By default, this summary listing does not load the entry body; set IncludeBody to include it.
 func (s *sqliteStore) ListEntries(ctx context.Context, q api.ListQuery) ([]api.Entry, api.Page, error) {

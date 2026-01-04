@@ -15,6 +15,7 @@ import (
 	"github.com/mithrel/ginkgo/internal/config"
 	"github.com/mithrel/ginkgo/internal/ipc"
 	"github.com/mithrel/ginkgo/internal/keys"
+	"github.com/mithrel/ginkgo/internal/wire"
 )
 
 func newConfigNamespaceCmd() *cobra.Command {
@@ -299,4 +300,48 @@ func storeKeyringPair(keyID, readKey, writeKey string) error {
 		return err
 	}
 	return nil
+}
+
+func deleteNamespaceKeys(app *wire.App, ns string) error {
+	provider := strings.TrimSpace(app.Cfg.GetString("namespaces." + ns + ".key_provider"))
+	keyID := strings.TrimSpace(app.Cfg.GetString("namespaces." + ns + ".key_id"))
+	if provider == "" || provider == "config" {
+		return nil
+	}
+	if provider != "system" {
+		return fmt.Errorf("unsupported key_provider %q for namespace %s", provider, ns)
+	}
+	if keyID == "" {
+		return fmt.Errorf("namespace %s missing key_id for key_provider=system", ns)
+	}
+	ks := &keys.KeyringStore{}
+	if err := ks.Delete(keyID + "/read"); err != nil {
+		return err
+	}
+	if err := ks.Delete(keyID + "/write"); err != nil {
+		return err
+	}
+	return nil
+}
+
+func removeNamespaceConfig(cmd *cobra.Command, app *wire.App, ns string) error {
+	path, err := resolveConfigPath(cmd, app.Cfg.ConfigFileUsed())
+	if err != nil {
+		return err
+	}
+	content, exists, err := readConfigFile(path)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return nil
+	}
+	updated, changed := config.DeleteNamespaceConfig(content, ns)
+	if !changed {
+		return nil
+	}
+	if _, err := backupConfig(path); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(updated), 0o600)
 }

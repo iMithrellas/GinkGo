@@ -54,6 +54,7 @@ message Request {
     QueueRequest queue_list = 9;
     NamespaceList namespace_list = 10;
     TagList tag_list = 11;
+    NamespaceDelete namespace_delete = 12;
   }
 }
 
@@ -116,6 +117,7 @@ message PullResult {
 
 message SyncRun {}
 message NamespaceList {}
+message NamespaceDelete { string namespace = 1; }
 
 message QueueRequest { int32 limit = 1; string remote = 2; }
 

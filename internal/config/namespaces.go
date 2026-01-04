@@ -46,6 +46,36 @@ func UpsertNamespaceConfig(existing, name string, values map[string]any) (string
 	return strings.Join(out, "\n"), true
 }
 
+// DeleteNamespaceConfig removes a [namespaces.<name>] section if present.
+func DeleteNamespaceConfig(existing, name string) (string, bool) {
+	section := "namespaces." + name
+	header := "[" + section + "]"
+	lines := strings.Split(existing, "\n")
+	out := make([]string, 0, len(lines))
+	removed := false
+
+	for i := 0; i < len(lines); {
+		line := lines[i]
+		trim := strings.TrimSpace(line)
+		if trim == header {
+			removed = true
+			i++
+			for i < len(lines) {
+				next := strings.TrimSpace(lines[i])
+				if isSectionHeader(next) {
+					break
+				}
+				i++
+			}
+			continue
+		}
+		out = append(out, line)
+		i++
+	}
+
+	return strings.Join(out, "\n"), removed
+}
+
 func appendNamespaceOptions(out *[]string, values map[string]any) {
 	ordered := namespaceOptionOrder(values)
 	for _, key := range ordered {
