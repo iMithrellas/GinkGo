@@ -83,7 +83,11 @@ message RepEvent {
   google.protobuf.Timestamp time = 1;
   string type = 2;
   string id = 3;
-  Entry entry = 4;
+  string namespace_id = 4;
+  string payload_type = 5;
+  bytes payload = 6;
+  string signer_id = 7;
+  bytes sig = 8;
 }
 
 message PushBatch {

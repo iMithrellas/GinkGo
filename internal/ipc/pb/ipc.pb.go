@@ -1077,7 +1077,11 @@ type RepEvent struct {
 	Time          *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=time,proto3" json:"time,omitempty"`
 	Type          string                 `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"`
 	Id            string                 `protobuf:"bytes,3,opt,name=id,proto3" json:"id,omitempty"`
-	Entry         *Entry                 `protobuf:"bytes,4,opt,name=entry,proto3" json:"entry,omitempty"`
+	NamespaceId   string                 `protobuf:"bytes,4,opt,name=namespace_id,json=namespaceId,proto3" json:"namespace_id,omitempty"`
+	PayloadType   string                 `protobuf:"bytes,5,opt,name=payload_type,json=payloadType,proto3" json:"payload_type,omitempty"`
+	Payload       []byte                 `protobuf:"bytes,6,opt,name=payload,proto3" json:"payload,omitempty"`
+	SignerId      string                 `protobuf:"bytes,7,opt,name=signer_id,json=signerId,proto3" json:"signer_id,omitempty"`
+	Sig           []byte                 `protobuf:"bytes,8,opt,name=sig,proto3" json:"sig,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1133,9 +1137,37 @@ func (x *RepEvent) GetId() string {
 	return ""
 }
 
-func (x *RepEvent) GetEntry() *Entry {
+func (x *RepEvent) GetNamespaceId() string {
 	if x != nil {
-		return x.Entry
+		return x.NamespaceId
+	}
+	return ""
+}
+
+func (x *RepEvent) GetPayloadType() string {
+	if x != nil {
+		return x.PayloadType
+	}
+	return ""
+}
+
+func (x *RepEvent) GetPayload() []byte {
+	if x != nil {
+		return x.Payload
+	}
+	return nil
+}
+
+func (x *RepEvent) GetSignerId() string {
+	if x != nil {
+		return x.SignerId
+	}
+	return ""
+}
+
+func (x *RepEvent) GetSig() []byte {
+	if x != nil {
+		return x.Sig
 	}
 	return nil
 }
@@ -1734,13 +1766,16 @@ const file_internal_ipc_pb_ipc_proto_rawDesc = "" +
 	"\x04page\x18\b \x01(\v2\t.ipc.PageR\x04page\".\n" +
 	"\x04Page\x12\x12\n" +
 	"\x04next\x18\x01 \x01(\tR\x04next\x12\x12\n" +
-	"\x04prev\x18\x02 \x01(\tR\x04prev\"\x80\x01\n" +
+	"\x04prev\x18\x02 \x01(\tR\x04prev\"\xed\x01\n" +
 	"\bRepEvent\x12.\n" +
 	"\x04time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12\x12\n" +
 	"\x04type\x18\x02 \x01(\tR\x04type\x12\x0e\n" +
-	"\x02id\x18\x03 \x01(\tR\x02id\x12 \n" +
-	"\x05entry\x18\x04 \x01(\v2\n" +
-	".ipc.EntryR\x05entry\"2\n" +
+	"\x02id\x18\x03 \x01(\tR\x02id\x12!\n" +
+	"\fnamespace_id\x18\x04 \x01(\tR\vnamespaceId\x12!\n" +
+	"\fpayload_type\x18\x05 \x01(\tR\vpayloadType\x12\x18\n" +
+	"\apayload\x18\x06 \x01(\fR\apayload\x12\x1b\n" +
+	"\tsigner_id\x18\a \x01(\tR\bsignerId\x12\x10\n" +
+	"\x03sig\x18\b \x01(\fR\x03sig\"2\n" +
 	"\tPushBatch\x12%\n" +
 	"\x06events\x18\x01 \x03(\v2\r.ipc.RepEventR\x06events\">\n" +
 	"\n" +
@@ -1838,20 +1873,19 @@ var file_internal_ipc_pb_ipc_proto_depIdxs = []int32{
 	10, // 20: ipc.Response.tags:type_name -> ipc.TagStat
 	12, // 21: ipc.Response.page:type_name -> ipc.Page
 	24, // 22: ipc.RepEvent.time:type_name -> google.protobuf.Timestamp
-	0,  // 23: ipc.RepEvent.entry:type_name -> ipc.Entry
-	13, // 24: ipc.PushBatch.events:type_name -> ipc.RepEvent
-	24, // 25: ipc.Cursor.after:type_name -> google.protobuf.Timestamp
-	15, // 26: ipc.PushResult.items:type_name -> ipc.ItemStatus
-	16, // 27: ipc.PushResult.next:type_name -> ipc.Cursor
-	13, // 28: ipc.PullResult.events:type_name -> ipc.RepEvent
-	16, // 29: ipc.PullResult.next:type_name -> ipc.Cursor
-	24, // 30: ipc.QueueEvent.time:type_name -> google.protobuf.Timestamp
-	22, // 31: ipc.QueueRemote.events:type_name -> ipc.QueueEvent
-	32, // [32:32] is the sub-list for method output_type
-	32, // [32:32] is the sub-list for method input_type
-	32, // [32:32] is the sub-list for extension type_name
-	32, // [32:32] is the sub-list for extension extendee
-	0,  // [0:32] is the sub-list for field type_name
+	13, // 23: ipc.PushBatch.events:type_name -> ipc.RepEvent
+	24, // 24: ipc.Cursor.after:type_name -> google.protobuf.Timestamp
+	15, // 25: ipc.PushResult.items:type_name -> ipc.ItemStatus
+	16, // 26: ipc.PushResult.next:type_name -> ipc.Cursor
+	13, // 27: ipc.PullResult.events:type_name -> ipc.RepEvent
+	16, // 28: ipc.PullResult.next:type_name -> ipc.Cursor
+	24, // 29: ipc.QueueEvent.time:type_name -> google.protobuf.Timestamp
+	22, // 30: ipc.QueueRemote.events:type_name -> ipc.QueueEvent
+	31, // [31:31] is the sub-list for method output_type
+	31, // [31:31] is the sub-list for method input_type
+	31, // [31:31] is the sub-list for extension type_name
+	31, // [31:31] is the sub-list for extension extendee
+	0,  // [0:31] is the sub-list for field type_name
 }
 
 func init() { file_internal_ipc_pb_ipc_proto_init() }
