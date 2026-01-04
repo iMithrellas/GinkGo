@@ -69,6 +69,7 @@ func writeConfigTOML(t *testing.T, dir string) string {
 	cfg := filepath.Join(dir, "config.toml")
 	content := `data_dir = "` + strings.ReplaceAll(dir, "\\", "\\\\") + `"
 default_namespace = "testcli"
+namespace = "testcli"
 [namespaces.testcli]
 e2ee = false
 `

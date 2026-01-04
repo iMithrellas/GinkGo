@@ -29,6 +29,9 @@ func TestCompleteTags(t *testing.T) {
 	testCmd := NewRootCmd()
 	testCmd.SetContext(context.Background())
 	testCmd.SetArgs([]string{"--config", cfgPath, "note", "add"})
+	if err := testCmd.ParseFlags([]string{"--config", cfgPath}); err != nil {
+		t.Fatalf("parse flags: %v", err)
+	}
 	// Execute just enough to trigger PersistentPreRunE but not the full command
 	if err := testCmd.PersistentPreRunE(testCmd, nil); err != nil {
 		t.Fatalf("setup context: %v", err)
