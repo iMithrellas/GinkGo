@@ -69,6 +69,8 @@ func writeConfigTOML(t *testing.T, dir string) string {
 	cfg := filepath.Join(dir, "config.toml")
 	content := `data_dir = "` + strings.ReplaceAll(dir, "\\", "\\\\") + `"
 default_namespace = "testcli"
+[namespaces.testcli]
+e2ee = false
 `
 	if err := os.WriteFile(cfg, []byte(content), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
