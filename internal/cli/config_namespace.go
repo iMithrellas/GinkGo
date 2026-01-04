@@ -47,6 +47,7 @@ func newConfigNamespaceInitCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVarP(&ns, "namespace", "n", "", "namespace to initialize (defaults to current)")
+	registerNamespaceCompletion(cmd)
 	return cmd
 }
 
@@ -112,6 +113,7 @@ func newConfigNamespaceKeyCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVarP(&ns, "namespace", "n", "", "namespace to inspect (defaults to current)")
+	registerNamespaceCompletion(cmd)
 	return cmd
 }
 
