@@ -84,7 +84,12 @@ func appendNamespaceOptions(out *[]string, values map[string]any) {
 }
 
 func namespaceOptionOrder(values map[string]any) []string {
-	pref := []string{"e2ee", "key_provider", "key_id", "read_key", "write_key"}
+	pref := []string{
+		"e2ee",
+		"key_provider", "key_id", "read_key", "write_key",
+		"signer_key_provider", "signer_key_id", "signer_pub", "signer_priv",
+		"origin_label",
+	}
 	out := make([]string, 0, len(values))
 	seen := make(map[string]bool, len(values))
 	for _, k := range pref {
