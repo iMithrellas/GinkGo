@@ -127,7 +127,7 @@ func (s *sqliteStore) Append(ctx context.Context, ev api.Event) error {
 
 func (s *sqliteStore) List(ctx context.Context, cur api.Cursor, limit int) ([]api.Event, api.Cursor, error) {
 	// Apply simple cursor and limit.
-	q := `SELECT time, type, id, namespace, payload_type, payload FROM events`
+	q := `SELECT time, type, id, namespace, payload_type, payload, origin_label, signer_id, sig FROM events`
 	args := []any{}
 	if !cur.After.IsZero() {
 		q += ` WHERE time > ?`
@@ -152,7 +152,10 @@ func (s *sqliteStore) List(ctx context.Context, cur api.Cursor, limit int) ([]ap
 		var ns sql.NullString
 		var payloadType sql.NullString
 		var payload []byte
-		if err := rows.Scan(&t, &typ, &id, &ns, &payloadType, &payload); err != nil {
+		var originLabel sql.NullString
+		var signerID sql.NullString
+		var sig []byte
+		if err := rows.Scan(&t, &typ, &id, &ns, &payloadType, &payload, &originLabel, &signerID, &sig); err != nil {
 			return nil, api.Cursor{}, err
 		}
 		out = append(out, api.Event{
@@ -162,6 +165,9 @@ func (s *sqliteStore) List(ctx context.Context, cur api.Cursor, limit int) ([]ap
 			Namespace:   ns.String,
 			PayloadType: payloadType.String,
 			Payload:     payload,
+			OriginLabel: originLabel.String,
+			SignerID:    signerID.String,
+			Sig:         sig,
 		})
 	}
 	var next api.Cursor
@@ -804,7 +810,10 @@ CREATE TABLE IF NOT EXISTS events (
   id TEXT NOT NULL,
   namespace TEXT,
   payload_type TEXT,
-  payload BLOB
+  payload BLOB,
+  origin_label TEXT,
+  signer_id TEXT,
+  sig BLOB
 );
 -- Tags projection and metadata
 CREATE TABLE IF NOT EXISTS note_tags (
@@ -824,7 +833,54 @@ CREATE VIRTUAL TABLE IF NOT EXISTS entries_fts USING fts5(
   tokenize='unicode61'
 );
 `)
-	return err
+	if err != nil {
+		return err
+	}
+	return ensureEventColumns(ctx, db)
+}
+
+func ensureEventColumns(ctx context.Context, db *sql.DB) error {
+	rows, err := db.QueryContext(ctx, `PRAGMA table_info(events)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	existing := map[string]bool{}
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull, pk int
+		var dflt any
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			return err
+		}
+		existing[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	columns := []struct {
+		Name string
+		DDL  string
+	}{
+		{Name: "namespace", DDL: "ALTER TABLE events ADD COLUMN namespace TEXT"},
+		{Name: "payload_type", DDL: "ALTER TABLE events ADD COLUMN payload_type TEXT"},
+		{Name: "payload", DDL: "ALTER TABLE events ADD COLUMN payload BLOB"},
+		{Name: "origin_label", DDL: "ALTER TABLE events ADD COLUMN origin_label TEXT"},
+		{Name: "signer_id", DDL: "ALTER TABLE events ADD COLUMN signer_id TEXT"},
+		{Name: "sig", DDL: "ALTER TABLE events ADD COLUMN sig BLOB"},
+	}
+	for _, col := range columns {
+		if existing[col.Name] {
+			continue
+		}
+		if _, err := db.ExecContext(ctx, col.DDL); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // appendEventTx writes to events within the provided transaction.
@@ -859,7 +915,8 @@ func appendEventTx(ctx context.Context, tx *sql.Tx, ev api.Event) error {
 		}
 	}
 
-	_, err = tx.ExecContext(ctx, `INSERT INTO events(time, type, id, namespace, payload_type, payload) VALUES(?,?,?,?,?,?)`, ev.Time.UTC(), string(ev.Type), ev.ID, ns, payloadType, payload)
+	_, err = tx.ExecContext(ctx, `INSERT INTO events(time, type, id, namespace, payload_type, payload, origin_label, signer_id, sig) VALUES(?,?,?,?,?,?,?,?,?)`,
+		ev.Time.UTC(), string(ev.Type), ev.ID, ns, payloadType, payload, ev.OriginLabel, ev.SignerID, ev.Sig)
 	return err
 }
 
