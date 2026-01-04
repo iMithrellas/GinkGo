@@ -116,7 +116,7 @@ func TestE2E_NoteAdd(t *testing.T) {
 	// 3b. Test: Add body via IPC for export test
 	t.Run("Add Body", func(t *testing.T) {
 		require.NotEmpty(t, noteID)
-		show, err := ipc.Request(ctx, sock, ipc.Message{Name: "note.show", ID: noteID})
+		show, err := ipc.Request(ctx, sock, ipc.Message{Name: "note.show", ID: noteID, Namespace: "test"})
 		require.NoError(t, err)
 		require.True(t, show.OK)
 		require.NotNil(t, show.Entry)
@@ -128,6 +128,7 @@ func TestE2E_NoteAdd(t *testing.T) {
 			Title:     cur.Title,
 			Body:      "Body line one\nBody line two",
 			Tags:      cur.Tags,
+			Namespace: "test",
 		})
 		require.NoError(t, err)
 		require.True(t, resp.OK)
