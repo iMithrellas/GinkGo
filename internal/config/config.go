@@ -103,6 +103,7 @@ func GetConfigOptions() []ConfigOption {
 		{Key: "auth.token", Default: "", Comment: "Shared token required by replication server"},
 		{Key: "sync.batch_size", Default: 256, Comment: "Batch size for remote sync operations"},
 		{Key: "remotes", Default: map[string]any{}, Comment: "Named remotes: [remotes.<name>] url/token/enabled"},
+		{Key: "namespaces", Default: map[string]any{}, Comment: "Per-namespace settings: [namespaces.<name>] e2ee/key_provider/key_id/read_key/write_key"},
 		{Key: "export.page_size", Default: 200, Comment: "Batch size for list/search export paging"},
 		{Key: "tui.buffer_ratio", Default: 2.0, Comment: "TUI paging buffer ratio; increases the safe window before refetch (0.4-4)"},
 
