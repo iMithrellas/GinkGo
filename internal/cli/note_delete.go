@@ -15,11 +15,15 @@ func newNoteDeleteCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := args[0]
+			ns := resolveNamespace(cmd)
+			if err := ensureNamespaceConfigured(cmd, ns); err != nil {
+				return err
+			}
 			sock, err := ipc.SocketPath()
 			if err != nil {
 				return err
 			}
-			resp, err := ipc.Request(cmd.Context(), sock, ipc.Message{Name: "note.delete", ID: id, Namespace: resolveNamespace(cmd)})
+			resp, err := ipc.Request(cmd.Context(), sock, ipc.Message{Name: "note.delete", ID: id, Namespace: ns})
 			if err != nil {
 				return err
 			}
