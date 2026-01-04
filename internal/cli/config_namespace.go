@@ -9,9 +9,11 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/huh"
+	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
 
 	"github.com/mithrel/ginkgo/internal/config"
+	"github.com/mithrel/ginkgo/internal/ipc"
 	"github.com/mithrel/ginkgo/internal/keys"
 )
 
@@ -41,94 +43,7 @@ func newConfigNamespaceInitCmd() *cobra.Command {
 			if app.Cfg.IsSet("namespaces." + ns) {
 				return fmt.Errorf("namespace %s already configured", ns)
 			}
-
-			e2ee := true
-			keyringAvailable := keys.KeyringAvailable()
-			useKeyring := keyringAvailable
-			keyID := fmt.Sprintf("ginkgo/ns/%s", ns)
-			readKey := randBase64Key(32)
-			writeKey := randBase64Key(32)
-
-			fields := []huh.Field{
-				huh.NewConfirm().Title("Enable E2EE for this namespace?").Value(&e2ee),
-			}
-			if keyringAvailable {
-				fields = append(fields, huh.NewConfirm().Title("Store keys in system keyring?").Value(&useKeyring))
-			} else {
-				useKeyring = false
-			}
-			fields = append(fields,
-				huh.NewInput().Title("Key ID").Value(&keyID).Validate(func(s string) error {
-					if !e2ee || !useKeyring {
-						return nil
-					}
-					if strings.TrimSpace(s) == "" {
-						return fmt.Errorf("key id is required")
-					}
-					return nil
-				}),
-				huh.NewInput().Title("Read key (base64)").Value(&readKey).Validate(func(s string) error {
-					if !e2ee {
-						return nil
-					}
-					return validateBase64Key(s, "read")
-				}),
-				huh.NewInput().Title("Write key (base64)").Value(&writeKey).Validate(func(s string) error {
-					if !e2ee {
-						return nil
-					}
-					return validateBase64Key(s, "write")
-				}),
-			)
-
-			form := huh.NewForm(huh.NewGroup(fields...))
-			if err := form.Run(); err != nil {
-				return err
-			}
-
-			values := map[string]any{
-				"e2ee": e2ee,
-			}
-			if e2ee {
-				if useKeyring {
-					if err := storeKeyringPair(keyID, readKey, writeKey); err != nil {
-						return err
-					}
-					values["key_provider"] = "system"
-					values["key_id"] = keyID
-				} else {
-					values["key_provider"] = "config"
-					values["read_key"] = strings.TrimSpace(readKey)
-					values["write_key"] = strings.TrimSpace(writeKey)
-				}
-			}
-
-			path, err := resolveConfigPath(cmd, app.Cfg.ConfigFileUsed())
-			if err != nil {
-				return err
-			}
-			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-				return err
-			}
-
-			content, exists, err := readConfigFile(path)
-			if err != nil {
-				return err
-			}
-			if !exists {
-				content = config.RenderDefaultTOML()
-			}
-			updated, _ := config.UpsertNamespaceConfig(content, ns, values)
-			if exists {
-				if _, err := backupConfig(path); err != nil {
-					return err
-				}
-			}
-			if err := os.WriteFile(path, []byte(updated), 0o600); err != nil {
-				return err
-			}
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Wrote %s\n", path)
-			return nil
+			return initNamespaceConfig(cmd, ns)
 		},
 	}
 	cmd.Flags().StringVarP(&ns, "namespace", "n", "", "namespace to initialize (defaults to current)")
@@ -198,6 +113,131 @@ func newConfigNamespaceKeyCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&ns, "namespace", "n", "", "namespace to inspect (defaults to current)")
 	return cmd
+}
+
+func ensureNamespaceConfigured(cmd *cobra.Command, ns string) error {
+	if strings.TrimSpace(ns) == "" {
+		return nil
+	}
+	app := getApp(cmd)
+	if app.Cfg.IsSet("namespaces." + ns) {
+		return nil
+	}
+	if namespaceExists(cmd, ns) {
+		return nil
+	}
+	if !term.IsTerminal(os.Stdin.Fd()) {
+		return fmt.Errorf("namespace %s not configured; run `ginkgo-cli config namespace init -n %s`", ns, ns)
+	}
+	return initNamespaceConfig(cmd, ns)
+}
+
+func namespaceExists(cmd *cobra.Command, ns string) bool {
+	sock, err := ipc.SocketPath()
+	if err != nil {
+		return false
+	}
+	resp, err := ipc.Request(cmd.Context(), sock, ipc.Message{Name: "namespace.list"})
+	if err != nil || !resp.OK {
+		return false
+	}
+	for _, existing := range resp.Namespaces {
+		if existing == ns {
+			return true
+		}
+	}
+	return false
+}
+
+func initNamespaceConfig(cmd *cobra.Command, ns string) error {
+	app := getApp(cmd)
+	e2ee := true
+	keyringAvailable := keys.KeyringAvailable()
+	useKeyring := keyringAvailable
+	keyID := fmt.Sprintf("ginkgo/ns/%s", ns)
+	readKey := randBase64Key(32)
+	writeKey := randBase64Key(32)
+
+	fields := []huh.Field{
+		huh.NewConfirm().Title("Enable E2EE for this namespace?").Value(&e2ee),
+	}
+	if keyringAvailable {
+		fields = append(fields, huh.NewConfirm().Title("Store keys in system keyring?").Value(&useKeyring))
+	} else {
+		useKeyring = false
+	}
+	fields = append(fields,
+		huh.NewInput().Title("Key ID").Value(&keyID).Validate(func(s string) error {
+			if !e2ee || !useKeyring {
+				return nil
+			}
+			if strings.TrimSpace(s) == "" {
+				return fmt.Errorf("key id is required")
+			}
+			return nil
+		}),
+		huh.NewInput().Title("Read key (base64)").Value(&readKey).Validate(func(s string) error {
+			if !e2ee {
+				return nil
+			}
+			return validateBase64Key(s, "read")
+		}),
+		huh.NewInput().Title("Write key (base64)").Value(&writeKey).Validate(func(s string) error {
+			if !e2ee {
+				return nil
+			}
+			return validateBase64Key(s, "write")
+		}),
+	)
+
+	form := huh.NewForm(huh.NewGroup(fields...))
+	if err := form.Run(); err != nil {
+		return err
+	}
+
+	values := map[string]any{
+		"e2ee": e2ee,
+	}
+	if e2ee {
+		if useKeyring {
+			if err := storeKeyringPair(keyID, readKey, writeKey); err != nil {
+				return err
+			}
+			values["key_provider"] = "system"
+			values["key_id"] = keyID
+		} else {
+			values["key_provider"] = "config"
+			values["read_key"] = strings.TrimSpace(readKey)
+			values["write_key"] = strings.TrimSpace(writeKey)
+		}
+	}
+
+	path, err := resolveConfigPath(cmd, app.Cfg.ConfigFileUsed())
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+
+	content, exists, err := readConfigFile(path)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		content = config.RenderDefaultTOML()
+	}
+	updated, _ := config.UpsertNamespaceConfig(content, ns, values)
+	if exists {
+		if _, err := backupConfig(path); err != nil {
+			return err
+		}
+	}
+	if err := os.WriteFile(path, []byte(updated), 0o600); err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Wrote %s\n", path)
+	return nil
 }
 
 func resolveConfigPath(cmd *cobra.Command, used string) (string, error) {

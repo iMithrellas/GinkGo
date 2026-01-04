@@ -103,6 +103,9 @@ func newImportCmd() *cobra.Command {
 
 func importOne(cmd *cobra.Command, app *wire.App, e api.Entry) error {
 	// Create via daemon; let it generate the ID and normalize tags.
+	if err := ensureNamespaceConfigured(cmd, e.Namespace); err != nil {
+		return err
+	}
 	sock, err := ipc.SocketPath()
 	if err != nil {
 		return err
