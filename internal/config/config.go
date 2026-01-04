@@ -78,6 +78,16 @@ func defaultDataDir() string {
 	return filepath.Join(home, ".local", "share", "ginkgo")
 }
 
+// DefaultConfigPath resolves the standard config.toml location.
+func DefaultConfigPath() string {
+	xdg := os.Getenv("XDG_CONFIG_HOME")
+	if xdg == "" {
+		home, _ := os.UserHomeDir()
+		xdg = filepath.Join(home, ".config")
+	}
+	return filepath.Join(xdg, "ginkgo", "config.toml")
+}
+
 type ConfigOption struct {
 	Key     string
 	Default any
