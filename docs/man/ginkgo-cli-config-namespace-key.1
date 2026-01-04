@@ -3,23 +3,27 @@
 
 .SH NAME
 .PP
-ginkgo-cli-note-sync - Replicate local note changes to remotes
+ginkgo-cli-config-namespace-key - Show namespace keys
 
 
 .SH SYNOPSIS
 .PP
-\fBginkgo-cli note sync [flags]\fP
+\fBginkgo-cli config namespace key [flags]\fP
 
 
 .SH DESCRIPTION
 .PP
-Replicate local note changes to remotes
+Show namespace keys
 
 
 .SH OPTIONS
 .PP
 \fB-h\fP, \fB--help\fP[=false]
-	help for sync
+	help for key
+
+.PP
+\fB-n\fP, \fB--namespace\fP=""
+	namespace to inspect (defaults to current)
 
 
 .SH OPTIONS INHERITED FROM PARENT COMMANDS
@@ -27,14 +31,10 @@ Replicate local note changes to remotes
 \fB--config\fP=""
 	path to config file (yaml|toml)
 
-.PP
-\fB-n\fP, \fB--namespace\fP=""
-	override namespace for this command
-
 
 .SH SEE ALSO
 .PP
-\fBginkgo-cli-note(1)\fP
+\fBginkgo-cli-config-namespace(1)\fP
 
 
 .SH HISTORY
