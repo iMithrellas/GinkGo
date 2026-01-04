@@ -58,5 +58,5 @@ func KeyringAvailable() bool {
 	if err == nil || errors.Is(err, keyring.ErrNotFound) {
 		return true
 	}
-	return !errors.Is(err, keyring.ErrUnsupported)
+	return !errors.Is(err, keyring.ErrUnsupportedPlatform)
 }
