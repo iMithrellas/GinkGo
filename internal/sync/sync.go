@@ -38,6 +38,13 @@ type Service struct {
 	httpClient *http.Client
 }
 
+const (
+	// payloadTypePlainV1 stores JSON entry upsert/delete payloads.
+	payloadTypePlainV1 = "plain_v1"
+	// payloadTypeEncV1 stores encrypted payloads (opaque to the server).
+	payloadTypeEncV1 = "enc_v1"
+)
+
 type remoteConfig struct {
 	Name      string
 	URL       string
@@ -256,7 +263,7 @@ func (s *Service) eventsToProto(evs []api.Event) (*pbmsg.PushBatch, error) {
 				return nil, err
 			}
 		}
-		if s.e2eeEnabled(ns) && payloadType == "plain_v1" {
+		if s.e2eeEnabled(ns) && payloadType == payloadTypePlainV1 {
 			var err error
 			payloadType, payload, err = s.encryptPayload(ns, payload)
 			if err != nil {
@@ -321,7 +328,7 @@ func (s *Service) repEventToAPI(pev *pbmsg.RepEvent) (api.Event, error) {
 		ev.Time = pev.GetTime().AsTime()
 	}
 	switch ev.PayloadType {
-	case "plain_v1":
+	case payloadTypePlainV1:
 		if len(ev.Payload) > 0 {
 			entry, ns, err := decodePlainPayload(ev.Type, ev.Payload)
 			if err != nil {
@@ -332,7 +339,7 @@ func (s *Service) repEventToAPI(pev *pbmsg.RepEvent) (api.Event, error) {
 				ev.Namespace = ns
 			}
 		}
-	case "enc_v1":
+	case payloadTypeEncV1:
 		if len(ev.Payload) > 0 {
 			plain, err := s.decryptPayload(ev.Namespace, ev.Payload)
 			if err != nil {
@@ -371,17 +378,17 @@ func encodePlainPayload(ev api.Event, ns string) (string, []byte, error) {
 	switch ev.Type {
 	case api.EventUpsert:
 		if ev.Entry == nil {
-			return "", nil, fmt.Errorf("plain_v1 upsert requires entry")
+			return "", nil, fmt.Errorf("%s upsert requires entry", payloadTypePlainV1)
 		}
 		b, err := json.Marshal(ev.Entry)
-		return "plain_v1", b, err
+		return payloadTypePlainV1, b, err
 	case api.EventDelete:
 		dp := struct {
 			ID        string `json:"id"`
 			Namespace string `json:"namespace"`
 		}{ID: ev.ID, Namespace: ns}
 		b, err := json.Marshal(dp)
-		return "plain_v1", b, err
+		return payloadTypePlainV1, b, err
 	default:
 		return "", nil, fmt.Errorf("unknown event type %q", ev.Type)
 	}
@@ -442,7 +449,7 @@ func (s *Service) encryptPayload(ns string, payload []byte) (string, []byte, err
 	if err != nil {
 		return "", nil, err
 	}
-	return "enc_v1", b, nil
+	return payloadTypeEncV1, b, nil
 }
 
 func (s *Service) decryptPayload(ns string, payload []byte) ([]byte, error) {
