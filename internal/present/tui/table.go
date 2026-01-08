@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"golang.org/x/term"
 
 	"github.com/mithrel/ginkgo/internal/editor"
 	"github.com/mithrel/ginkgo/internal/ipc"
@@ -40,6 +41,11 @@ func RenderTable(ctx context.Context, entries []api.Entry, headers bool, initial
 		bufferRatio:  bufferRatio,
 	}
 	m.initTable()
+	if width, height, err := term.GetSize(int(os.Stdout.Fd())); err == nil && width > 0 && height > 0 {
+		m.width = width
+		m.height = height
+		m.applyLayout()
+	}
 
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	final, err := p.Run()
@@ -121,6 +127,16 @@ func (m *model) initTable() {
 	m.updateKeyStates()
 }
 
+func initialWindowSizeCmd() tea.Cmd {
+	return func() tea.Msg {
+		width, height, err := term.GetSize(int(os.Stdout.Fd()))
+		if err != nil || width <= 0 || height <= 0 {
+			width, height = 80, 24
+		}
+		return tea.WindowSizeMsg{Width: width, Height: height}
+	}
+}
+
 func (m *model) updateRows(prepended int) {
 	rows := make([]table.Row, 0, len(m.entries))
 	for _, e := range m.entries {
@@ -139,7 +155,7 @@ func (m *model) updateRows(prepended int) {
 	}
 }
 
-func (m model) Init() tea.Cmd { return nil }
+func (m model) Init() tea.Cmd { return initialWindowSizeCmd() }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.updateKeyStates()
@@ -537,11 +553,11 @@ func (m model) renderFooter() string {
 func (m model) View() string {
 	if m.showHelp {
 		helpView, w, h := m.helpModalView()
-		base := m.table.View() + "\n" + m.renderFooter() + "\n"
+		base := m.table.View() + "\n" + m.renderFooter()
 		return m.renderOverlay(base, helpView, w, h)
 	}
 	if m.table.Height() < 3 {
-		base := "(no entries) \n"
+		base := "(no entries)"
 		if m.showModal && m.modal != nil {
 			return m.renderOverlay(base, m.modal.View(), m.modal.width, m.modal.height)
 		}
@@ -551,7 +567,7 @@ func (m model) View() string {
 		return base
 	}
 
-	base := m.table.View() + "\n" + m.renderFooter() + "\n"
+	base := m.table.View() + "\n" + m.renderFooter()
 	if m.showModal && m.modal != nil {
 		return m.renderOverlay(base, m.modal.View(), m.modal.width, m.modal.height)
 	}
@@ -598,6 +614,8 @@ func (m *model) applyLayout() {
 	m.tagsWidth = tagsW
 	cols := m.columnsFor(m.headers, idW, titleW, tagsW, createdW)
 	m.table.SetColumns(cols)
+	// Re-apply header styles after column/size changes to avoid stale rendering.
+	m.applyStyles()
 }
 
 func (m *model) applyStyles() {

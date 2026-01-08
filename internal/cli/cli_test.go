@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -257,7 +258,11 @@ func TestImportJSON(t *testing.T) {
 	if got.Namespace != "testcli" {
 		t.Fatalf("namespace mismatch: %q", got.Namespace)
 	}
-	if len(got.Tags) != 2 || got.Tags[0] != "cli" || got.Tags[1] != "imported" {
+	if len(got.Tags) != 2 {
+		t.Fatalf("tags mismatch: %v", got.Tags)
+	}
+	sort.Strings(got.Tags)
+	if got.Tags[0] != "cli" || got.Tags[1] != "imported" {
 		t.Fatalf("tags mismatch: %v", got.Tags)
 	}
 }
