@@ -282,7 +282,7 @@ func TestConfigNamespaceDelete(t *testing.T) {
 
 	// Delete the namespace.
 	root2 := NewRootCmd()
-	root2.SetArgs([]string{"--config", cfgPath, "note", "delete", "--namespace-delete", "--yes"})
+	root2.SetArgs([]string{"--config", cfgPath, "note", "delete", "--yes"})
 	if err := root2.Execute(); err != nil {
 		t.Fatalf("delete execute: %v", err)
 	}
@@ -303,5 +303,47 @@ func TestConfigNamespaceDelete(t *testing.T) {
 	}
 	if strings.Contains(string(data), "[namespaces.testcli]") {
 		t.Fatalf("namespace config still present")
+	}
+}
+
+func TestNoteDeleteDryRunOutput(t *testing.T) {
+	cancel, sock, dataDir := startTestDaemon(t)
+	defer cancel()
+
+	cfgPath := writeConfigTOML(t, dataDir)
+
+	// Seed a note with a body so we can verify dry-run output strips it.
+	resp, err := ipc.Request(context.Background(), sock, ipc.Message{
+		Name:      "note.add",
+		Title:     "Infra Note",
+		Body:      "Secret Body",
+		Tags:      []string{"infra"},
+		Namespace: "testcli",
+	})
+	if err != nil {
+		t.Fatalf("seed note: %v", err)
+	}
+	if !resp.OK || resp.Entry == nil {
+		t.Fatalf("seed note failed: %v", resp.Msg)
+	}
+
+	root := NewRootCmd()
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&errOut)
+	root.SetArgs([]string{"--config", cfgPath, "note", "delete", "--tags-any", "infra", "--dry", "--output", "json"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("delete dry-run execute: %v\n%s", err, errOut.String())
+	}
+	var entries []api.Entry
+	if err := json.Unmarshal(out.Bytes(), &entries); err != nil {
+		t.Fatalf("decode dry-run json: %v\n%s", err, out.String())
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	if entries[0].Body != "" {
+		t.Fatalf("expected empty body in dry-run output, got %q", entries[0].Body)
 	}
 }
