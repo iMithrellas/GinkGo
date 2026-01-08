@@ -202,6 +202,66 @@ write_key = "d3JpdGU="
 	}
 }
 
+func TestImportJSON(t *testing.T) {
+	cancel, _, dataDir := startTestDaemon(t)
+	defer cancel()
+
+	cfgPath := writeConfigTOML(t, dataDir)
+	tmp := t.TempDir()
+	inputPath := filepath.Join(tmp, "import.json")
+	input := `[
+  {
+    "title": "Imported Title",
+    "body": "Imported Body",
+    "tags": ["imported", "cli"],
+    "namespace": "testcli",
+    "created_at": "2025-02-01T10:00:00Z",
+    "updated_at": "2025-02-01T10:00:00Z"
+  }
+]`
+	if err := os.WriteFile(inputPath, []byte(input), 0o600); err != nil {
+		t.Fatalf("write import file: %v", err)
+	}
+
+	root := NewRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"--config", cfgPath, "import", "--file", inputPath})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("import execute: %v\n%s", err, out.String())
+	}
+
+	root2 := NewRootCmd()
+	var out2 bytes.Buffer
+	root2.SetOut(&out2)
+	root2.SetErr(&out2)
+	root2.SetArgs([]string{"--config", cfgPath, "note", "list", "--output", "json", "--export", "--page-size", "10"})
+	if err := root2.Execute(); err != nil {
+		t.Fatalf("list execute: %v\n%s", err, out2.String())
+	}
+	var entries []api.Entry
+	if err := json.Unmarshal(out2.Bytes(), &entries); err != nil {
+		t.Fatalf("decode list json: %v\n%s", err, out2.String())
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 imported entry, got %d", len(entries))
+	}
+	got := entries[0]
+	if got.Title != "Imported Title" {
+		t.Fatalf("title mismatch: %q", got.Title)
+	}
+	if got.Body != "Imported Body" {
+		t.Fatalf("body mismatch: %q", got.Body)
+	}
+	if got.Namespace != "testcli" {
+		t.Fatalf("namespace mismatch: %q", got.Namespace)
+	}
+	if len(got.Tags) != 2 || got.Tags[0] != "cli" || got.Tags[1] != "imported" {
+		t.Fatalf("tags mismatch: %v", got.Tags)
+	}
+}
+
 func TestConfigNamespaceDelete(t *testing.T) {
 	cancel, sock, dataDir := startTestDaemon(t)
 	defer cancel()
