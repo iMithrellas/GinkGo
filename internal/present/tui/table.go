@@ -50,8 +50,7 @@ func RenderTable(ctx context.Context, entries []api.Entry, headers bool, initial
 		if fm.showIdx >= 0 && fm.showIdx < len(entries) {
 			sel := entries[fm.showIdx]
 			if sock, err := ipc.SocketPath(); err == nil {
-				// Let daemon resolve namespace; only ID is required here.
-				if resp, err := ipc.Request(ctx, sock, ipc.Message{Name: "note.show", ID: sel.ID}); err == nil && resp.OK && resp.Entry != nil {
+				if resp, err := ipc.Request(ctx, sock, ipc.Message{Name: "note.show", ID: sel.ID, Namespace: sel.Namespace}); err == nil && resp.OK && resp.Entry != nil {
 					_ = format.WritePrettyEntry(os.Stdout, *resp.Entry)
 				} else {
 					_ = format.WritePrettyEntry(os.Stdout, sel)
@@ -456,7 +455,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.status = "Loading note…"
 				m.lastDuration = 0
 				m.updateKeyStates()
-				return m, showNoteCmd(m.ctx, sel.ID)
+				return m, showNoteCmd(m.ctx, sel.ID, sel.Namespace)
 			} else {
 				m.showModal = false
 			}

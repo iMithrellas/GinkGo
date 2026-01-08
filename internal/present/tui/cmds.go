@@ -73,14 +73,14 @@ type editPrepMsg struct {
 }
 
 // showNoteCmd fetches the full note via IPC and returns a result message.
-func showNoteCmd(ctx context.Context, id string) tea.Cmd {
+func showNoteCmd(ctx context.Context, id, namespace string) tea.Cmd {
 	return func() tea.Msg {
 		start := time.Now()
 		sock, err := ipc.SocketPath()
 		if err != nil {
 			return showNoteResultMsg{err: err}
 		}
-		resp, err := ipc.Request(ctx, sock, ipc.Message{Name: "note.show", ID: id})
+		resp, err := ipc.Request(ctx, sock, ipc.Message{Name: "note.show", ID: id, Namespace: namespace})
 		dur := time.Since(start)
 		if err != nil {
 			return showNoteResultMsg{err: err, dur: dur}

@@ -174,7 +174,6 @@ func initNamespaceConfig(cmd *cobra.Command, ns string) error {
 	} else {
 		useKeyring = false
 	}
-	fields = append(fields)
 	if keyringAvailable {
 		fields = append(fields, huh.NewConfirm().Title("Store signing keys in system keyring?").Value(&signerUseKeyring))
 	} else {

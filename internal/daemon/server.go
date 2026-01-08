@@ -116,9 +116,6 @@ func Run(ctx context.Context, app *wire.App) error {
 				log.Printf("show note id=%s err=%v", m.ID, err)
 				return ipc.Response{OK: false, Msg: err.Error()}
 			}
-			if e.Namespace != ns {
-				return ipc.Response{OK: false, Msg: "not found"}
-			}
 			log.Printf("show note id=%s", m.ID)
 			return ipc.Response{OK: true, Entry: &e}
 		case "note.list":
