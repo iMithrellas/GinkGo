@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -18,14 +17,12 @@ import (
 )
 
 func newImportCmd() *cobra.Command {
-	var file string
 	cmd := &cobra.Command{
-		Use:   "import",
+		Use:   "import <file>",
 		Short: "Import notes from JSON (array or NDJSON)",
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if strings.TrimSpace(file) == "" {
-				return fmt.Errorf("--file is required")
-			}
+			file := args[0]
 			app := getApp(cmd)
 
 			f, err := os.Open(file)
@@ -97,7 +94,6 @@ func newImportCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&file, "file", "f", "", "input JSON file (array or NDJSON)")
 	return cmd
 }
 

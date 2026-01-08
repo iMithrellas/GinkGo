@@ -228,7 +228,7 @@ func TestImportJSON(t *testing.T) {
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs([]string{"--config", cfgPath, "import", "--file", inputPath})
+	root.SetArgs([]string{"--config", cfgPath, "import", inputPath})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("import execute: %v\n%s", err, out.String())
 	}
