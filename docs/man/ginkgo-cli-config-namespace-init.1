@@ -3,23 +3,27 @@
 
 .SH NAME
 .PP
-ginkgo-cli-quic - Experimental QUIC tools (server and ping)
+ginkgo-cli-config-namespace-init - Initialize a namespace config entry
 
 
 .SH SYNOPSIS
 .PP
-\fBginkgo-cli quic [flags]\fP
+\fBginkgo-cli config namespace init [flags]\fP
 
 
 .SH DESCRIPTION
 .PP
-Experimental QUIC tools (server and ping)
+Initialize a namespace config entry
 
 
 .SH OPTIONS
 .PP
 \fB-h\fP, \fB--help\fP[=false]
-	help for quic
+	help for init
+
+.PP
+\fB-n\fP, \fB--namespace\fP=""
+	namespace to initialize (defaults to current)
 
 
 .SH OPTIONS INHERITED FROM PARENT COMMANDS
@@ -30,7 +34,7 @@ Experimental QUIC tools (server and ping)
 
 .SH SEE ALSO
 .PP
-\fBginkgo-cli(1)\fP, \fBginkgo-cli-quic-ping(1)\fP, \fBginkgo-cli-quic-serve(1)\fP
+\fBginkgo-cli-config-namespace(1)\fP
 
 
 .SH HISTORY
