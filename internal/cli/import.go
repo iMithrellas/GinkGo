@@ -12,7 +12,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/mithrel/ginkgo/internal/ipc"
-	"github.com/mithrel/ginkgo/internal/wire"
 	"github.com/mithrel/ginkgo/pkg/api"
 )
 
@@ -65,7 +64,7 @@ func newImportCmd() *cobra.Command {
 				}
 				for i := range arr {
 					normalize(&arr[i])
-					if err := importOne(cmd, app, arr[i]); err != nil {
+					if err := importOne(cmd, arr[i]); err != nil {
 						skipped++
 						continue
 					}
@@ -82,7 +81,7 @@ func newImportCmd() *cobra.Command {
 						return err
 					}
 					normalize(&e)
-					if err := importOne(cmd, app, e); err != nil {
+					if err := importOne(cmd, e); err != nil {
 						skipped++
 						continue
 					}
@@ -97,7 +96,7 @@ func newImportCmd() *cobra.Command {
 	return cmd
 }
 
-func importOne(cmd *cobra.Command, app *wire.App, e api.Entry) error {
+func importOne(cmd *cobra.Command, e api.Entry) error {
 	// Create via daemon; let it generate the ID and normalize tags.
 	if err := ensureNamespaceConfigured(cmd, e.Namespace); err != nil {
 		return err

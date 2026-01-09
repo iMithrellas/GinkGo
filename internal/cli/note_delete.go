@@ -54,7 +54,7 @@ func newNoteDeleteCmd() *cobra.Command {
 					return dryRunSelectionWithEntries(cmd, ns, FilterOpts{}, outputMode, entries)
 				}
 				if len(args) > 1 {
-					if err := confirmDelete(cmd, fmt.Sprintf("Delete %d notes?", len(args)), "This will permanently delete the selected notes.", yes); err != nil {
+					if err := confirmDelete(fmt.Sprintf("Delete %d notes?", len(args)), "This will permanently delete the selected notes.", yes); err != nil {
 						return err
 					}
 				}
@@ -68,7 +68,7 @@ func newNoteDeleteCmd() *cobra.Command {
 			if dry {
 				return dryRunSelectionWithEntries(cmd, ns, filters, outputMode, entries)
 			}
-			if err := confirmDelete(cmd, fmt.Sprintf("Delete %d notes?", len(entries)), "This will permanently delete the matched notes.", yes); err != nil {
+			if err := confirmDelete(fmt.Sprintf("Delete %d notes?", len(entries)), "This will permanently delete the matched notes.", yes); err != nil {
 				return err
 			}
 			ids := make([]string, 0, len(entries))
@@ -161,7 +161,7 @@ func deleteByIDs(cmd *cobra.Command, ns string, ids []string) error {
 	return nil
 }
 
-func confirmDelete(cmd *cobra.Command, title, desc string, yes bool) error {
+func confirmDelete(title, desc string, yes bool) error {
 	if yes {
 		return nil
 	}
@@ -226,7 +226,7 @@ func printSelectionSummary(w io.Writer, ns string, filters FilterOpts, count int
 }
 
 func deleteNamespaceNotes(cmd *cobra.Command, ns string, yes bool) error {
-	if err := confirmDelete(cmd, "Delete namespace "+ns+"?", "This will permanently delete all local notes in this namespace.", yes); err != nil {
+	if err := confirmDelete("Delete namespace "+ns+"?", "This will permanently delete all local notes in this namespace.", yes); err != nil {
 		return err
 	}
 

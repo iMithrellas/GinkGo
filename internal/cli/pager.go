@@ -29,15 +29,6 @@ func renderEntries(ctx context.Context, out, errOut io.Writer, entries []api.Ent
 	})
 }
 
-func renderEntry(ctx context.Context, out, errOut io.Writer, entry api.Entry, opts present.Options) error {
-	if opts.Mode == present.ModeTUI {
-		return present.RenderEntry(ctx, out, entry, opts)
-	}
-	return withPager(ctx, out, errOut, func(w io.Writer) error {
-		return present.RenderEntry(ctx, w, entry, opts)
-	})
-}
-
 func withPager(ctx context.Context, out, errOut io.Writer, write func(io.Writer) error) error {
 	outFile, ok := out.(*os.File)
 	if !ok || !term.IsTerminal(int(outFile.Fd())) {

@@ -62,7 +62,7 @@ func newNoteEditCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			out, changed, err := editor.OpenAt(path, []byte(b.String()))
+			out, changed, err := editor.OpenAt(path, b.Bytes())
 			if err != nil {
 				return err
 			}
@@ -139,7 +139,6 @@ func newNoteEditCmd() *cobra.Command {
 				t2 = editor.FirstLine(b2)
 			}
 			latest.Title, latest.Tags, latest.Body = t2, tg2, b2
-			latest.UpdatedAt = time.Now().UTC()
 			e2, err := ipc.Request(cmd.Context(), sock, ipc.Message{Name: "note.edit", ID: latest.ID, IfVersion: latest.Version, Title: latest.Title, Body: latest.Body, Tags: latest.Tags, Namespace: ns})
 			if err != nil {
 				return err

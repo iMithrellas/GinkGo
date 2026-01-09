@@ -57,7 +57,7 @@ func newNoteListCmd() *cobra.Command {
 				Mode:            mode,
 				JSONIndent:      false, // pretty-print via external tools like jq
 				Headers:         !noHeaders,
-				InitialStatus:   fmt.Sprintf("loaded successfully"),
+				InitialStatus:   "loaded successfully",
 				InitialDuration: dur,
 				FilterTagsAny:   filters.TagsAny,
 				FilterTagsAll:   filters.TagsAll,
