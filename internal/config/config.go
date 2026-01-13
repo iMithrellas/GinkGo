@@ -48,8 +48,8 @@ func Load(ctx context.Context, v *viper.Viper) error {
 	if v.GetString("data_dir") == "" {
 		v.Set("data_dir", defaultDataDir())
 	}
-	if v.GetString("namespace") == "" && v.GetString("default_namespace") != "" {
-		v.Set("namespace", v.GetString("default_namespace"))
+	if strings.TrimSpace(v.GetString("namespace")) == "" {
+		v.Set("namespace", "default")
 	}
 
 	// Allow comma-separated env override for default_tags
@@ -107,8 +107,7 @@ func GetConfigOptions() []ConfigOption {
 	return []ConfigOption{
 		// Core paths and conventions
 		{Key: "data_dir", Default: defaultDataDir(), Comment: "Directory for local state; DB is data_dir/ginkgo.db"},
-		{Key: "default_namespace", Default: "default", Comment: "Default namespace used when none is specified"},
-		{Key: "namespace", Default: "", Comment: "Current namespace; if empty, falls back to default_namespace"},
+		{Key: "namespace", Default: "default", Comment: "Default namespace used when none is specified"},
 		{Key: "default_tags", Default: []string{}, Comment: "Tags applied when creating a note without explicit tags"},
 
 		{Key: "http_addr", Default: ":8080", Comment: "HTTP listen address for daemon/replication server"},

@@ -32,7 +32,7 @@ func newTestApp(t *testing.T, dataDir string) *wire.App {
 	t.Helper()
 	v := viper.New()
 	v.Set("data_dir", dataDir)
-	v.Set("default_namespace", "test")
+	v.Set("namespace", "test")
 	v.Set("http_addr", "127.0.0.1:0")
 	// Load applies defaults and env semantics; ignore file discovery in tests.
 	if err := config.Load(context.Background(), v); err != nil {

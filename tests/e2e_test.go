@@ -62,7 +62,6 @@ func TestE2E_NoteAdd(t *testing.T) {
 	cfgPath := filepath.Join(tmpDir, "config.yaml")
 	cfgContent := "\n"
 	cfgContent += "data_dir: \"" + dataDir + "\"\n"
-	cfgContent += "default_namespace: \"test\"\n"
 	cfgContent += "namespace: \"test\"\n"
 	cfgContent += "namespaces:\n"
 	cfgContent += "  test:\n"

@@ -36,7 +36,7 @@ func startTestDaemon(t *testing.T) (context.CancelFunc, string, string) {
 
 	v := viper.New()
 	v.Set("data_dir", dataDir)
-	v.Set("default_namespace", "testcli")
+	v.Set("namespace", "testcli")
 	v.Set("http_addr", "127.0.0.1:0") // avoid port collisions across packages
 	if err := config.Load(context.Background(), v); err != nil {
 		t.Fatalf("config load: %v", err)
@@ -69,11 +69,11 @@ func writeConfigTOML(t *testing.T, dir string) string {
 	t.Helper()
 	cfg := filepath.Join(dir, "config.toml")
 	content := `data_dir = "` + strings.ReplaceAll(dir, "\\", "\\\\") + `"
-default_namespace = "testcli"
-namespace = "testcli"
-[namespaces.testcli]
-e2ee = false
-`
+ namespace = "testcli"
+ [namespaces.testcli]
+ e2ee = false
+ `
+
 	if err := os.WriteFile(cfg, []byte(content), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
@@ -174,14 +174,14 @@ func TestConfigNamespaceKey(t *testing.T) {
 	}
 
 	withKeys := `data_dir = "` + strings.ReplaceAll(dataDir, "\\", "\\\\") + `"
-default_namespace = "testcli"
-namespace = "testcli"
-[namespaces.testcli]
-e2ee = true
-key_provider = "config"
-read_key = "cmVhZA=="
-write_key = "d3JpdGU="
-`
+ namespace = "testcli"
+ [namespaces.testcli]
+ e2ee = true
+ key_provider = "config"
+ read_key = "cmVhZA=="
+ write_key = "d3JpdGU="
+ `
+
 	if err := os.WriteFile(cfgPath, []byte(withKeys), 0o600); err != nil {
 		t.Fatalf("rewrite config: %v", err)
 	}
