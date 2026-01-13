@@ -16,6 +16,7 @@ func newConfigCmd() *cobra.Command {
 		Short: "Manage configuration",
 	}
 	cmd.AddCommand(newConfigGenerateCmd())
+	cmd.AddCommand(newConfigCheckCmd())
 	cmd.AddCommand(newConfigNamespaceCmd())
 	return cmd
 }
@@ -46,6 +47,22 @@ func newConfigGenerateCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&out, "output", "o", "", "output path for config.toml")
 	cmd.Flags().BoolVar(&overwrite, "overwrite", false, "overwrite existing config (creates a backup)")
 	cmd.Flags().BoolVar(&update, "update", false, "merge defaults into existing config (creates a backup)")
+	return cmd
+}
+
+func newConfigCheckCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "check",
+		Short: "Validate configuration",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			app := getApp(cmd)
+			if err := config.CheckConfigValidity(app.Cfg); err != nil {
+				return err
+			}
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Config OK")
+			return nil
+		},
+	}
 	return cmd
 }
 

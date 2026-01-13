@@ -2,6 +2,9 @@ package config
 
 import (
 	"context"
+	"encoding/base64"
+	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -137,4 +140,113 @@ func ResolveDBPath(v *viper.Viper) string {
 		}
 	}
 	return filepath.Join(dir, "ginkgo.db")
+}
+
+// CheckConfigValidity validates configuration values for common mistakes.
+func CheckConfigValidity(v *viper.Viper) error {
+	issues := make([]string, 0)
+
+	if strings.TrimSpace(v.GetString("namespace")) == "" {
+		issues = append(issues, "namespace is required")
+	}
+	if strings.TrimSpace(v.GetString("data_dir")) == "" {
+		issues = append(issues, "data_dir is required")
+	}
+	if v.GetInt("export.page_size") <= 0 {
+		issues = append(issues, "export.page_size must be greater than 0")
+	}
+	if v.GetInt("sync.batch_size") <= 0 {
+		issues = append(issues, "sync.batch_size must be greater than 0")
+	}
+	if v.GetBool("notifications.enabled") && v.GetInt("notifications.every_days") <= 0 {
+		issues = append(issues, "notifications.every_days must be greater than 0")
+	}
+
+	remotes := v.GetStringMap("remotes")
+	for name := range remotes {
+		base := "remotes." + name + "."
+		urlValue := strings.TrimSpace(v.GetString(base + "url"))
+		token := strings.TrimSpace(v.GetString(base + "token"))
+		enabled := v.GetBool(base + "enabled")
+		if enabled || urlValue != "" || token != "" {
+			if urlValue == "" {
+				issues = append(issues, fmt.Sprintf("remote %s missing url", name))
+			} else if _, err := url.ParseRequestURI(urlValue); err != nil {
+				issues = append(issues, fmt.Sprintf("remote %s has invalid url", name))
+			}
+			if token == "" {
+				issues = append(issues, fmt.Sprintf("remote %s missing token", name))
+			}
+		}
+	}
+
+	namespaces := v.GetStringMap("namespaces")
+	for name := range namespaces {
+		base := "namespaces." + name + "."
+		e2ee := v.GetBool(base + "e2ee")
+		keyProvider := strings.TrimSpace(v.GetString(base + "key_provider"))
+		if keyProvider == "" && e2ee {
+			keyProvider = "config"
+		}
+		if keyProvider != "" {
+			switch keyProvider {
+			case "config":
+				readKey := strings.TrimSpace(v.GetString(base + "read_key"))
+				writeKey := strings.TrimSpace(v.GetString(base + "write_key"))
+				if e2ee || readKey != "" || writeKey != "" {
+					if readKey == "" {
+						issues = append(issues, fmt.Sprintf("namespace %s missing read_key", name))
+					} else if !validBase64Key(readKey) {
+						issues = append(issues, fmt.Sprintf("namespace %s read_key must be base64", name))
+					}
+					if writeKey == "" {
+						issues = append(issues, fmt.Sprintf("namespace %s missing write_key", name))
+					} else if !validBase64Key(writeKey) {
+						issues = append(issues, fmt.Sprintf("namespace %s write_key must be base64", name))
+					}
+				}
+			case "system":
+				keyID := strings.TrimSpace(v.GetString(base + "key_id"))
+				if keyID == "" {
+					issues = append(issues, fmt.Sprintf("namespace %s missing key_id", name))
+				}
+			default:
+				issues = append(issues, fmt.Sprintf("namespace %s has unsupported key_provider %q", name, keyProvider))
+			}
+		}
+
+		signerProvider := strings.TrimSpace(v.GetString(base + "signer_key_provider"))
+		if signerProvider != "" {
+			switch signerProvider {
+			case "config":
+				priv := strings.TrimSpace(v.GetString(base + "signer_priv"))
+				if priv == "" {
+					issues = append(issues, fmt.Sprintf("namespace %s missing signer_priv", name))
+				} else if !validBase64Key(priv) {
+					issues = append(issues, fmt.Sprintf("namespace %s signer_priv must be base64", name))
+				}
+				pub := strings.TrimSpace(v.GetString(base + "signer_pub"))
+				if pub != "" && !validBase64Key(pub) {
+					issues = append(issues, fmt.Sprintf("namespace %s signer_pub must be base64", name))
+				}
+			case "system":
+				keyID := strings.TrimSpace(v.GetString(base + "signer_key_id"))
+				if keyID == "" {
+					issues = append(issues, fmt.Sprintf("namespace %s missing signer_key_id", name))
+				}
+			default:
+				issues = append(issues, fmt.Sprintf("namespace %s has unsupported signer_key_provider %q", name, signerProvider))
+			}
+		}
+	}
+
+	if len(issues) == 0 {
+		return nil
+	}
+	return fmt.Errorf("config validation failed:\n- %s", strings.Join(issues, "\n- "))
+}
+
+func validBase64Key(value string) bool {
+	_, err := base64.StdEncoding.DecodeString(value)
+	return err == nil
 }
