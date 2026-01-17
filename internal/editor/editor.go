@@ -10,16 +10,21 @@ import (
 	"strings"
 )
 
+const (
+	TitlePrefix = "Title: "
+	TagsPrefix  = "Tags: "
+)
+
 // ComposeContent creates the text presented to the editor.
 func ComposeContent(title string, tags []string, body string) string {
 	var b bytes.Buffer
 	b.WriteString("# GinkGo Note\n")
 	b.WriteString("# Lines starting with '#' are ignored.\n")
 	b.WriteString("# Set Title and Tags (comma-separated). After '---', write Markdown body.\n")
-	b.WriteString("Title: ")
+	b.WriteString(TitlePrefix)
 	b.WriteString(title)
 	b.WriteString("\n")
-	b.WriteString("Tags: ")
+	b.WriteString(TagsPrefix)
 	if len(tags) > 0 {
 		b.WriteString(strings.Join(tags, ", "))
 	}
@@ -50,15 +55,37 @@ func PreferredEditor() (string, error) {
 }
 
 // PathForID returns a temp file path for a note ID.
-func PathForID(id string) (string, error) {
+func PathForID(id string, namespace string) (string, error) {
+	prefix := ""
+	if strings.TrimSpace(namespace) != "" {
+		prefix = sanitizeNamespace(namespace) + "."
+	}
+	name := prefix + id + ".ginkgo.md"
 	if xdg := os.Getenv("XDG_RUNTIME_DIR"); xdg != "" {
-		return filepath.Join(xdg, "ginkgo", id+".ginkgo.md"), nil
+		return filepath.Join(xdg, "ginkgo", name), nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".cache", "ginkgo", "edit", id+".ginkgo.md"), nil
+	return filepath.Join(home, ".cache", "ginkgo", "edit", name), nil
+}
+
+func sanitizeNamespace(namespace string) string {
+	var b strings.Builder
+	for _, r := range strings.TrimSpace(namespace) {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= 'A' && r <= 'Z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('-')
+		}
+	}
+	return b.String()
 }
 
 func ensureDirSecure(path string) error {
@@ -126,12 +153,14 @@ func ParseEditedNote(s string) (title string, tags []string, body string) {
 			continue
 		}
 		if !inBody {
-			if strings.HasPrefix(line, "Title:") {
-				title = strings.TrimSpace(strings.TrimPrefix(line, "Title:"))
+			if strings.HasPrefix(line, strings.TrimSpace(TitlePrefix)) {
+				title = strings.TrimSpace(strings.TrimPrefix(line, strings.TrimSpace(TitlePrefix)))
+
 				continue
 			}
-			if strings.HasPrefix(line, "Tags:") {
-				raw := strings.TrimSpace(strings.TrimPrefix(line, "Tags:"))
+			if strings.HasPrefix(line, strings.TrimSpace(TagsPrefix)) {
+				raw := strings.TrimSpace(strings.TrimPrefix(line, strings.TrimSpace(TagsPrefix)))
+
 				if raw != "" {
 					for _, t := range strings.Split(raw, ",") {
 						tt := strings.TrimSpace(t)

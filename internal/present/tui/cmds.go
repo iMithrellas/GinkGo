@@ -231,7 +231,7 @@ func deleteCmd(ctx context.Context, id string, idx int) tea.Cmd {
 }
 
 // editCmd opens the editor suspended and saves changes via IPC.
-func editCmd(ctx context.Context, id string, idx int) tea.Cmd {
+func editCmd(ctx context.Context, id, namespace string, idx int) tea.Cmd {
 	return func() tea.Msg {
 		start := time.Now()
 		// Resolve socket
@@ -251,7 +251,7 @@ func editCmd(ctx context.Context, id string, idx int) tea.Cmd {
 			return editResultMsg{idx: idx, id: id, err: fmt.Errorf("not found"), dur: time.Since(start)}
 		}
 		cur := *show.Entry
-		path, err := editor.PathForID(cur.ID)
+		path, err := editor.PathForID(cur.ID, namespace)
 		if err != nil {
 			return editResultMsg{idx: idx, id: id, err: err, dur: time.Since(start)}
 		}

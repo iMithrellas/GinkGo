@@ -83,7 +83,7 @@ func runNoteAdd(cmd *cobra.Command, args []string) error {
 	}
 	e := resp.Entry
 
-	path, err := editor.PathForID(e.ID)
+	path, err := editor.PathForID(e.ID, ns)
 	if err != nil {
 		return err
 	}

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -178,7 +179,8 @@ func fetchTagCompletions(raw json.RawMessage) []completionItem {
 	}
 
 	ctx := context.Background()
-	resp, err := ipc.Request(ctx, sock, ipc.Message{Name: "tag.list"})
+	namespace := namespaceFromURI(params.TextDocument.URI)
+	resp, err := ipc.Request(ctx, sock, ipc.Message{Name: "tag.list", Namespace: namespace})
 	if err != nil {
 		logger.Printf("Error fetching tags: %v", err)
 		return nil
@@ -217,4 +219,14 @@ func currentLine(uri string, line int) string {
 		return ""
 	}
 	return lines[line]
+}
+
+func namespaceFromURI(uri string) string {
+	path := strings.TrimPrefix(uri, "file://")
+	base := strings.TrimSuffix(filepath.Base(path), ".ginkgo.md")
+	parts := strings.Split(base, ".")
+	if len(parts) < 2 {
+		return ""
+	}
+	return parts[0]
 }
