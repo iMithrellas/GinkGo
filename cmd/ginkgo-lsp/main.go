@@ -2,12 +2,15 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/mithrel/ginkgo/internal/ipc"
 )
 
 type request struct {
@@ -34,6 +37,30 @@ type serverCapabilities struct {
 
 type completionProvider struct {
 	TriggerCharacters []string `json:"triggerCharacters,omitempty"`
+}
+
+type completionItem struct {
+	Label string `json:"label"`
+	Kind  int    `json:"kind,omitempty"`
+}
+
+type completionParams struct {
+	TextDocument textDocumentIdentifier `json:"textDocument"`
+	Position     position               `json:"position"`
+}
+
+type textDocumentIdentifier struct {
+	URI string `json:"uri"`
+}
+
+type position struct {
+	Line      int `json:"line"`
+	Character int `json:"character"`
+}
+
+type completionList struct {
+	IsIncomplete bool             `json:"isIncomplete"`
+	Items        []completionItem `json:"items"`
 }
 
 var logger *log.Logger
@@ -105,11 +132,12 @@ func handleMessage(msg []byte) {
 	case "initialize":
 		resp := initializeResult{
 			Capabilities: serverCapabilities{
-				CompletionProvider: completionProvider{
-					TriggerCharacters: []string{"#"},
-				},
+				CompletionProvider: completionProvider{},
 			},
 		}
+		sendResponse(response{RPC: "2.0", ID: req.ID, Result: resp})
+	case "textDocument/completion":
+		resp := completionList{Items: fetchTagCompletions(req.Params)}
 		sendResponse(response{RPC: "2.0", ID: req.ID, Result: resp})
 	case "shutdown":
 		sendResponse(response{RPC: "2.0", ID: req.ID, Result: nil})
@@ -130,4 +158,63 @@ func sendResponse(resp response) {
 	msg := fmt.Sprintf("Content-Length: %d\r\n\r\n%s", len(bytes), string(bytes))
 	fmt.Print(msg)
 	logger.Printf("Sent: %s", string(bytes))
+}
+
+func fetchTagCompletions(raw json.RawMessage) []completionItem {
+	var params completionParams
+	if err := json.Unmarshal(raw, &params); err != nil {
+		logger.Printf("Error parsing completion params: %v", err)
+		return nil
+	}
+
+	if !shouldCompleteTags(params) {
+		return nil
+	}
+
+	sock, err := ipc.SocketPath()
+	if err != nil {
+		logger.Printf("Error resolving socket path: %v", err)
+		return nil
+	}
+
+	ctx := context.Background()
+	resp, err := ipc.Request(ctx, sock, ipc.Message{Name: "tag.list"})
+	if err != nil {
+		logger.Printf("Error fetching tags: %v", err)
+		return nil
+	}
+	if !resp.OK {
+		logger.Printf("Daemon error: %s", resp.Msg)
+		return nil
+	}
+
+	items := make([]completionItem, 0, len(resp.Tags))
+	for _, tag := range resp.Tags {
+		items = append(items, completionItem{Label: tag.Tag, Kind: 1})
+	}
+
+	return items
+}
+
+func shouldCompleteTags(params completionParams) bool {
+	line := currentLine(params.TextDocument.URI, params.Position.Line)
+	if line == "" {
+		return false
+	}
+
+	return strings.HasPrefix(line, "Tags: ")
+}
+
+func currentLine(uri string, line int) string {
+	path := strings.TrimPrefix(uri, "file://")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		logger.Printf("Error reading file: %v", err)
+		return ""
+	}
+	lines := strings.Split(string(data), "\n")
+	if line < 0 || line >= len(lines) {
+		return ""
+	}
+	return lines[line]
 }

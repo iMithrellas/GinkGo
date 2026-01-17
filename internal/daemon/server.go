@@ -220,6 +220,7 @@ func Run(ctx context.Context, app *wire.App) error {
 			}
 			return ipc.Response{OK: true, Msg: fmt.Sprintf("deleted %d entries", n)}
 		case "tag.list":
+			log.Printf("tag completion request namespace=%q", ns)
 			tags, err := app.Store.Entries.ListTags(ctx, api.TagsQuery{Namespace: ns})
 			if err != nil {
 				return ipc.Response{OK: false, Msg: err.Error()}
