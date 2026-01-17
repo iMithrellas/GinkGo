@@ -52,13 +52,13 @@ func PreferredEditor() (string, error) {
 // PathForID returns a temp file path for a note ID.
 func PathForID(id string) (string, error) {
 	if xdg := os.Getenv("XDG_RUNTIME_DIR"); xdg != "" {
-		return filepath.Join(xdg, "ginkgo", id+".md"), nil
+		return filepath.Join(xdg, "ginkgo", id+".ginkgo.md"), nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".cache", "ginkgo", "edit", id+".md"), nil
+	return filepath.Join(home, ".cache", "ginkgo", "edit", id+".ginkgo.md"), nil
 }
 
 func ensureDirSecure(path string) error {
