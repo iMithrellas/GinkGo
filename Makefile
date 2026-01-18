@@ -2,8 +2,10 @@ SHELL := /usr/bin/env bash
 
 BUILD_DIR := $(CURDIR)/build
 BUILD_OUTPUT := $(BUILD_DIR)/ginkgo-cli
+LSP_OUTPUT := $(BUILD_DIR)/ginkgo-lsp
 BIN_SYMLINK := $(HOME)/.local/bin/ginkgo-cli
 BIN_DAEMON_SYMLINK := $(HOME)/.local/bin/ginkgod
+LSP_SYMLINK := $(HOME)/.local/bin/ginkgo-lsp
 SERVICE_DIR := $(HOME)/.config/systemd/user
 SERVICE_FILE := $(CURDIR)/systemd/ginkgo.dev.service
 
@@ -17,7 +19,7 @@ MANOUT := $(DOCDIR)/man
 
 GO_TAGS ?=
 
-.PHONY: build install-binary install-service reload-service run dev setup-precommit \
+.PHONY: build lsp install-binary install-service reload-service run dev setup-precommit \
         docs install-man uninstall-man install uninstall
 
 # Generate Markdown + man pages from cmd/ginkgo-cli/doc_gen.go (build-tagged //go:build ignore)
@@ -35,6 +37,14 @@ build:
 		go build -tags '$(GO_TAGS)' -o $(BUILD_OUTPUT) ./cmd/ginkgo-cli; \
 	else \
 		go build -o $(BUILD_OUTPUT) ./cmd/ginkgo-cli; \
+	fi
+
+lsp:
+	mkdir -p $(BUILD_DIR)
+	@if [ -n "$(GO_TAGS)" ]; then \
+		go build -tags '$(GO_TAGS)' -o $(LSP_OUTPUT) ./cmd/ginkgo-lsp; \
+	else \
+		go build -o $(LSP_OUTPUT) ./cmd/ginkgo-lsp; \
 	fi
 
 install-man: docs
@@ -55,8 +65,11 @@ install-binary:
 	ln -sf $(BUILD_OUTPUT) $(BIN_SYMLINK)
 	@echo "Symlinking binary from $(BUILD_OUTPUT) to $(BIN_DAEMON_SYMLINK)..."
 	ln -sf $(BUILD_OUTPUT) $(BIN_DAEMON_SYMLINK)
+	@echo "Symlinking binary from $(LSP_OUTPUT) to $(LSP_SYMLINK)..."
+	ln -sf $(LSP_OUTPUT) $(LSP_SYMLINK)
 	@echo "Binary symlinked to $(BIN_SYMLINK)"
 	@echo "Binary symlinked to $(BIN_DAEMON_SYMLINK)"
+	@echo "Binary symlinked to $(LSP_SYMLINK)"
 
 install-service:
 	@echo "Creating systemd user service directory..."
@@ -72,7 +85,7 @@ reload-service:
 	systemctl --user restart ginkgo.service
 
 # one-shot local install: binary + man
-install: build install-binary install-man
+install: build lsp install-binary install-man
 
 uninstall: uninstall-man
 	@echo "Removing binary symlinks..."
@@ -83,7 +96,7 @@ uninstall: uninstall-man
 	-@command -v systemctl >/dev/null 2>&1 && systemctl --user daemon-reload || true
 	@echo "Uninstall complete"
 
-run: build install-binary install-service reload-service
+run: build lsp install-binary install-service reload-service
 
 dev: run
 

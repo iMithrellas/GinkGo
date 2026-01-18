@@ -489,7 +489,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				sel := m.entries[idx]
 				m.status = fmt.Sprintf("Editing %s…", sel.ID)
 				m.updateKeyStates()
-				return m, editCmd(m.ctx, sel.ID, idx)
+				return m, editCmd(m.ctx, sel.ID, sel.Namespace, idx)
 			}
 			m.updateKeyStates()
 			return m, nil

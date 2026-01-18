@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -43,26 +42,13 @@ func newNoteEditCmd() *cobra.Command {
 			}
 			cur := *show.Entry
 			// Prefill editor content
-			var b bytes.Buffer
-			b.WriteString("# GinkGo Note Edit\n")
-			b.WriteString("# Update Title/Tags above, body below.\n")
-			b.WriteString("Title: ")
-			b.WriteString(cur.Title)
-			b.WriteString("\n")
-			b.WriteString("Tags: ")
-			if len(cur.Tags) > 0 {
-				b.WriteString(strings.Join(cur.Tags, ", "))
-			}
-			b.WriteString("\n---\n")
-			if cur.Body != "" {
-				b.WriteString(cur.Body)
-			}
+			initial := []byte(editor.ComposeContent(cur.Title, cur.Tags, cur.Body))
 
-			path, err := editor.PathForID(id)
+			path, err := editor.PathForID(id, ns)
 			if err != nil {
 				return err
 			}
-			out, changed, err := editor.OpenAt(path, b.Bytes())
+			out, changed, err := editor.OpenAt(path, initial)
 			if err != nil {
 				return err
 			}

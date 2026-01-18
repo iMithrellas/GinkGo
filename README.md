@@ -47,6 +47,9 @@ Entries can be created as quick one-liners or rich Markdown notes via `$EDITOR`.
 - Bulk note import/export (NDJSON, Markdown directories).
 - Optional E2EE for new namespaces with keyring support.
 
+### Bubble UI
+- `note list` supports an interactive table powered by Bubble Tea. It is enabled by default, can be overridden with `--output=json/pretty/plain`.
+
 #### How to Sync Between Two Clients
 1. Run the sync server (see Docker section) and pick a shared auth token.
    - This is a shared secret that all clients must know.
@@ -148,11 +151,33 @@ ginkgo-cli completion generate bash
 ginkgo-cli completion generate zsh fish
 ```
 
+## Neovim LSP
+
+You can use the `ginkgo-lsp` binary for tag completion in Neovim. The LSP expects `*.ginkgo.md` temp files and uses the namespace encoded in the filename.
+
+```lua
+vim.api.nvim_create_autocmd({ 'BufRead', 'BufNewFile' }, {
+  pattern = '*.ginkgo.md',
+  callback = function()
+    vim.bo.filetype = 'markdown'
+    vim.lsp.start {
+      name = 'ginkgo-lsp',
+      cmd = { '/usr/bin/ginkgo-lsp' },
+      root_dir = vim.fn.getcwd(),
+    }
+  end,
+})
+```
+
+## Other Editors
+
+For VSCode or other editors, use a generic LSP client extension/plugin and point it at `/usr/bin/ginkgo-lsp` for the `*.ginkgo.md` file extension. If your editor lacks a generic LSP client, you can write a minimal client wrapper to launch the binary over stdio.
+
 ## Make Targets
 
 - `make build`: build `ginkgo-cli` into `./build/`
 - `make install`: build + install binary + install man pages
-- `make install-binary`: build output symlinked to `~/.local/bin/ginkgo-cli` and `~/.local/bin/ginkgod`
+- `make install-binary`: build output symlinked to `~/.local/bin/ginkgo-cli`, `~/.local/bin/ginkgod`, and `~/.local/bin/ginkgo-lsp`
 - `make install-service`: install the systemd user service file
 - `make reload-service`: reload systemd user daemon and restart ginkgo service
 - `make run`: build, install, and restart the service (one-shot)
@@ -161,21 +186,11 @@ ginkgo-cli completion generate zsh fish
 - `make install-man`: install man pages
 - `make uninstall-man`: remove man pages
 
-## Bubble UI
-
-`note list` supports an interactive table powered by Bubble Tea. It is enabled by default, can be overridden with `--output=json/pretty/plain`.
-
 ## Roadmap
 
 Active roadmap is tracked in GitHub Issues:
 
 - https://github.com/iMithrellas/GinkGo/issues/1
-
-Upcoming highlights from the roadmap:
-
-- Notification scheduler and delivery.
-- Multi-user ACLs for shared namespaces.
-- Release packaging (archives, checksums, install script).
 
 ## Contributing
 

@@ -1,6 +1,10 @@
 package editor
 
-import "testing"
+import (
+	"path/filepath"
+	"strings"
+	"testing"
+)
 
 func TestParseEditedNote(t *testing.T) {
 	input := `# comment line
@@ -40,5 +44,31 @@ func TestFirstLine(t *testing.T) {
 	fl := FirstLine(long)
 	if len(fl) != 120 {
 		t.Fatalf("FirstLine length=%d want 120", len(fl))
+	}
+}
+
+func TestComposeContent(t *testing.T) {
+	content := ComposeContent("Title", []string{"alpha", "beta"}, "body")
+	if !strings.Contains(content, "Title: Title") {
+		t.Fatalf("expected title line, got %q", content)
+	}
+	if !strings.Contains(content, "Tags: alpha, beta") {
+		t.Fatalf("expected tags line, got %q", content)
+	}
+	if !strings.Contains(content, "---\nbody\n") {
+		t.Fatalf("expected body separator, got %q", content)
+	}
+}
+
+func TestPathForID(t *testing.T) {
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	path, err := PathForID("note-id", "team space")
+	if err != nil {
+		t.Fatalf("PathForID error: %v", err)
+	}
+
+	base := filepath.Base(path)
+	if base != "team%20space.note-id.ginkgo.md" {
+		t.Fatalf("PathForID base=%q", base)
 	}
 }
