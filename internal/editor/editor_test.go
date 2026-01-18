@@ -68,7 +68,7 @@ func TestPathForID(t *testing.T) {
 	}
 
 	base := filepath.Base(path)
-	if base != "team-space.note-id.ginkgo.md" {
+	if base != "team%20space.note-id.ginkgo.md" {
 		t.Fatalf("PathForID base=%q", base)
 	}
 }
