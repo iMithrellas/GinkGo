@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -76,48 +78,50 @@ func main() {
 	logger = log.New(logFile, "[LSP] ", log.LstdFlags)
 	logger.Println("Server started")
 
-	scanner := bufio.NewScanner(os.Stdin)
-	scanner.Split(scanLSP)
-
-	for scanner.Scan() {
-		msg := scanner.Bytes()
+	reader := bufio.NewReader(os.Stdin)
+	for {
+		msg, err := readMessage(reader)
+		if err != nil {
+			if err == io.EOF {
+				return
+			}
+			logger.Printf("Error reading message: %v", err)
+			return
+		}
 		handleMessage(msg)
 	}
 }
 
-func scanLSP(data []byte, atEOF bool) (advance int, token []byte, err error) {
-	headerSep := []byte("\r\n\r\n")
-	index := -1
-
-	for i := 0; i < len(data)-len(headerSep)+1; i++ {
-		if string(data[i:i+len(headerSep)]) == string(headerSep) {
-			index = i
+func readMessage(reader *bufio.Reader) ([]byte, error) {
+	contentLength := 0
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			return nil, err
+		}
+		line = strings.TrimRight(line, "\r\n")
+		if line == "" {
 			break
 		}
-	}
-
-	if index == -1 {
-		if atEOF && len(data) > 0 {
-			return 0, nil, fmt.Errorf("incomplete header")
-		}
-		return 0, nil, nil
-	}
-
-	headers := string(data[:index])
-	contentLength := 0
-	for _, line := range strings.Split(headers, "\r\n") {
 		if strings.HasPrefix(line, "Content-Length: ") {
 			lengthStr := strings.TrimPrefix(line, "Content-Length: ")
-			contentLength, _ = strconv.Atoi(lengthStr)
+			length, err := strconv.Atoi(lengthStr)
+			if err != nil {
+				return nil, fmt.Errorf("invalid Content-Length: %w", err)
+			}
+			contentLength = length
 		}
 	}
 
-	totalLength := index + len(headerSep) + contentLength
-	if len(data) < totalLength {
-		return 0, nil, nil
+	if contentLength <= 0 {
+		return nil, fmt.Errorf("missing Content-Length")
 	}
 
-	return totalLength, data[index+len(headerSep) : totalLength], nil
+	msg := make([]byte, contentLength)
+	if _, err := io.ReadFull(reader, msg); err != nil {
+		return nil, err
+	}
+	return msg, nil
 }
 
 func handleMessage(msg []byte) {
@@ -228,5 +232,10 @@ func namespaceFromURI(uri string) string {
 	if len(parts) < 2 {
 		return ""
 	}
-	return parts[0]
+	namespace, err := url.PathUnescape(parts[0])
+	if err != nil {
+		logger.Printf("Error decoding namespace: %v", err)
+		return ""
+	}
+	return namespace
 }

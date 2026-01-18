@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"io/fs"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -58,7 +59,7 @@ func PreferredEditor() (string, error) {
 func PathForID(id string, namespace string) (string, error) {
 	prefix := ""
 	if strings.TrimSpace(namespace) != "" {
-		prefix = sanitizeNamespace(namespace) + "."
+		prefix = encodeNamespace(namespace) + "."
 	}
 	name := prefix + id + ".ginkgo.md"
 	if xdg := os.Getenv("XDG_RUNTIME_DIR"); xdg != "" {
@@ -71,21 +72,12 @@ func PathForID(id string, namespace string) (string, error) {
 	return filepath.Join(home, ".cache", "ginkgo", "edit", name), nil
 }
 
-func sanitizeNamespace(namespace string) string {
-	var b strings.Builder
-	for _, r := range strings.TrimSpace(namespace) {
-		switch {
-		case r >= 'a' && r <= 'z':
-			b.WriteRune(r)
-		case r >= 'A' && r <= 'Z':
-			b.WriteRune(r)
-		case r >= '0' && r <= '9':
-			b.WriteRune(r)
-		default:
-			b.WriteByte('-')
-		}
+func encodeNamespace(namespace string) string {
+	trimmed := strings.TrimSpace(namespace)
+	if trimmed == "" {
+		return ""
 	}
-	return b.String()
+	return url.PathEscape(trimmed)
 }
 
 func ensureDirSecure(path string) error {
