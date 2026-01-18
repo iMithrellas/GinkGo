@@ -25,7 +25,9 @@ func newNoteAddCmd() *cobra.Command {
 	return cmd
 }
 
-// runNoteAdd is the default behavior used by both parent RunE and `note add`.
+// runNoteAdd runs the note-adding workflow used by both the parent command and the `note add` subcommand.
+// It supports a one-line mode (title and optional tags) and an editor mode, communicates with the daemon via IPC
+// to create, edit, or delete note entries as needed, and writes the resulting note ID and title to stdout.
 func runNoteAdd(cmd *cobra.Command, args []string) error {
 	app := getApp(cmd)
 	ns := resolveNamespace(cmd)

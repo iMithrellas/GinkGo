@@ -68,6 +68,9 @@ type completionList struct {
 
 var logger *log.Logger
 
+// main starts the ginkgo LSP server: it initializes logging to /tmp/ginkgo-lsp.log,
+// then reads Content-Length framed JSON-RPC messages from stdin and dispatches them
+// to handleMessage until EOF or a read error causes shutdown.
 func main() {
 	logFile, err := os.Create("/tmp/ginkgo-lsp.log")
 	if err != nil {
@@ -92,6 +95,11 @@ func main() {
 	}
 }
 
+// readMessage reads a single length-prefixed LSP/JSON-RPC message from reader.
+// It parses HTTP-style headers until a blank line, extracts the Content-Length
+// header, validates it, and then reads exactly that many bytes. Returns an
+// error if headers cannot be read, Content-Length is missing or invalid, or
+// the message body cannot be fully read.
 func readMessage(reader *bufio.Reader) ([]byte, error) {
 	contentLength := 0
 	for {
@@ -124,6 +132,14 @@ func readMessage(reader *bufio.Reader) ([]byte, error) {
 	return msg, nil
 }
 
+// handleMessage processes a raw JSON-RPC request message, dispatching supported methods and sending the corresponding responses.
+//
+// It logs the received message, unmarshals it into a request, and handles the following methods:
+//  - "initialize": replies with server capabilities (including a completion provider).
+//  - "textDocument/completion": replies with a completion list obtained from fetchTagCompletions.
+//  - "shutdown": replies with a nil result.
+//  - "exit": terminates the process.
+// If unmarshalling fails or the method is unrecognized, the function returns without sending a response.
 func handleMessage(msg []byte) {
 	logger.Printf("Received: %s", string(msg))
 
@@ -153,6 +169,7 @@ func handleMessage(msg []byte) {
 	}
 }
 
+// sendResponse writes the provided JSON-RPC response to standard output framed with a Content-Length header and logs the sent payload; if marshaling fails it logs the error and returns without writing.
 func sendResponse(resp response) {
 	bytes, err := json.Marshal(resp)
 	if err != nil {
@@ -165,6 +182,8 @@ func sendResponse(resp response) {
 	logger.Printf("Sent: %s", string(bytes))
 }
 
+// fetchTagCompletions parses completion parameters from raw, determines whether tag completions should be provided, requests the list of tags for the document's namespace from the IPC daemon, and returns those tags as completionItems.
+// If parameter parsing fails, completion is not applicable, socket resolution or the daemon request fails, or the daemon returns an error, it returns nil.
 func fetchTagCompletions(raw json.RawMessage) []completionItem {
 	var params completionParams
 	if err := json.Unmarshal(raw, &params); err != nil {
@@ -202,6 +221,9 @@ func fetchTagCompletions(raw json.RawMessage) []completionItem {
 	return items
 }
 
+// shouldCompleteTags reports whether tag completions should be offered at the
+// given position in the document. It returns true when the line at the
+// specified position is non-empty and begins with "Tags: ".
 func shouldCompleteTags(params completionParams) bool {
 	line := currentLine(params.TextDocument.URI, params.Position.Line)
 	if line == "" {
@@ -211,6 +233,9 @@ func shouldCompleteTags(params completionParams) bool {
 	return strings.HasPrefix(line, "Tags: ")
 }
 
+// currentLine returns the content of the line at the given zero-based `line` index
+// from the file identified by the `file://` `uri`.
+// If the file cannot be read or the index is out of range, it returns an empty string.
 func currentLine(uri string, line int) string {
 	path := strings.TrimPrefix(uri, "file://")
 	data, err := os.ReadFile(path)
@@ -225,6 +250,11 @@ func currentLine(uri string, line int) string {
 	return lines[line]
 }
 
+// namespaceFromURI extracts the namespace from a file URI for a `.ginkgo.md` document.
+// It removes the "file://" prefix, strips the ".ginkgo.md" suffix from the basename,
+// splits the basename on ".", and URL-unescapes the first segment. Returns the decoded
+// namespace, or an empty string if the filename does not contain at least two segments
+// separated by '.' or if URL unescaping fails (the error is logged).
 func namespaceFromURI(uri string) string {
 	path := strings.TrimPrefix(uri, "file://")
 	base := strings.TrimSuffix(filepath.Base(path), ".ginkgo.md")

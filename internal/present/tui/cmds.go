@@ -208,7 +208,8 @@ func windowCmd(ctx context.Context, namespace string, tagsAny, tagsAll []string,
 	}
 }
 
-// deleteCmd performs the IPC call to delete an entry and returns a deleteResultMsg.
+// deleteCmd deletes the entry with the given ID via IPC and reports the outcome.
+// The command returns a deleteResultMsg containing the provided index and id, any error encountered, and the operation duration.
 func deleteCmd(ctx context.Context, id string, idx int) tea.Cmd {
 	return func() tea.Msg {
 		start := time.Now()

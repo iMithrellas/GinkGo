@@ -16,7 +16,9 @@ const (
 	TagsPrefix  = "Tags: "
 )
 
-// ComposeContent creates the text presented to the editor.
+// ComposeContent builds the editor-ready content for a note.
+//
+// ComposeContent writes a header that includes the package's TitlePrefix followed by the given title and the TagsPrefix followed by the comma-separated tags, then a delimiter line `---` and finally the provided Markdown body. If body is non-empty, it is appended and ensured to end with a single trailing newline.
 func ComposeContent(title string, tags []string, body string) string {
 	var b bytes.Buffer
 	b.WriteString("# GinkGo Note\n")
@@ -39,7 +41,9 @@ func ComposeContent(title string, tags []string, body string) string {
 	return b.String()
 }
 
-// PreferredEditor finds a suitable editor from env or common defaults.
+// PreferredEditor returns the editor command to use by preferring the VISUAL environment
+// variable, then EDITOR, and finally searching PATH for common editors ("nvim", "vim", "vi").
+// It returns the chosen editor command, or an error if no editor can be determined.
 func PreferredEditor() (string, error) {
 	if v := os.Getenv("VISUAL"); v != "" {
 		return v, nil
@@ -55,7 +59,10 @@ func PreferredEditor() (string, error) {
 	return "", errors.New("no editor found; set $EDITOR or $VISUAL")
 }
 
-// PathForID returns a temp file path for a note ID.
+// PathForID constructs a temporary file path for the given note id and optional namespace.
+// If namespace is non-empty after trimming, it is URL path-escaped and prefixed to the filename as "<encoded>.<id>.ginkgo.md".
+// If XDG_RUNTIME_DIR is set, the file is placed under XDG_RUNTIME_DIR/ginkgo/; otherwise it is placed under ~/.cache/ginkgo/edit/.
+// Returns an error only if the user's home directory cannot be determined when falling back to the cache path.
 func PathForID(id string, namespace string) (string, error) {
 	prefix := ""
 	if strings.TrimSpace(namespace) != "" {
@@ -72,6 +79,7 @@ func PathForID(id string, namespace string) (string, error) {
 	return filepath.Join(home, ".cache", "ginkgo", "edit", name), nil
 }
 
+// encodeNamespace trims whitespace from namespace and returns its URL path-escaped form; if the trimmed namespace is empty it returns an empty string.
 func encodeNamespace(namespace string) string {
 	trimmed := strings.TrimSpace(namespace)
 	if trimmed == "" {
@@ -80,6 +88,9 @@ func encodeNamespace(namespace string) string {
 	return url.PathEscape(trimmed)
 }
 
+// ensureDirSecure ensures the directory that would contain the given path exists
+// and has permission mode 0700. It returns any error encountered while creating
+// the directory.
 func ensureDirSecure(path string) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -135,7 +146,13 @@ func PrepareAt(path string, initial []byte) error {
 	return writeFile0600(path, initial)
 }
 
-// ParseEditedNote extracts title, tags and body from the editor output.
+// ParseEditedNote extracts a note title, a list of tags, and the body from editor text.
+// It reads header lines until a line containing only `---` marks the start of the body.
+// Lines beginning with `#` are treated as comments and ignored while parsing the header.
+// The title is taken from the header line prefixed by TitlePrefix; the tags are taken from
+// the header line prefixed by TagsPrefix and parsed as comma-separated values (whitespace trimmed,
+// empty tag entries ignored). The returned body contains the lines after the `---` delimiter with
+// trailing newlines removed and surrounding whitespace trimmed.
 func ParseEditedNote(s string) (title string, tags []string, body string) {
 	lines := strings.Split(s, "\n")
 	inBody := false

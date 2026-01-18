@@ -18,7 +18,11 @@ import (
 )
 
 // Run starts the daemon using the provided, already-wired App (config, store, logger).
-// The caller controls the lifecycle via ctx.
+// Run starts the daemon using the provided wired App and runs until ctx is cancelled.
+// It starts an HTTP health endpoint, an IPC Unix-domain server exposing note, sync,
+// namespace, and tag operations, and a background synchronization loop.
+// The caller controls lifecycle via ctx; when ctx is cancelled the servers are shut down.
+// It returns the error from the HTTP server's ListenAndServe or any setup error.
 func Run(ctx context.Context, app *wire.App) error {
 	// HTTP health endpoint
 	mux := http.NewServeMux()

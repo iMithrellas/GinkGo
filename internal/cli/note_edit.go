@@ -13,6 +13,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// newNoteEditCmd returns a *cobra.Command that edits an existing note.
+// The command takes a single note ID argument, opens the note in the user's editor
+// prefilled with title, tags, and body, and submits updates to the backend.
+// If the note changed while editing, it reports the conflict and, when run with
+// --force, reopens the latest version for another edit before retrying the update.
+// Flags:
+//   --keep-tmp: keep temporary editor file after save
+//   --force: on conflict, reopen against latest for another edit
 func newNoteEditCmd() *cobra.Command {
 	var keepTmp bool
 	var force bool
