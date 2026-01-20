@@ -3,31 +3,27 @@
 
 .SH NAME
 .PP
-ginkgo-cli-quic-ping - Ping a QUIC server and expect pong
+ginkgo-cli-config-namespace-init - Initialize a namespace config entry
 
 
 .SH SYNOPSIS
 .PP
-\fBginkgo-cli quic ping  [flags]\fP
+\fBginkgo-cli config namespace init [flags]\fP
 
 
 .SH DESCRIPTION
 .PP
-Ping a QUIC server and expect pong
+Initialize a namespace config entry
 
 
 .SH OPTIONS
 .PP
 \fB-h\fP, \fB--help\fP[=false]
-	help for ping
+	help for init
 
 .PP
-\fB--insecure\fP[=false]
-	skip TLS verification for ping
-
-.PP
-\fB--server-name\fP=""
-	expected server name (SNI) for TLS verification; leave empty to skip verification
+\fB-n\fP, \fB--namespace\fP=""
+	namespace to initialize (defaults to current)
 
 
 .SH OPTIONS INHERITED FROM PARENT COMMANDS
@@ -38,7 +34,7 @@ Ping a QUIC server and expect pong
 
 .SH SEE ALSO
 .PP
-\fBginkgo-cli-quic(1)\fP
+\fBginkgo-cli-config-namespace(1)\fP
 
 
 .SH HISTORY
