@@ -212,7 +212,23 @@ func shouldCompleteTags(params completionParams) bool {
 }
 
 func currentLine(uri string, line int) string {
-	path := strings.TrimPrefix(uri, "file://")
+	path := uri
+	u, err := url.Parse(uri)
+	if err != nil {
+		logger.Printf("Error parsing uri: %v", err)
+		return ""
+	}
+	if u.Scheme == "file" {
+		decoded, err := url.PathUnescape(u.Path)
+		if err != nil {
+			logger.Printf("Error decoding uri path: %v", err)
+			return ""
+		}
+		path = filepath.FromSlash(decoded)
+	} else if u.Scheme != "" {
+		path = u.Path
+	}
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		logger.Printf("Error reading file: %v", err)

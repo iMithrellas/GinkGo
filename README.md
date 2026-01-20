@@ -162,7 +162,7 @@ vim.api.nvim_create_autocmd({ 'BufRead', 'BufNewFile' }, {
     vim.bo.filetype = 'markdown'
     vim.lsp.start {
       name = 'ginkgo-lsp',
-      cmd = { '/usr/bin/ginkgo-lsp' },
+      cmd = { vim.fn.exepath('ginkgo-lsp') },
       root_dir = vim.fn.getcwd(),
     }
   end,
@@ -171,7 +171,7 @@ vim.api.nvim_create_autocmd({ 'BufRead', 'BufNewFile' }, {
 
 ## Other Editors
 
-For VSCode or other editors, use a generic LSP client extension/plugin and point it at `/usr/bin/ginkgo-lsp` for the `*.ginkgo.md` file extension. If your editor lacks a generic LSP client, you can write a minimal client wrapper to launch the binary over stdio.
+For VSCode or other editors, use a generic LSP client extension/plugin and point it at `ginkgo-lsp` on your PATH (or the result of `exepath('ginkgo-lsp')`) for the `*.ginkgo.md` file extension. If your editor lacks a generic LSP client, you can write a minimal client wrapper to launch the binary over stdio.
 
 ## Make Targets
 
