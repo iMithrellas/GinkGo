@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/mithrel/ginkgo/internal/ipc"
 )
@@ -182,7 +183,8 @@ func fetchTagCompletions(raw json.RawMessage) []completionItem {
 		return nil
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	namespace := namespaceFromURI(params.TextDocument.URI)
 	resp, err := ipc.Request(ctx, sock, ipc.Message{Name: "tag.list", Namespace: namespace})
 	if err != nil {
