@@ -37,6 +37,31 @@ type Message struct {
 	Mode        string          `json:"mode,omitempty"`
 	Model       string          `json:"model,omitempty"`
 	Language    string          `json:"language,omitempty"`
+	Capture     *CaptureOptions `json:"capture,omitempty"`
+}
+
+// CaptureOptions overrides daemon capture defaults; zero values use config.
+type CaptureOptions struct {
+	Target         string        `json:"target,omitempty"`
+	SilenceTimeout time.Duration `json:"silence_timeout,omitempty"`
+	MaxDuration    time.Duration `json:"max_duration,omitempty"`
+	StartTimeout   time.Duration `json:"start_timeout,omitempty"`
+	Threshold      float64       `json:"threshold,omitempty"`
+}
+
+// VoiceStatus is a bounded snapshot of the daemon's latest microphone job.
+// Enabled describes configuration; Active describes a currently running job.
+type VoiceStatus struct {
+	Enabled        bool          `json:"enabled"`
+	Active         bool          `json:"active"`
+	Continuous     bool          `json:"continuous"`
+	State          string        `json:"state"`
+	Namespace      string        `json:"namespace"`
+	SilenceTimeout time.Duration `json:"silence_timeout"`
+	StartedAt      time.Time     `json:"started_at"`
+	Segments       int64         `json:"segments"`
+	LastNoteID     string        `json:"last_note_id"`
+	LastError      string        `json:"last_error"`
 }
 
 // Transcript is the exact local STT output and its engine metadata.
@@ -60,6 +85,7 @@ type Response struct {
 	Action         string        `json:"action,omitempty"`
 	FallbackReason string        `json:"fallback_reason,omitempty"`
 	Transcript     *Transcript   `json:"transcript,omitempty"`
+	VoiceStatus    *VoiceStatus  `json:"voice_status,omitempty"`
 }
 
 type QueueEvent struct {

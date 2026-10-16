@@ -27,6 +27,22 @@ func Request(ctx context.Context, path string, m Message) (Response, error) {
 			n.Deadline = timestamppb.New(deadline)
 		}
 		preq.Cmd = &pb.Request_VoiceTranscribe{VoiceTranscribe: n}
+	case "voice.enable", "voice.disable", "voice.listen", "voice.status", "voice.stop", "voice.cancel":
+		action := m.Name[len("voice."):]
+		n := &pb.VoiceControl{Action: action, Namespace: m.Namespace, Save: m.Save, Mode: m.Mode, Provider: m.Provider, Title: m.Title, Tags: m.Tags, NoteId: m.NoteID, Model: m.Model, Language: m.Language, NoteAction: m.Action}
+		if m.Capture != nil {
+			n.Capture = &pb.CaptureOptions{Target: m.Capture.Target, SilenceTimeout: int64(m.Capture.SilenceTimeout), MaxDuration: int64(m.Capture.MaxDuration), StartTimeout: int64(m.Capture.StartTimeout), Threshold: m.Capture.Threshold}
+		}
+		if action == "listen" {
+			deadline := m.Deadline
+			if d, ok := ctx.Deadline(); ok && (deadline.IsZero() || d.Before(deadline)) {
+				deadline = d
+			}
+			if !deadline.IsZero() {
+				n.Deadline = timestamppb.New(deadline)
+			}
+		}
+		preq.Cmd = &pb.Request_VoiceControl{VoiceControl: n}
 	case "ai.note":
 		note := &pb.AINote{Text: m.Text, Namespace: m.Namespace, Title: m.Title, Action: m.Action, NoteId: m.NoteID, Tags: m.Tags, Provider: m.Provider}
 		deadline := m.Deadline
@@ -81,6 +97,12 @@ func Request(ctx context.Context, path string, m Message) (Response, error) {
 	if presp.Transcript != nil {
 		t := presp.Transcript
 		r.Transcript = &Transcript{Text: t.Text, Language: t.Language, Engine: t.Engine, Model: t.Model}
+	}
+	if s := presp.VoiceStatus; s != nil {
+		r.VoiceStatus = &VoiceStatus{Enabled: s.Enabled, Active: s.Active, Continuous: s.Continuous, State: s.State, Namespace: s.Namespace, SilenceTimeout: time.Duration(s.SilenceTimeout), Segments: s.Segments, LastNoteID: s.LastNoteId, LastError: s.LastError}
+		if s.StartedAt != nil {
+			r.VoiceStatus.StartedAt = s.StartedAt.AsTime()
+		}
 	}
 	if presp.Entry != nil {
 		r.Entry = fromPbEntry(presp.Entry)

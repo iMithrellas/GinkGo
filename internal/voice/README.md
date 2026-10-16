@@ -1,8 +1,58 @@
-# Optional file STT (POC)
+# Optional local voice (POC)
 
 Linux-only, local, **on_demand** whisper.cpp adapter. No AI or note-service
-dependencies, downloads, microphone, wake word, persistent worker, or idle policy.
+dependencies, downloads, wake word, persistent inference worker, or idle policy.
 Configuration/CLI/IPC integration belongs to the caller.
+
+## Optional microphone capture
+
+`NewCapturer(CaptureConfig)` is a separate lazy Linux, CGO-free adapter. It
+executes a trusted installed `pw-record --raw --format s16 --rate 16000
+--channels 1 [--target TARGET] -` with explicit arguments, never a shell. No
+device/version probes occur at construction or while disabled (`ErrDisabled`).
+The transcriber and its existing API remain independent and unchanged.
+
+```go
+capturer := voice.NewCapturer(voice.CaptureConfig{Enabled: true})
+err := capturer.Capture(ctx, voice.CaptureOptions{Once: true}, stop,
+    func(segment voice.Segment) error {
+        // Enqueue promptly into a bounded worker queue; never block on inference.
+        // segment.WAV is a complete WAV, suitable for the existing transcriber.
+        return queue(segment)
+    })
+```
+
+- Config fields: `Enabled`, `Executable` (default `pw-record`), `Target`,
+  `SilenceTimeout` (1.5s), `MaxDuration` (2m), `StartTimeout` (30s), `Threshold`
+  (0.02 normalized RMS). `CaptureOptions` has `Once` and all fields except
+  `Enabled`/`Executable`; nonzero options override config/defaults. Negative
+  values are invalid; threshold must be finite and in (0,1], max duration is
+  150ms–5m, silence timeout is at most 1m, and start timeout is at most 5m.
+  Duration caps round down to whole 10ms frames, never below 150ms. Pre-roll is
+  trimmed as needed to reserve at least 150ms of speech within the cap.
+- Energy is measured in 10ms frames, with up to 200ms pre-roll and at least 150ms of
+  above-threshold speech before emitting. This is simple RMS VAD, not semantic
+  speech detection: loud noise may qualify. Tune threshold for the source.
+- `Once: true` emits one qualifying utterance and returns; the initial timeout
+  returns nil without emitting if no qualifying speech arrives. Continuous mode
+  keeps **one recorder stream open between utterances**, with bounded pre-roll
+  during idle silence. No initial speech timeout applies in continuous mode.
+- `Segment.Reason` is `silence`, `max_duration`, or `stop`. Both sample count
+  (including pre-roll/trailing silence) and wall time bound each utterance.
+  WAVs are mono signed PCM16, 16kHz, at most 5 minutes (under 32 MiB).
+- Closing/sending `stop` finalizes qualifying current speech, then returns nil.
+  Context cancellation/deadline discards partial audio and returns the context
+  error. Callback errors propagate; no partial audio is emitted on stream errors.
+- EOF/truncated PCM/device loss are explicit errors. No complete frame for 5s
+  is an actionable stall error, even when idle. Callers can restart capture.
+- One active capture per adapter; queued calls respect cancellation and stop.
+  Raw PCM buffering is bounded (eight queued frames plus one utterance); stderr
+  is discarded, capped at 64 KiB per capture, and overflow aborts capture.
+  Cleanup kills/reaps the recorder and kills same-process-group descendants on
+  stop, cancellation, EOF, callback failure, timeout or overflow. As with the
+  transcriber, a deliberately detached process is outside this trust boundary;
+  no OS-level child RSS/CPU sandbox is provided.
+- Tests use synthetic PCM and fake processes only, never a real microphone.
 
 ```go
 transcriber := voice.NewTranscriber(voice.Config{

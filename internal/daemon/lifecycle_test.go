@@ -10,9 +10,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/mithrel/ginkgo/internal/ipc"
 	"github.com/mithrel/ginkgo/internal/ipc/pb"
 	"github.com/mithrel/ginkgo/internal/ipc/transport"
+	"github.com/mithrel/ginkgo/internal/voice"
 )
 
 type lifecycleListener struct{ net.Listener }
@@ -149,5 +152,67 @@ func TestDaemonIPCStartupFailureStopsHTTP(t *testing.T) {
 	}
 	if err := httpServer.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		t.Fatalf("HTTP did not stop: %v", err)
+	}
+}
+
+func TestEndpointFailureCancelsDetachedJobBeforeJoiningStopHandler(t *testing.T) {
+	for _, endpoint := range []string{"HTTP", "IPC"} {
+		t.Run(endpoint, func(t *testing.T) {
+			v := listenerRuntime(t)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			v.root = ctx
+			processing, stopping := make(chan struct{}), make(chan struct{})
+			v.capturer = fakeSegmentCapturer(func(ctx context.Context, o voice.CaptureOptions, stop <-chan struct{}, emit func(voice.Segment) error) error {
+				if err := emit(voice.Segment{}); err != nil {
+					return err
+				}
+				select {
+				case <-stop:
+					close(stopping)
+					return nil
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			})
+			v.processSegment = func(ctx context.Context, m ipc.Message, s voice.Segment) ipc.Response {
+				close(processing)
+				<-ctx.Done()
+				return ipc.Response{Msg: ctx.Err().Error()}
+			}
+			require.True(t, v.listen(context.Background(), ipc.Message{}, true).OK)
+			awaitListener(t, processing)
+			dir, err := os.MkdirTemp("", "daemon-stop-")
+			require.NoError(t, err)
+			defer os.RemoveAll(dir)
+			path := filepath.Join(dir, "s")
+			listener, err := net.Listen("unix", path)
+			require.NoError(t, err)
+			defer listener.Close()
+			handler := ipc.PBHandlerContext(func(context.Context, ipc.Message) ipc.Response {
+				return v.stopListener(true)
+			})
+			httpServer := &http.Server{Addr: "127.0.0.1:0"}
+			done := make(chan error, 1)
+			go func() {
+				ipcServer := transport.NewUnixServer(daemonIPCListener{Listener: lifecycleListener{listener}, cancel: cancel})
+				done <- serveDaemonLifetime(ctx, cancel, httpServer, ipcServer, handler)
+			}()
+			clientDone := make(chan error, 1)
+			go func() {
+				_, err := transport.NewUnixClient(path).Do(transport.WithResp(ctx, &pb.Response{}), &pb.Request{})
+				clientDone <- err
+			}()
+			awaitListener(t, stopping) // stop handler is now joining the blocked job
+			if endpoint == "HTTP" {
+				require.NoError(t, httpServer.Close())
+			} else {
+				require.NoError(t, listener.Close())
+			}
+			_ = lifecycleResult(t, done)
+			require.ErrorIs(t, ctx.Err(), context.Canceled)
+			require.False(t, v.voiceStatus().VoiceStatus.Active)
+			_ = lifecycleResult(t, clientDone)
+		})
 	}
 }

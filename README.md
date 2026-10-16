@@ -43,8 +43,10 @@ Entries can be created as quick one-liners or rich Markdown notes via `$EDITOR`.
 ### Optional voice and AI notes (POC)
 - Local WAV transcription with installed whisper.cpp; save raw notes independently
   of AI or use daemon-owned AI creation/append with original-input provenance. See
-  the [voice and AI POC guide](docs/voice-ai-poc.md) for setup, external recording,
-  safety limits, and test status.
+  the [voice and AI POC guide](docs/voice-ai-poc.md) for setup and test status.
+- Optional PipeWire microphone capture: `voice enable`/`disable` control daemon-owned
+  continuous dictation; `voice listen --silence 2s` captures one utterance. See
+  [listening controls](docs/voice-listening.md) for saving, stop/cancel, and limits.
 
 ### Sync
 - Local outbox queues edits when offline.

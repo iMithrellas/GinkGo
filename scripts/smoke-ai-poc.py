@@ -80,7 +80,7 @@ elif mode == "expand":
         "target_id": state["target_id"],
         "title": "Cleaned onboarding summary",
         "body": "Added deployment follow-up.",
-        "tags": [],
+        "tags": ["onboarding"],
     }
     text = json.dumps(draft)
 else:
@@ -88,7 +88,7 @@ else:
         "action": "create_note",
         "title": "Cleaned onboarding summary",
         "body": "Cleaned onboarding summary.",
-        "tags": [],
+        "tags": ["onboarding"],
     }
     text = json.dumps(draft)
 json.dump({"text": text}, sys.stdout, separators=(",", ":"))

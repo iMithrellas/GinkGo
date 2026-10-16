@@ -42,8 +42,21 @@ func Run(ctx context.Context, app *wire.App) error {
 	daemonCtx := ctx
 	aiNotes := newAINoteService(app)
 	voiceNotes := newVoiceRuntime(app, aiNotes)
+	voiceNotes.root = daemonCtx
+	voiceNotes.syncNote = func(ctx context.Context) { _ = app.Syncer.SyncNow(ctx) }
+	// Run must not return (and allow Store.Close) while detached listening is
+	// using the repository. Also covers either serving endpoint failing early.
+	backgroundSyncDone := make(chan struct{})
+	defer func() {
+		cancel()
+		voiceNotes.close()
+		<-backgroundSyncDone
+	}()
 	// Start continuous background sync loop
-	go app.Syncer.RunBackground(ctx)
+	go func() {
+		defer close(backgroundSyncDone)
+		app.Syncer.RunBackground(ctx)
+	}()
 	// Adapt CLI message handler to protobuf transport
 	handler := ipc.PBHandlerContext(func(ctx context.Context, m ipc.Message) ipc.Response {
 		ns := m.Namespace
@@ -51,11 +64,20 @@ func Run(ctx context.Context, app *wire.App) error {
 			ns = app.Cfg.GetString("namespace")
 		}
 		switch m.Name {
+		case "voice.status":
+			return voiceNotes.voiceStatus()
+		case "voice.disable", "voice.cancel":
+			return voiceNotes.stopListener(false)
+		case "voice.stop":
+			return voiceNotes.stopListener(true)
+		case "voice.enable", "voice.listen":
+			m.Namespace = ns
+			return voiceNotes.listen(ctx, m, m.Name == "voice.enable")
 		case "voice.transcribe":
 			m.Namespace = ns
 			result := voiceNotes.transcribe(ctx, m)
 			if result.OK && result.Entry != nil {
-				go app.Syncer.SyncNow(daemonCtx)
+				voiceNotes.scheduleSync()
 			}
 			return result
 		case "ai.note":
@@ -264,7 +286,38 @@ func Run(ctx context.Context, app *wire.App) error {
 			return ipc.Response{OK: false, Msg: "unknown command"}
 		}
 	})
-	return serveDaemon(ctx, srv, transport.NewUnixServer(transport.UnixListener{Path: sock}), handler)
+	listener := daemonIPCListener{Listener: transport.UnixListener{Path: sock}, cancel: cancel}
+	return serveDaemonLifetime(ctx, cancel, srv, transport.NewUnixServer(listener), handler)
+}
+
+// The transport joins handlers before Serve returns. An accept failure must
+// therefore cancel the shared lifetime here, not wait for Serve's result: a
+// voice.stop handler can be joining a detached job owned by that lifetime.
+type daemonIPCListener struct {
+	transport.Listener
+	cancel context.CancelFunc
+}
+
+func (l daemonIPCListener) Listen(ctx context.Context) (net.Listener, error) {
+	listener, err := l.Listener.Listen(ctx)
+	if err != nil {
+		l.cancel()
+		return nil, err
+	}
+	return daemonAcceptListener{Listener: listener, cancel: l.cancel}, nil
+}
+
+type daemonAcceptListener struct {
+	net.Listener
+	cancel context.CancelFunc
+}
+
+func (l daemonAcceptListener) Accept() (net.Conn, error) {
+	conn, err := l.Listener.Accept()
+	if err != nil {
+		l.cancel()
+	}
+	return conn, err
 }
 
 // serveDaemon owns both serving goroutines. Either server stopping cancels the
@@ -272,6 +325,13 @@ func Run(ctx context.Context, app *wire.App) error {
 // to finish, rather than merely waiting an arbitrary grace period.
 func serveDaemon(ctx context.Context, httpServer *http.Server, ipcServer transport.Server, handler transport.Handler) error {
 	ctx, cancel := context.WithCancel(ctx)
+	return serveDaemonLifetime(ctx, cancel, httpServer, ipcServer, handler)
+}
+
+// serveDaemonLifetime shares Run's cancellation scope with detached voice work.
+// Cancel that scope before joining handlers: a stop handler may itself be waiting
+// for a detached voice job to finish its drain.
+func serveDaemonLifetime(ctx context.Context, cancel context.CancelFunc, httpServer *http.Server, ipcServer transport.Server, handler transport.Handler) error {
 	defer cancel()
 	ipcDone := make(chan error, 1)
 	httpDone := make(chan error, 1)

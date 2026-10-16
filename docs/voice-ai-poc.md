@@ -1,8 +1,9 @@
 # Optional voice and AI note POC
 
-**Status: provisional POC, not a general AI assistant.** File transcription and
-AI note workflows are implemented; isolated fake-engine/provider tests cover their
-behavior. A real local audio-to-note smoke test also passed with whisper.cpp
+**Status: provisional POC, not a general AI assistant.** File transcription,
+PipeWire microphone listening, and AI note workflows are implemented; isolated
+fake-device/engine/provider tests cover their behavior. A real local file-to-note
+smoke test also passed with whisper.cpp
 v1.7.6, the English-only `base.en` model, and the public upstream `jfk.wav` sample.
 The verified local runtime and model are installed under
 `$HOME/.cache/ginkgo/voice-poc/`; see the repeatable real-audio smoke command below.
@@ -51,7 +52,23 @@ using your normal service workflow (for the installed user service:
 not update a running daemon. These instructions do not change your config or
 restart your service automatically.
 
-### Record a compatible WAV with PipeWire
+### Listen directly from the microphone
+
+With the voice configuration above and PipeWire's `pw-record` installed:
+
+```sh
+ginkgo-cli voice listen --silence 2s                  # transcript only
+ginkgo-cli voice listen --silence 2s --save           # one saved utterance
+ginkgo-cli voice enable --silence 2s --mode raw       # continuously save utterances
+ginkgo-cli voice status --output json
+ginkgo-cli voice disable                            # discard pending work, release mic
+```
+
+`voice stop` finalizes current speech and drains accepted utterances instead of
+discarding them. See [listening configuration and lifecycle](voice-listening.md).
+Continuous listening is explicit and lasts until disabled or the daemon exits.
+
+### Alternatively, record a compatible WAV externally
 
 Use the installed PipeWire recorder directly, then press **Ctrl-C** to finish:
 
@@ -59,7 +76,7 @@ Use the installed PipeWire recorder directly, then press **Ctrl-C** to finish:
 pw-record --container wav --rate 16000 --channels 1 --format s16 /tmp/recording.wav
 ```
 
-This is an external recording command, **not** a GinkGo microphone feature. Audio
+This external recording path is useful for reusable file fixtures. Audio
 must be a regular RIFF/WAVE file: PCM signed 16-bit, 16000 Hz, mono. Other audio
 formats are rejected rather than converted. Default limits are 32 MiB and five
 minutes of audio. The file path refers to the daemon's local filesystem; no audio
@@ -200,6 +217,7 @@ installed service:
 go test ./...
 python3 scripts/smoke-ai-poc.py
 python3 scripts/smoke-voice-poc.py
+python3 scripts/smoke-voice-listening.py
 ```
 
 The script builds the binary in its private `/tmp/opencode` directory. It covers
@@ -220,11 +238,11 @@ python3 -B scripts/smoke-voice-poc.py \
 
 ## Deferred in this POC
 
-`voice transcribe FILE` is available, including raw/AI saving. A direct
-`ginkgo-cli voice record` command, managed microphone capture, wake word, VAD, TTS,
-resident models (`persistent`/`idle_timeout`), model catalog/download management,
-AI search/summaries, and Codex/Claude adapters remain deferred. Do not infer these
-capabilities from the broader proposal in `PLAN.md`. The external `pw-record`
-command above is the recording path for this POC. The public-sample smoke test
-verifies this pinned CPU build, not microphone quality or compatibility with
-every whisper.cpp release.
+Wake words, semantic speech detection, TTS, automatic suspend/device recovery,
+hooks/visualizers, resident models (`persistent`/`idle_timeout`), model
+catalog/download management, AI search/summaries, and Codex/Claude adapters remain
+deferred. The OpenCode provider still uses the private stateless path; supported
+run/session isolation and model compatibility need verification. Microphone
+endpointing currently uses RMS energy and can mistake noise for speech. The
+public-sample smoke test verifies the pinned CPU file-transcription build, not
+microphone quality or compatibility with every whisper.cpp release.

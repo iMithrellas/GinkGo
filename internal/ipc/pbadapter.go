@@ -2,6 +2,7 @@ package ipc
 
 import (
 	"context"
+	"time"
 
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -30,6 +31,21 @@ func (h pbHandler) Handle(ctx context.Context, req any) (any, error) {
 			m.Namespace, m.Title, m.Tags = n.Namespace, n.Title, append([]string(nil), n.Tags...)
 			m.Provider, m.Action, m.NoteID = n.Provider, n.Action, n.NoteId
 			m.Model, m.Language = n.Model, n.Language
+			if n.Deadline != nil {
+				if err := n.Deadline.CheckValid(); err != nil {
+					return &pb.Response{Ok: false, Msg: "invalid deadline"}, nil
+				}
+				m.Deadline = n.Deadline.AsTime()
+			}
+		}
+	case *pb.Request_VoiceControl:
+		if n := x.VoiceControl; n != nil {
+			m.Name, m.Namespace, m.Save, m.Mode = "voice."+n.Action, n.Namespace, n.Save, n.Mode
+			m.Provider, m.Title, m.Tags, m.NoteID = n.Provider, n.Title, append([]string(nil), n.Tags...), n.NoteId
+			m.Model, m.Language, m.Action = n.Model, n.Language, n.NoteAction
+			if c := n.Capture; c != nil {
+				m.Capture = &CaptureOptions{Target: c.Target, SilenceTimeout: time.Duration(c.SilenceTimeout), MaxDuration: time.Duration(c.MaxDuration), StartTimeout: time.Duration(c.StartTimeout), Threshold: c.Threshold}
+			}
 			if n.Deadline != nil {
 				if err := n.Deadline.CheckValid(); err != nil {
 					return &pb.Response{Ok: false, Msg: "invalid deadline"}, nil
@@ -116,6 +132,13 @@ func (h pbHandler) Handle(ctx context.Context, req any) (any, error) {
 	if r.Transcript != nil {
 		t := r.Transcript
 		presp.Transcript = &pb.Transcript{Text: t.Text, Language: t.Language, Engine: t.Engine, Model: t.Model}
+	}
+	if s := r.VoiceStatus; s != nil {
+		ps := &pb.VoiceStatus{Enabled: s.Enabled, Active: s.Active, Continuous: s.Continuous, State: s.State, Namespace: s.Namespace, SilenceTimeout: int64(s.SilenceTimeout), Segments: s.Segments, LastNoteId: s.LastNoteID, LastError: s.LastError}
+		if !s.StartedAt.IsZero() {
+			ps.StartedAt = timestamppb.New(s.StartedAt)
+		}
+		presp.VoiceStatus = ps
 	}
 	if r.Entry != nil {
 		e := toPbEntry(*r.Entry)

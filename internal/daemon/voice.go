@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mithrel/ginkgo/internal/ai"
@@ -25,6 +26,23 @@ type voiceRuntime struct {
 	notes       *notes.Service
 	ai          *ai.Service
 	defaultTags []string
+
+	// mu protects lifecycle/status only; never hold it across capture, inference,
+	// storage, synchronization, or a worker join.
+	mu             sync.Mutex
+	root           context.Context
+	closed         bool
+	job            *listenJob
+	status         ipc.VoiceStatus
+	capturer       segmentCapturer
+	captureConfig  voice.CaptureConfig
+	captureErr     error
+	sttConfig      voice.Config
+	processSegment func(context.Context, ipc.Message, voice.Segment) ipc.Response
+	syncNote       func(context.Context)
+	syncPending    chan struct{}
+	syncCancel     context.CancelFunc
+	syncDone       chan struct{}
 }
 
 func newVoiceRuntime(app *wire.App, aiNotes *ai.Service) *voiceRuntime {
@@ -37,7 +55,7 @@ func newVoiceRuntime(app *wire.App, aiNotes *ai.Service) *voiceRuntime {
 			err = fmt.Errorf("voice.stt.timeout must be a positive duration")
 		}
 	}
-	return &voiceRuntime{
+	runtime := &voiceRuntime{
 		enabled: v.GetBool("voice.enabled"), mode: v.GetString("voice.mode"), residency: v.GetString("voice.stt.residency"), configErr: err,
 		transcriber: voice.NewTranscriber(voice.Config{
 			Enabled: v.GetBool("voice.enabled"), Executable: v.GetString("voice.stt.executable"), Model: v.GetString("voice.stt.model"),
@@ -45,6 +63,12 @@ func newVoiceRuntime(app *wire.App, aiNotes *ai.Service) *voiceRuntime {
 		}),
 		notes: notes.NewService(app.Store.Entries), ai: aiNotes, defaultTags: append([]string(nil), v.GetStringSlice("default_tags")...),
 	}
+	runtime.root = context.Background()
+	runtime.sttConfig = voice.Config{Executable: v.GetString("voice.stt.executable"), Model: v.GetString("voice.stt.model"), Language: v.GetString("voice.stt.language"), Device: v.GetString("voice.stt.device"), Threads: v.GetInt("voice.stt.threads")}
+	runtime.captureConfig, runtime.captureErr = captureSettings(v, runtime.enabled)
+	runtime.capturer = voice.NewCapturer(runtime.captureConfig)
+	runtime.status = ipc.VoiceStatus{Enabled: runtime.enabled, State: "idle", SilenceTimeout: runtime.captureConfig.SilenceTimeout}
+	return runtime
 }
 
 func (v *voiceRuntime) transcribe(ctx context.Context, m ipc.Message) ipc.Response {

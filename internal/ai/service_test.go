@@ -315,7 +315,7 @@ func TestNoteContextBudgetAndPrivacy(t *testing.T) {
 			if len(prompt.Notes) > 160 || strings.Contains(request.Prompt, "never-send") || strings.Contains(request.Prompt, "provenance") {
 				t.Error("context budget/scope/provenance leaked")
 			}
-			return Response{Text: `{"action":"create_note","title":"x","body":"new"}`}, nil
+			return Response{Text: `{"action":"create_note","title":"x","body":"new","tags":["topic"]}`}, nil
 		}), nil
 	}, ServiceOptions{Enabled: true, DefaultNamespace: "personal", ContextLimit: 2, MaxContextBytes: 160})
 	result, err := service.Note(context.Background(), NoteRequest{Text: "input"}, "")
@@ -417,7 +417,7 @@ func TestVoiceRawFallbackPreservesCaptureMetadata(t *testing.T) {
 
 func TestVoiceAICreatePreservesTranscriptSeparately(t *testing.T) {
 	repo := noteTestRepo(t)
-	service := fixedNoteService(repo, `{"action":"create_note","title":"Clean voice note","body":"Cleaned voice body"}`, ServiceOptions{Enabled: true})
+	service := fixedNoteService(repo, `{"action":"create_note","title":"Clean voice note","body":"Cleaned voice body","tags":["topic"]}`, ServiceOptions{Enabled: true})
 	before := time.Now()
 	result, err := service.Note(context.Background(), NoteRequest{Text: " exact spoken input ", Action: "create", Source: voiceMetadata()}, "")
 	if err != nil {

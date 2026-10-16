@@ -1,3 +1,51 @@
+# AI note topic-tag policy
+
+Successful AI creation or expansion requires a **nonempty final normalized tag
+set**, not a newly generated tag. Creation merges global defaults, explicit tags,
+and model tags; expansion merges current target tags, explicit tags, and model
+tags (global defaults are not added to expansions). Normalization trims,
+lowercases, removes blanks, and deduplicates in merge order. An empty final set
+invalidates the draft and saves the exact incoming input as a new raw note, with
+no filler tag and no target mutation. Existing tagged notes need no new tag.
+Malformed drafts still fail even when user/default/current tags are sufficient.
+Raw fallback retains ordinary default/explicit behavior and may be untagged.
+
+Models should prefer relevant existing topic names, but may introduce meaningful
+new tags supported by the input. Unrelated suggestions, filler, and unsupported
+sensitive inferences are discouraged. Model tags remain limited to 64 entries
+and 128 bytes per name; normal application tags/defaults are not restricted or
+rewritten by this AI-only policy.
+
+## Scoped vocabulary and budgets
+
+SQLite implements the optional `db.TagVocabulary` capability without changing
+`EntryRepo`. It reads only tag names, note IDs and modification dates from the
+exact selected namespace (even an empty namespace does not mean all namespaces).
+It never retrieves extra bodies, descriptions or provenance. Forced creation
+gets vocabulary hints too, without broadening candidate-note context. Repositories
+without this capability, and failed lookups, simply omit vocabulary hints.
+Request cancellation still forbids saving; lookup failure cannot bypass tag
+validation.
+
+Names are normalized and blanks/names over 128 bytes are omitted. Rank order:
+
+1. Relevant names first: at least one whole letter/digit token of the tag occurs
+   among input tokens, case-insensitively; punctuation separates tokens.
+2. Descending frecency: `log2(1 + frequency) + 1/(1 + age_days/30)`, where
+   frequency is the number of distinct notes carrying the normalized tag and
+   age is time since the most recent carrying note's modification. Future dates
+   clamp to age zero. A 30-day age halves the recency bonus.
+3. Normalized tag name ascending breaks ties deterministically.
+
+Return at most 40 names, ranked across the full namespace before truncation.
+Only names enter the prompt. Known, explicit and applicable default hints share
+a separate **4 KiB JSON-encoded budget** (including escaping and field overhead),
+in addition to the existing bounded candidate-note and input budgets. Explicit
+hints precede defaults, then ranked vocabulary; each name is at most 128 bytes,
+with at most 64 explicit/default hints each. Truncation affects hints only, never
+the final merge or validation. Validation precedes writes; CAS conflicts produce
+the ordinary exact-raw fallback without retrying or overwriting the target.
+
 # OpenCode provider compatibility
 
 `NewOpenCode` runs a private server with isolated configuration, fixed argv,
