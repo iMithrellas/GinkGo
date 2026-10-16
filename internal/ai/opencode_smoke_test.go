@@ -213,6 +213,34 @@ func TestOpenCodeUnknownModel(t *testing.T) {
 	}
 }
 
+func TestOpenCodeSafeGenerationFailures(t *testing.T) {
+	for _, tc := range []struct {
+		mode string
+		want error
+	}{
+		{"server-free-tier", ErrGenerationRestricted},
+		{"server-free-tier-wrong-tag", ErrProviderUnavailable},
+		{"server-generation-credentials", ErrAuthentication},
+		{"server-rate-limited", ErrRateLimited},
+		{"server-unavailable", ErrProviderUnavailable},
+		{"server-console", ErrOpenCodeConsole},
+	} {
+		t.Run(tc.mode, func(t *testing.T) {
+			provider, err := NewOpenCode(OpenCodeOptions{Executable: fixture(t, tc.mode), Model: "opencode/deepseek-v4.1-flash-free"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = provider.Complete(context.Background(), Request{Prompt: "synthetic only"})
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("expected %v, got %v", tc.want, err)
+			}
+			if strings.Contains(err.Error(), "secret-auth-and-note") {
+				t.Fatal("upstream error leaked")
+			}
+		})
+	}
+}
+
 func TestOpenCodeEphemeralAuth(t *testing.T) {
 	t.Setenv("OPENCODE_DB", "/must-not-open/saved.db")
 	t.Setenv("XDG_DATA_HOME", "/must-not-open/data")

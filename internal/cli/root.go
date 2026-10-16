@@ -58,6 +58,7 @@ func NewRootCmd() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&cfgPath, "config", "", "path to config file (yaml|toml)")
 
 	cmd.AddCommand(newNoteCmd())
+	cmd.AddCommand(newAICmd())
 	cmd.AddCommand(newDaemonCmd())
 	cmd.AddCommand(newCompletionCmd())
 	cmd.AddCommand(newConfigCmd())

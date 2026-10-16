@@ -2,6 +2,7 @@ package ipc
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -16,10 +17,22 @@ func Request(ctx context.Context, path string, m Message) (Response, error) {
 	var r Response
 	preq := &pb.Request{}
 	switch m.Name {
+	case "ai.note":
+		note := &pb.AINote{Text: m.Text, Namespace: m.Namespace, Title: m.Title, Action: m.Action, NoteId: m.NoteID, Tags: m.Tags, Provider: m.Provider}
+		deadline := m.Deadline
+		if d, ok := ctx.Deadline(); ok && (deadline.IsZero() || d.Before(deadline)) {
+			deadline = d
+		}
+		if !deadline.IsZero() {
+			note.Deadline = timestamppb.New(deadline)
+		}
+		preq.Cmd = &pb.Request_AiNote{AiNote: note}
 	case "note.add":
-		preq.Cmd = &pb.Request_NoteAdd{NoteAdd: &pb.NoteAdd{Title: m.Title, Body: m.Body, Tags: m.Tags, Namespace: m.Namespace}}
+		entry := toPbEntry(api.Entry{Provenance: m.Provenance})
+		preq.Cmd = &pb.Request_NoteAdd{NoteAdd: &pb.NoteAdd{Title: m.Title, Body: m.Body, Tags: m.Tags, Namespace: m.Namespace, Provenance: entry.Provenance}}
 	case "note.edit":
-		preq.Cmd = &pb.Request_NoteEdit{NoteEdit: &pb.NoteEdit{Id: m.ID, IfVersion: m.IfVersion, Title: m.Title, Body: m.Body, Tags: m.Tags, Namespace: m.Namespace}}
+		entry := toPbEntry(api.Entry{Provenance: m.Provenance})
+		preq.Cmd = &pb.Request_NoteEdit{NoteEdit: &pb.NoteEdit{Id: m.ID, IfVersion: m.IfVersion, Title: m.Title, Body: m.Body, Tags: m.Tags, Namespace: m.Namespace, Provenance: entry.Provenance}}
 	case "note.delete":
 		preq.Cmd = &pb.Request_NoteDelete{NoteDelete: &pb.NoteDelete{Id: m.ID, Namespace: m.Namespace}}
 	case "note.show":
@@ -40,6 +53,8 @@ func Request(ctx context.Context, path string, m Message) (Response, error) {
 		preq.Cmd = &pb.Request_NamespaceDelete{NamespaceDelete: &pb.NamespaceDelete{Namespace: m.Namespace}}
 	case "tag.list":
 		preq.Cmd = &pb.Request_TagList{TagList: &pb.TagList{Namespace: m.Namespace}}
+	default:
+		return r, fmt.Errorf("unknown IPC command: %s", m.Name)
 	}
 
 	c := transport.NewUnixClient(path)
@@ -51,6 +66,8 @@ func Request(ctx context.Context, path string, m Message) (Response, error) {
 	presp := prespAny.(*pb.Response)
 	r.OK = presp.Ok
 	r.Msg = presp.Msg
+	r.Action = presp.Action
+	r.FallbackReason = presp.FallbackReason
 	if presp.Entry != nil {
 		r.Entry = fromPbEntry(presp.Entry)
 	}

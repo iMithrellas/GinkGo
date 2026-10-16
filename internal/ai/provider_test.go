@@ -174,6 +174,19 @@ func TestProviderHelper(t *testing.T) {
 		case "server-unavailable":
 			w.WriteHeader(503)
 			fmt.Fprint(w, "secret-auth-and-note")
+		case "server-free-tier", "server-free-tier-wrong-tag":
+			w.WriteHeader(503)
+			tag := "ServiceUnavailableError"
+			if mode == "server-free-tier-wrong-tag" {
+				tag = "UnknownError"
+			}
+			_ = json.NewEncoder(w).Encode(map[string]string{"_tag": tag, "message": "OpenCode's free tier can only be used from within OpenCode. Download it at https://opencode.ai and secret-auth-and-note"})
+		case "server-generation-credentials":
+			w.WriteHeader(503)
+			fmt.Fprint(w, `{"_tag":"ServiceUnavailableError","message":"Generation credentials are unavailable"}`)
+		case "server-rate-limited":
+			w.WriteHeader(429)
+			fmt.Fprint(w, "secret-auth-and-note")
 		case "server-unknown-model":
 			w.WriteHeader(400)
 			_ = json.NewEncoder(w).Encode(map[string]string{"_tag": "InvalidRequestError", "message": "Model unavailable: " + body.Model.ProviderID + "/" + body.Model.ID})

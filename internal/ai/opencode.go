@@ -259,6 +259,23 @@ func (p *OpenCodeProvider) Complete(parent context.Context, request Request) (Re
 		return Response{}, ErrAuthentication
 	}
 	if result.StatusCode != http.StatusOK {
+		// Never return upstream messages: they may contain prompts, credentials or
+		// response bodies. Classify only known failures into fixed diagnostics.
+		var failure struct {
+			Tag     string `json:"_tag"`
+			Message string `json:"message"`
+		}
+		if result.StatusCode == http.StatusServiceUnavailable && json.Unmarshal(output, &failure) == nil && failure.Tag == "ServiceUnavailableError" {
+			// Observed with 2.0.31's stateless endpoint and the public free model.
+			// Do not add tools, agent sessions or spoof attribution to evade this
+			// upstream restriction. The generation-only contract remains intact.
+			if strings.HasPrefix(failure.Message, "OpenCode's free tier can only be used from within OpenCode.") {
+				return Response{}, ErrGenerationRestricted
+			}
+			if failure.Message == "Generation credentials are unavailable" {
+				return Response{}, ErrAuthentication
+			}
+		}
 		if result.StatusCode == http.StatusBadRequest && body.Model != nil {
 			var rejection struct {
 				Tag     string `json:"_tag"`
@@ -267,6 +284,12 @@ func (p *OpenCodeProvider) Complete(parent context.Context, request Request) (Re
 			if json.Unmarshal(output, &rejection) == nil && rejection.Tag == "InvalidRequestError" && rejection.Message == "Model unavailable: "+body.Model.ProviderID+"/"+body.Model.ID {
 				return Response{}, ErrModelUnavailable
 			}
+		}
+		switch result.StatusCode {
+		case http.StatusTooManyRequests:
+			return Response{}, ErrRateLimited
+		case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+			return Response{}, ErrProviderUnavailable
 		}
 		return Response{}, fmt.Errorf("opencode v2 generation returned HTTP %d (verify model, saved login and endpoint compatibility)", result.StatusCode)
 	}
@@ -376,7 +399,7 @@ func checkOpenCodeCredentials(ctx context.Context, client *http.Client, endpoint
 			return ErrProtocol
 		}
 		if credential.IntegrationID == "opencode" {
-			return fmt.Errorf("opencode generation isolation does not support saved Console credentials; use a separate OpenCode profile without Console or an explicitly isolated wrapper")
+			return ErrOpenCodeConsole
 		}
 	}
 	return nil

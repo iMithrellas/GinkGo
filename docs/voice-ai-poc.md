@@ -1,106 +1,112 @@
-# Optional AI notes and voice POC
+# Optional AI note POC
 
-**Status: provisional; black-box smoke script prepared, not yet verified against the
-integrated CLI.** Treat the scope and interfaces as unsettled until implementation
-commits and tests verify them.
+**Status: implemented and smoke-tested; provisional POC, not a general AI assistant.**
+The daemon owns provider calls and note writes. AI is disabled by default. Existing
+note commands continue to work without an AI provider.
 
-## POC priorities
+## Configure OpenCode
 
-1. **Daemon-owned AI note workflow.** Add `ai note --stdin` with explicit new-note
-   (`--new`) and expansion (`--note`) modes. The CLI supplies input and displays the
-   result; the daemon owns provider calls, bounded namespace-scoped context retrieval,
-   action validation, persistence, and sync. Creation uses the existing note path;
-   expansion uses the exact observed version for CAS. A conflict, invalid result, or
-   disabled/unavailable AI must not overwrite or lose the user's input: save it as a
-   raw fallback note and report why AI handling was not applied.
-2. **Separate original-input provenance.** Store each contributing typed input or
-   transcript as typed provenance, separate from the rendered/indexed note body.
-   Expansion appends a source and preserves earlier sources. `--original` explicitly
-   exposes originals; ordinary rendering, context, and FTS do not. Provenance must
-   survive edits, CAS, import/export, event snapshots, and encrypted sync. Existing
-   entries need a safe baseline before their first AI rewrite. Do not ship provenance
-   writes until old-writer behavior is addressed: unsupported writers must not be
-   allowed to erase metadata on edit (a minimum-version/capability policy remains to
-   be decided).
-3. **OpenCode V2 provider first.** Use the V2 CLI through a verified generation-only
-   execution path: disable coding tools and unrelated hooks/integrations using
-   controls verified for the supported version. Never treat a filesystem read-only
-   sandbox alone as disabling command execution. Normalize provider output into a
-   typed draft/action and validate it in Go before any write. Add a generic fixed
-   executable/wrapper or OpenAI-compatible HTTP adapter only where a usable boundary
-   already exists; do not expand the POC into multiple provider-specific agents.
-4. **Local raw WAV transcription.** Accept a bounded local WAV input and invoke
-   on-demand `whisper-cli` with an already-installed model. Save the transcript as a
-   normal note with its original transcript recorded separately. This path must work
-   without AI enabled or an AI provider installed. Missing executable/model or
-   transcription failure is explicit; never download assets automatically.
+Add or merge this into the GinkGo TOML config. Replace the executable and model with
+your installed OpenCode path and selected provider/model. Never put API keys in this
+file, prompts, or command arguments.
 
-## Safety and privacy invariants
+```toml
+[ai]
+enabled = true
+provider = "opencode"
+timeout = "120s"
 
-- No model output directly chooses shell commands, SQL, executable paths, or arbitrary
-  IPC. Validate operation, note ID, namespace, fields, and context limits in Go.
-- Reads and context candidates are strictly namespace-scoped. An explicit expansion
-  target must be in scope. Never silently retry a failed CAS against a newer version.
-- Bound context, input, output, execution time, and WAV size/duration. Treat note text
-  as untrusted data, not instructions. Keep the original input independent of provider
-  output and preserve it on every fallback.
-- Raw note creation and transcription do not depend on AI initialization or health
-  checks. Disabled/unavailable/invalid AI falls back to a new raw note; failed
-  expansion must not mutate its target.
-- A local CLI can still send selected input and retrieved notes to a remote model.
-  Sync E2EE does not protect this separate provider request. Make remote disclosure
-  explicit; send only bounded, relevant context, and do not launch providers when AI
-  is disabled.
-- Preserve ordinary note behavior, existing IDs/namespaces, CAS semantics, and sync.
-  Do not claim compatibility with older writers until provenance-preservation policy
-  is implemented and tested.
+[ai.notes]
+context_limit = 8
 
-## Verification gates
+[ai.providers.opencode]
+type = "opencode"
+executable = "/path/to/opencode"
+model = "provider/your-model"
+ephemeral_auth = true
+```
 
-- Use fake providers and executable fixtures in normal tests; no paid API, model
-  download, microphone, or real audio is required for the test suite.
-- Verify no provider launch when disabled; raw fallback for unavailable providers,
-  malformed/invalid actions, and conflicts; bounded namespace-scoped context; and that
-  CAS conflicts never overwrite concurrent edits.
-- Test provenance migration and preservation through edits, import/export, event/hash
-  behavior, and encrypted multi-client sync. Confirm originals are absent from normal
-  rendering/FTS and available only through explicit `--original` display.
-- Verify OpenCode V2 generation-only controls and cancellation against the supported
-  CLI version; use fixture-based output tests for parsing and invalid responses.
-- Verify WAV validation, missing `whisper-cli`/model behavior, cancellation, raw note
-  creation, and separate transcript provenance with a fake executable. Keep
-  hardware/audio quality tests opt-in.
+For OpenCode **2.0.19**, `ephemeral_auth = true` selects isolated API-key mode; provide
+the appropriate provider API-key environment variable to the daemon. Do not copy
+credentials into GinkGo config. For stable OpenCode **>=2.0.25**, omit
+`ephemeral_auth` (or set it false) to use ordinary saved provider auth. This version
+compatibility does not validate a user's real login or model access. See
+[`internal/ai/README.md`](../internal/ai/README.md) for provider isolation details.
 
-## Deferred beyond this POC
+AI config is loaded by the daemon at startup. Run an AI-capable daemon built from the
+same release as the CLI; `make build` builds the CLI only. **Restart the daemon after
+changing config** using your normal service workflow. This guide does not restart or
+reconfigure a running service for you.
 
-- Persistent or idle-timeout STT residency; model catalog, downloads, prefetch, and
-  model management.
-- Microphone capture, VAD, lifecycle hooks, managed visualizer/companion processes,
-  and desktop integration.
-- Wake-word detection/listening, spoken intent routing, and TTS.
-- Codex and Claude Code adapters or a broad provider/plugin framework.
-- AI search, summaries, embeddings, relevance ranking, and other semantic retrieval.
+## Create, expand, inspect originals
 
-These are later milestones, not implied POC commitments. Revisit them only after the
-relevant capability is implemented, tested, and documented; publish the verified
-quickstart based on actual supported flags and configuration rather than proposals.
+Build the CLI and pipe exact text to the AI-note command:
 
-## Smoke test and OpenCode setup
+```sh
+set -euo pipefail
+make build
+created="$(printf '%s\n' 'A short source note to organize.' \
+  | ./build/ginkgo-cli ai note --stdin --provider opencode --new --output json)"
+printf '%s\n' "$created"
+note_id="$(printf '%s' "$created" | python3 -c 'import json,sys; print(json.load(sys.stdin)["entry"]["id"])')"
+printf '%s\n' 'A follow-up detail.' \
+  | ./build/ginkgo-cli ai note --stdin --provider opencode --note "$note_id" --output json
+./build/ginkgo-cli note show "$note_id"
+./build/ginkgo-cli note show "$note_id" --original
+```
 
-After the AI note CLI is integrated, run `python3 scripts/smoke-ai-poc.py`. It builds
-the CLI in a private `/tmp/opencode` directory (or accepts `--binary`), writes a
-temporary config/database/socket, and starts/stops only its own daemon. Its executable
-fixture returns typed drafts; it makes no real provider/model call and tests create,
-expand/CAS, provenance display, invalid-output fallback, and disabled-AI fallback. The
-fixture reads mode/target from a private state file (so changes reach the already-running
-daemon); inherited `GINKGO_*` overrides are scrubbed. The script currently targets the
-agreed interface and remains pending verification against integration. It does not
-edit user config or install binaries.
+The JSON response contains `entry`, `action`, and `fallback_reason`; the example
+extracts `entry.id` for the explicit expansion.
 
-For a later real OpenCode check, configure the installed executable explicitly, for
-example `/path/to/opencode`; the user currently has `/home/mithrel/.opencode/bin/opencode`
-(v2.0.19), which is not on PATH. Saved-auth mode requires stable OpenCode **>=2.0.25**.
-For v2.0.19, explicitly set `ephemeral_auth = true` to use API-key mode rather than
-saved auth. Do not put keys in this document or run a real inference as part of the
-smoke script. No paid-provider smoke test is required; use the fake fixture for routine
-verification.
+`--new` and `--note ID` are mutually exclusive. `--note` is explicit, namespace-
+scoped expansion using CAS. Expansion is append-only: the model proposes only new
+material; GinkGo retains the existing body, tags, and provenance. Auto action can use
+a bounded set of recent notes (`ai.notes.context_limit`, default 8); forced `--new`
+gets no note context and explicit `--note` gets only its target. This POC does not use
+topic FTS retrieval or infer namespaces. Choose the namespace explicitly with
+`--namespace` or configure the default namespace.
+
+Original input is stored separately from cleaned body text and is not included in
+ordinary rendering or FTS. Use `note show --original` to display it. Provenance storage,
+writer compatibility, migration, and sync behavior are documented in
+[`provenance.md`](provenance.md). **Upgrade every synced writer before using provenance**:
+older binaries may reserialize entries without preserving originals, and there is no
+mixed-version capability fence.
+
+## Fallback and cancellation
+
+With AI disabled, unavailable/invalid provider configuration, provider failure/timeout,
+invalid draft, or an expansion conflict, the daemon saves the exact input as a new raw
+note and returns a fallback reason; a failed expansion leaves its target unchanged.
+A caller/request cancellation is different: it cancels provider work and **does not
+save a fallback note**. If the caller disconnects or its deadline expires,
+preserve/re-submit the input yourself if needed.
+
+Remote providers receive the input and any selected bounded note context. Sync E2EE
+does not protect that separate provider request. The OpenCode adapter uses isolated,
+tool-free generation rather than a normal coding-agent session.
+
+## No-paid black-box smoke test
+
+The isolated fake-provider test uses only a temporary config, database, socket, and
+owned daemon; it makes no provider/model call and does not touch the user config or
+installed service:
+
+```sh
+go test ./...
+python3 scripts/smoke-ai-poc.py
+```
+
+The script builds the binary in its private `/tmp/opencode` directory. It covers
+create/expand, CAS, original display, invalid/disabled raw fallback, and disconnect
+cancellation without a late note. See the
+[`OpenCode adapter notes`](../internal/ai/README.md) for optional no-inference
+compatibility tests.
+
+## Not wired in this POC
+
+An internal `whisper-cli` WAV transcription adapter exists, but there is no user-facing
+voice CLI or transcript-to-note workflow yet. Microphone capture, STT residency/model
+catalog or downloads, wake/VAD, TTS, AI search/summaries, and Codex/Claude adapters
+remain deferred. Do not infer these capabilities from this document or the broader
+proposal in `PLAN.md`.

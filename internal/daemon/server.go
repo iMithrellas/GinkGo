@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mithrel/ginkgo/internal/ai"
 	"github.com/mithrel/ginkgo/internal/db"
 	"github.com/mithrel/ginkgo/internal/ipc"
 	"github.com/mithrel/ginkgo/internal/ipc/transport"
@@ -38,27 +39,41 @@ func Run(ctx context.Context, app *wire.App) error {
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	daemonCtx := ctx
+	aiNotes := newAINoteService(app)
 	// Start continuous background sync loop
 	go app.Syncer.RunBackground(ctx)
 	// Adapt CLI message handler to protobuf transport
-	handler := ipc.PBHandler(func(m ipc.Message) ipc.Response {
+	handler := ipc.PBHandlerContext(func(ctx context.Context, m ipc.Message) ipc.Response {
 		ns := m.Namespace
 		if ns == "" {
 			ns = app.Cfg.GetString("namespace")
 		}
 		switch m.Name {
+		case "ai.note":
+			if !m.Deadline.IsZero() {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithDeadline(ctx, m.Deadline)
+				defer cancel()
+			}
+			result, err := aiNotes.Note(ctx, ai.NoteRequest{Text: m.Text, Namespace: ns, Title: m.Title, Action: m.Action, NoteID: m.NoteID, Tags: m.Tags}, m.Provider)
+			if err != nil {
+				return ipc.Response{OK: false, Msg: err.Error()}
+			}
+			go app.Syncer.SyncNow(daemonCtx)
+			return ipc.Response{OK: true, Entry: &result.Entry, Action: result.Action, FallbackReason: result.FallbackReason}
 		case "note.add", "note.edit":
 			// Create if no ID, otherwise CAS update.
 			now := time.Now().UTC()
 			if m.ID == "" {
 				tags := normalizeTags(m.Tags)
-				e := api.Entry{ID: api.NewID(), Version: 1, Title: m.Title, Body: m.Body, Tags: tags, CreatedAt: now, UpdatedAt: now, Namespace: ns}
+				e := api.Entry{ID: api.NewID(), Version: 1, Title: m.Title, Body: m.Body, Tags: tags, CreatedAt: now, UpdatedAt: now, Namespace: ns, Provenance: m.Provenance}
 				e, err := app.Store.Entries.CreateEntry(ctx, e)
 				if err != nil {
 					return ipc.Response{OK: false, Msg: err.Error()}
 				}
 				log.Printf("created note id=%s title=%q", e.ID, e.Title)
-				go app.Syncer.SyncNow(ctx)
+				go app.Syncer.SyncNow(daemonCtx)
 				return ipc.Response{OK: true, Entry: &e}
 			}
 			// Update path
@@ -78,6 +93,9 @@ func Run(ctx context.Context, app *wire.App) error {
 			if m.Tags != nil {
 				cur.Tags = normalizeTags(m.Tags)
 			}
+			if m.Provenance != nil {
+				cur.Provenance = m.Provenance
+			}
 			cur.UpdatedAt = now
 			ifv := m.IfVersion
 			if ifv == 0 {
@@ -94,18 +112,22 @@ func Run(ctx context.Context, app *wire.App) error {
 				return ipc.Response{OK: false, Msg: err.Error()}
 			}
 			log.Printf("updated note id=%s title=%q", e.ID, e.Title)
-			go app.Syncer.SyncNow(ctx)
+			go app.Syncer.SyncNow(daemonCtx)
 			return ipc.Response{OK: true, Entry: &e}
 		case "note.delete":
 			if m.ID == "" {
 				return ipc.Response{OK: false, Msg: "missing id"}
+			}
+			cur, err := app.Store.Entries.GetEntry(ctx, m.ID)
+			if err != nil || cur.Namespace != ns {
+				return ipc.Response{OK: false, Msg: "not found"}
 			}
 			if err := app.Store.Entries.DeleteEntry(ctx, m.ID); err != nil {
 				log.Printf("delete note id=%s err=%v", m.ID, err)
 				return ipc.Response{OK: false, Msg: err.Error()}
 			}
 			log.Printf("deleted note id=%s", m.ID)
-			go app.Syncer.SyncNow(ctx)
+			go app.Syncer.SyncNow(daemonCtx)
 			return ipc.Response{OK: true}
 		case "note.show":
 			if m.ID == "" {
@@ -115,6 +137,9 @@ func Run(ctx context.Context, app *wire.App) error {
 			if err != nil {
 				log.Printf("show note id=%s err=%v", m.ID, err)
 				return ipc.Response{OK: false, Msg: err.Error()}
+			}
+			if e.Namespace != ns {
+				return ipc.Response{OK: false, Msg: "not found"}
 			}
 			log.Printf("show note id=%s", m.ID)
 			return ipc.Response{OK: true, Entry: &e}
@@ -231,21 +256,58 @@ func Run(ctx context.Context, app *wire.App) error {
 			return ipc.Response{OK: false, Msg: "unknown command"}
 		}
 	})
-	go func() {
-		srv := transport.NewUnixServer(transport.UnixListener{Path: sock})
-		_ = srv.Serve(ctx, handler)
-	}()
+	return serveDaemon(ctx, srv, transport.NewUnixServer(transport.UnixListener{Path: sock}), handler)
+}
 
-	// Run HTTP server (optional for now). Shut down IPC when HTTP stops.
-	go func() {
-		<-ctx.Done()
-		_ = srv.Shutdown(context.Background())
-	}()
-	err = srv.ListenAndServe()
+// serveDaemon owns both serving goroutines. Either server stopping cancels the
+// other, and returning requires IPC handlers (including provider child cleanup)
+// to finish, rather than merely waiting an arbitrary grace period.
+func serveDaemon(ctx context.Context, httpServer *http.Server, ipcServer transport.Server, handler transport.Handler) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	ipcDone := make(chan error, 1)
+	httpDone := make(chan error, 1)
+	go func() { ipcDone <- ipcServer.Serve(ctx, handler) }()
+	go func() { httpDone <- httpServer.ListenAndServe() }()
+	var ipcErr, httpErr error
+	select {
+	case <-ctx.Done():
+	case ipcErr = <-ipcDone:
+		ipcDone = nil
+		if ipcErr == nil && ctx.Err() == nil {
+			ipcErr = fmt.Errorf("IPC server stopped unexpectedly")
+		}
+	case httpErr = <-httpDone:
+		httpDone = nil
+	}
 	cancel()
-	// Allow some time for IPC goroutine to exit cleanly
-	time.Sleep(100 * time.Millisecond)
-	return err
+	_ = httpServer.Shutdown(context.Background())
+	if ipcDone != nil {
+		ipcErr = <-ipcDone
+	}
+	if httpDone != nil {
+		httpErr = <-httpDone
+	}
+	if ipcErr != nil {
+		return fmt.Errorf("serve IPC: %w", ipcErr)
+	}
+	return httpErr
+}
+
+// newAINoteService is called once per daemon. Provider construction and any
+// executable/authentication checks are deferred until an enabled AI request.
+func newAINoteService(app *wire.App) *ai.Service {
+	limit := app.Cfg.GetInt("ai.notes.context_limit")
+	if limit <= 0 {
+		limit = 8
+	}
+	return ai.NewService(app.Store.Entries, func(name string) (ai.Provider, error) {
+		return resolveAIProvider(app.Cfg, name)
+	}, ai.ServiceOptions{
+		Enabled: app.Cfg.GetBool("ai.enabled"), DefaultNamespace: app.Cfg.GetString("namespace"),
+		DefaultTags: app.Cfg.GetStringSlice("default_tags"), ContextLimit: limit,
+		MaxInputBytes: 256 * 1024, MaxContextBytes: 256 * 1024,
+	})
 }
 
 // normalizeTags lowercases and trims tags, removing empties and duplicates while

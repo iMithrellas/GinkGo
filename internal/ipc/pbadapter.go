@@ -12,7 +12,9 @@ import (
 )
 
 // pbHandler adapts a Message handler to protobuf Request/Response.
-type pbHandler struct{ fn func(Message) Response }
+type pbHandler struct {
+	fn func(context.Context, Message) Response
+}
 
 func (h pbHandler) ProtoTypes() (proto.Message, proto.Message) {
 	return &pb.Request{}, &pb.Response{}
@@ -22,12 +24,26 @@ func (h pbHandler) Handle(ctx context.Context, req any) (any, error) {
 	preq := req.(*pb.Request)
 	m := Message{}
 	switch x := preq.Cmd.(type) {
+	case *pb.Request_AiNote:
+		if x.AiNote != nil {
+			n := x.AiNote
+			m.Name, m.Text, m.Namespace, m.Title = "ai.note", n.Text, n.Namespace, n.Title
+			m.Action, m.NoteID, m.Provider = n.Action, n.NoteId, n.Provider
+			m.Tags = append([]string(nil), n.Tags...)
+			if n.Deadline != nil {
+				if err := n.Deadline.CheckValid(); err != nil {
+					return &pb.Response{Ok: false, Msg: "invalid deadline"}, nil
+				}
+				m.Deadline = n.Deadline.AsTime()
+			}
+		}
 	case *pb.Request_NoteAdd:
 		m.Name = "note.add"
 		m.Title = x.NoteAdd.Title
 		m.Body = x.NoteAdd.Body
 		m.Tags = append([]string(nil), x.NoteAdd.Tags...)
 		m.Namespace = x.NoteAdd.Namespace
+		m.Provenance = fromPbEntry(&pb.Entry{Provenance: x.NoteAdd.Provenance}).Provenance
 	case *pb.Request_NoteEdit:
 		m.Name = "note.edit"
 		m.ID = x.NoteEdit.Id
@@ -36,6 +52,7 @@ func (h pbHandler) Handle(ctx context.Context, req any) (any, error) {
 		m.Body = x.NoteEdit.Body
 		m.Tags = append([]string(nil), x.NoteEdit.Tags...)
 		m.Namespace = x.NoteEdit.Namespace
+		m.Provenance = fromPbEntry(&pb.Entry{Provenance: x.NoteEdit.Provenance}).Provenance
 	case *pb.Request_NoteDelete:
 		m.Name = "note.delete"
 		m.ID = x.NoteDelete.Id
@@ -81,8 +98,8 @@ func (h pbHandler) Handle(ctx context.Context, req any) (any, error) {
 		}
 	}
 
-	r := h.fn(m)
-	presp := &pb.Response{Ok: r.OK, Msg: r.Msg}
+	r := h.fn(ctx, m)
+	presp := &pb.Response{Ok: r.OK, Msg: r.Msg, Action: r.Action, FallbackReason: r.FallbackReason}
 	if r.Entry != nil {
 		e := toPbEntry(*r.Entry)
 		presp.Entry = &e
@@ -123,7 +140,14 @@ func (h pbHandler) Handle(ctx context.Context, req any) (any, error) {
 }
 
 // PBHandler builds a transport.Handler around a Message handler.
-func PBHandler(fn func(Message) Response) transport.Handler { return pbHandler{fn: fn} }
+func PBHandler(fn func(Message) Response) transport.Handler {
+	return PBHandlerContext(func(_ context.Context, m Message) Response { return fn(m) })
+}
+
+// PBHandlerContext builds a transport.Handler that propagates the request context.
+func PBHandlerContext(fn func(context.Context, Message) Response) transport.Handler {
+	return pbHandler{fn: fn}
+}
 
 const timeRFC3339 = "2006-01-02T15:04:05Z07:00"
 

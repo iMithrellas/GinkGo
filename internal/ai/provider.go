@@ -59,6 +59,15 @@ var (
 	ErrAuthentication = errors.New("ai provider authentication failed")
 	// ErrModelUnavailable indicates explicit rejection of the selected model.
 	ErrModelUnavailable = errors.New("ai provider model unavailable")
+	// ErrGenerationRestricted means the provider refuses generation-only use.
+	ErrGenerationRestricted = errors.New("ai provider rejects generation-only use")
+	// ErrProviderUnavailable indicates an upstream availability failure.
+	ErrProviderUnavailable = errors.New("ai provider temporarily unavailable")
+	// ErrRateLimited indicates the provider rejected the request rate.
+	ErrRateLimited = errors.New("ai provider rate limited")
+	// ErrOpenCodeConsole indicates saved Console credentials cannot be reused
+	// without allowing remote policy/configuration to weaken local isolation.
+	ErrOpenCodeConsole = errors.New("opencode generation isolation does not support saved Console credentials; use a separate OpenCode profile without Console or an explicitly isolated wrapper")
 )
 
 func (o Options) normalized() (Options, error) {

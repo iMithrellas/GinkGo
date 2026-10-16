@@ -8,36 +8,44 @@ import (
 
 // Message is a minimal command payload sent from CLI to daemon.
 type Message struct {
-	Name        string   `json:"name"`
-	Args        []string `json:"args,omitempty"`
-	ID          string   `json:"id,omitempty"`
-	Title       string   `json:"title,omitempty"`
-	Body        string   `json:"body,omitempty"`
-	Tags        []string `json:"tags,omitempty"`
-	IfVersion   int64    `json:"if_version,omitempty"`
-	Namespace   string   `json:"namespace,omitempty"`
-	Since       string   `json:"since,omitempty"`
-	Until       string   `json:"until,omitempty"`
-	TagsAny     []string `json:"tags_any,omitempty"`
-	TagsAll     []string `json:"tags_all,omitempty"`
-	Limit       int      `json:"limit,omitempty"`
-	Cursor      string   `json:"cursor,omitempty"`
-	Reverse     bool     `json:"reverse,omitempty"`
-	IncludeBody bool     `json:"include_body,omitempty"`
-	Remote      string   `json:"remote,omitempty"`
-	SortBy      string   `json:"sort_by,omitempty"`
+	Name        string          `json:"name"`
+	Args        []string        `json:"args,omitempty"`
+	ID          string          `json:"id,omitempty"`
+	Title       string          `json:"title,omitempty"`
+	Body        string          `json:"body,omitempty"`
+	Tags        []string        `json:"tags,omitempty"`
+	IfVersion   int64           `json:"if_version,omitempty"`
+	Namespace   string          `json:"namespace,omitempty"`
+	Since       string          `json:"since,omitempty"`
+	Until       string          `json:"until,omitempty"`
+	TagsAny     []string        `json:"tags_any,omitempty"`
+	TagsAll     []string        `json:"tags_all,omitempty"`
+	Limit       int             `json:"limit,omitempty"`
+	Cursor      string          `json:"cursor,omitempty"`
+	Reverse     bool            `json:"reverse,omitempty"`
+	IncludeBody bool            `json:"include_body,omitempty"`
+	Remote      string          `json:"remote,omitempty"`
+	SortBy      string          `json:"sort_by,omitempty"`
+	Text        string          `json:"text,omitempty"`
+	Provider    string          `json:"provider,omitempty"`
+	Action      string          `json:"action,omitempty"`
+	NoteID      string          `json:"note_id,omitempty"`
+	Deadline    time.Time       `json:"deadline,omitempty"`
+	Provenance  *api.Provenance `json:"provenance,omitempty"`
 }
 
 // Response is a minimal daemon reply.
 type Response struct {
-	OK         bool          `json:"ok"`
-	Msg        string        `json:"msg,omitempty"`
-	Entry      *api.Entry    `json:"entry,omitempty"`
-	Entries    []api.Entry   `json:"entries,omitempty"`
-	Queue      []QueueRemote `json:"queue,omitempty"`
-	Namespaces []string      `json:"namespaces,omitempty"`
-	Tags       []api.TagStat `json:"tags,omitempty"`
-	Page       api.Page      `json:"page,omitempty"`
+	OK             bool          `json:"ok"`
+	Msg            string        `json:"msg,omitempty"`
+	Entry          *api.Entry    `json:"entry,omitempty"`
+	Entries        []api.Entry   `json:"entries,omitempty"`
+	Queue          []QueueRemote `json:"queue,omitempty"`
+	Namespaces     []string      `json:"namespaces,omitempty"`
+	Tags           []api.TagStat `json:"tags,omitempty"`
+	Page           api.Page      `json:"page,omitempty"`
+	Action         string        `json:"action,omitempty"`
+	FallbackReason string        `json:"fallback_reason,omitempty"`
 }
 
 type QueueEvent struct {

@@ -21,7 +21,8 @@ func RenderDefaultTOML() string {
 			topLevel = append(topLevel, o)
 			continue
 		}
-		parts := strings.SplitN(o.Key, ".", 2)
+		index := strings.LastIndex(o.Key, ".")
+		parts := []string{o.Key[:index], o.Key[index+1:]}
 		section := parts[0]
 		if _, ok := sections[section]; !ok {
 			sectionOrder = append(sectionOrder, section)
@@ -67,7 +68,6 @@ func UpdateTOML(existing string) (string, bool) {
 	}
 
 	existingKeys := make(map[string]bool)
-	prefixSeen := make(map[string]bool)
 	currentSection := ""
 	out := make([]string, 0, len(lines))
 	changed := false
@@ -93,11 +93,6 @@ func UpdateTOML(existing string) (string, bool) {
 			fullKey = currentSection + "." + key
 		}
 		existingKeys[fullKey] = true
-		for prefix := range mapPrefixes {
-			if fullKey == prefix || strings.HasPrefix(fullKey, prefix+".") {
-				prefixSeen[prefix] = true
-			}
-		}
 		if !isKnownKey(fullKey, known, mapPrefixes) {
 			indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
 			out = append(out, indent+"# OUTDATED: option removed from config schema")
@@ -113,14 +108,15 @@ func UpdateTOML(existing string) (string, bool) {
 	sectionOrder := make([]string, 0)
 	for _, o := range opts {
 		if _, ok := o.Default.(map[string]any); ok {
-			if prefixSeen[o.Key] {
-				continue
-			}
+			// Dynamic tables need no literal empty inline table: writing one
+			// seals the table and prevents adding [ai.providers.<name>] later.
+			continue
 		} else if existingKeys[o.Key] {
 			continue
 		}
 		if strings.Contains(o.Key, ".") {
-			parts := strings.SplitN(o.Key, ".", 2)
+			index := strings.LastIndex(o.Key, ".")
+			parts := []string{o.Key[:index], o.Key[index+1:]}
 			section := parts[0]
 			if _, ok := missingSections[section]; !ok {
 				sectionOrder = append(sectionOrder, section)
@@ -136,18 +132,40 @@ func UpdateTOML(existing string) (string, bool) {
 	}
 
 	if len(missingTop) > 0 || len(missingSections) > 0 {
-		out = append(out, "", "# Added by config update")
+		// Root keys must precede section headers, not be appended inside the
+		// last user section. Existing section headers must not be repeated.
+		var root []string
 		for _, o := range missingTop {
-			writeTOMLOptionLines(&out, o.Key, o.Default, o.Comment)
+			writeTOMLOptionLines(&root, o.Key, o.Default, o.Comment)
 		}
+		out = append(root, out...)
 		for _, section := range sectionOrder {
 			opts := missingSections[section]
 			if len(opts) == 0 {
 				continue
 			}
-			out = append(out, "["+section+"]")
+			var additions []string
 			for _, o := range opts {
-				writeTOMLOptionLines(&out, o.Key, o.Default, o.Comment)
+				writeTOMLOptionLines(&additions, o.Key, o.Default, o.Comment)
+			}
+			start := -1
+			end := len(out)
+			for i, line := range out {
+				trim := strings.TrimSpace(line)
+				if trim == "["+section+"]" {
+					start = i
+					continue
+				}
+				if start >= 0 && strings.HasPrefix(trim, "[") {
+					end = i
+					break
+				}
+			}
+			if start < 0 {
+				out = append(out, "", "["+section+"]")
+				out = append(out, additions...)
+			} else {
+				out = append(append(append([]string(nil), out[:end]...), additions...), out[end:]...)
 			}
 		}
 		changed = true
@@ -190,7 +208,7 @@ func writeTOMLOption(b *strings.Builder, key string, value any, comment string) 
 	switch v := value.(type) {
 	case string:
 		b.WriteString(fmt.Sprintf("%s = \"%s\"\n\n", key, v))
-	case bool, int, int64:
+	case bool, int, int64, float32, float64:
 		b.WriteString(fmt.Sprintf("%s = %v\n\n", key, v))
 	case []string:
 		b.WriteString(fmt.Sprintf("%s = [", key))
@@ -203,7 +221,7 @@ func writeTOMLOption(b *strings.Builder, key string, value any, comment string) 
 		b.WriteString("]\n\n")
 	case map[string]any:
 		if len(v) == 0 {
-			b.WriteString(fmt.Sprintf("%s = {}\n\n", key))
+			b.WriteString(fmt.Sprintf("# Add named tables for %s below.\n\n", key))
 			return
 		}
 		keys := make([]string, 0, len(v))
@@ -229,7 +247,7 @@ func writeTOMLOptionLines(lines *[]string, key string, value any, comment string
 	switch v := value.(type) {
 	case string:
 		*lines = append(*lines, fmt.Sprintf("%s = \"%s\"", key, v), "")
-	case bool, int, int64:
+	case bool, int, int64, float32, float64:
 		*lines = append(*lines, fmt.Sprintf("%s = %v", key, v), "")
 	case []string:
 		var b strings.Builder

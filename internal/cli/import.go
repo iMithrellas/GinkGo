@@ -106,11 +106,12 @@ func importOne(cmd *cobra.Command, e api.Entry) error {
 		return err
 	}
 	m := ipc.Message{
-		Name:      "note.add",
-		Title:     e.Title,
-		Body:      e.Body,
-		Tags:      e.Tags,
-		Namespace: e.Namespace,
+		Name:       "note.add",
+		Title:      e.Title,
+		Body:       e.Body,
+		Tags:       e.Tags,
+		Namespace:  e.Namespace,
+		Provenance: e.Provenance,
 	}
 	resp, err := ipc.Request(cmd.Context(), sock, m)
 	if err != nil {

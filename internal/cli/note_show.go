@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -13,6 +14,7 @@ import (
 func newNoteShowCmd() *cobra.Command {
 	var outputMode string
 	var headers bool
+	var original bool
 	cmd := &cobra.Command{
 		Use:   "show <id>",
 		Short: "Display a note",
@@ -38,6 +40,25 @@ func newNoteShowCmd() *cobra.Command {
 			if !ok || mode == present.ModeTUI { // tui not applicable
 				return fmt.Errorf("invalid --output: %s", outputMode)
 			}
+			if original {
+				if outputMode == "json" || outputMode == "ndjson" {
+					return json.NewEncoder(cmd.OutOrStdout()).Encode(resp.Entry.Provenance)
+				}
+				if resp.Entry.Provenance == nil {
+					return nil
+				}
+				for i, source := range resp.Entry.Provenance.Sources {
+					if i > 0 {
+						if _, err := fmt.Fprintln(cmd.OutOrStdout()); err != nil {
+							return err
+						}
+					}
+					if _, err := fmt.Fprint(cmd.OutOrStdout(), source.OriginalText); err != nil {
+						return err
+					}
+				}
+				return nil
+			}
 			opts := present.Options{Mode: mode, JSONIndent: false, Headers: headers}
 			return present.RenderEntry(cmd.Context(), cmd.OutOrStdout(), *resp.Entry, opts)
 		},
@@ -47,5 +68,6 @@ func newNoteShowCmd() *cobra.Command {
 		return []string{"plain", "pretty", "json", "ndjson"}, cobra.ShellCompDirectiveNoFileComp
 	})
 	cmd.Flags().BoolVar(&headers, "headers", false, "print header row in plain mode")
+	cmd.Flags().BoolVar(&original, "original", false, "display original source inputs instead of cleaned content")
 	return cmd
 }

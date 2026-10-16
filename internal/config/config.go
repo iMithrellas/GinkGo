@@ -12,8 +12,6 @@ import (
 	"github.com/spf13/viper"
 )
 
-// applyDefaults seeds Viper with defaults defined in GetConfigOptions.
-// This centralizes default values and descriptions in one place.
 func applyDefaults(v *viper.Viper) {
 	for _, o := range GetConfigOptions() {
 		v.SetDefault(o.Key, o.Default)
@@ -36,18 +34,14 @@ func Load(ctx context.Context, v *viper.Viper) error {
 		v.AddConfigPath(".")
 	}
 
-	// Apply centralized defaults (lowest precedence)
 	applyDefaults(v)
 
-	// Read config file if present (overrides defaults)
 	_ = v.ReadInConfig()
 
-	// Environment variables: GINKGO_* (highest among these sources)
 	v.SetEnvPrefix("ginkgo")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 
-	// Normalize a few dependent values post-merge
 	if v.GetString("data_dir") == "" {
 		v.Set("data_dir", defaultDataDir())
 	}
@@ -74,7 +68,6 @@ func Load(ctx context.Context, v *viper.Viper) error {
 	return nil
 }
 
-// defaultDataDir resolves default data dir: $XDG_DATA_HOME/ginkgo or ~/.local/share/ginkgo
 func defaultDataDir() string {
 	if xdg := os.Getenv("XDG_DATA_HOME"); xdg != "" {
 		return filepath.Join(xdg, "ginkgo")
@@ -108,7 +101,6 @@ func DefaultDBPath() string {
 // GetConfigOptions returns the default configuration options and their meanings.
 func GetConfigOptions() []ConfigOption {
 	return []ConfigOption{
-		// Core paths and conventions
 		{Key: "data_dir", Default: defaultDataDir(), Comment: "Directory for local state; DB is data_dir/ginkgo.db"},
 		{Key: "namespace", Default: "default", Comment: "Default namespace used when none is specified"},
 		{Key: "default_tags", Default: []string{}, Comment: "Tags applied when creating a note without explicit tags"},
@@ -124,6 +116,11 @@ func GetConfigOptions() []ConfigOption {
 		{Key: "notifications.enabled", Default: false, Comment: "Enable reminder notifications"},
 		{Key: "notifications.every_days", Default: 3, Comment: "Reminder cadence in days"},
 		{Key: "editor.delete_empty", Default: true, Comment: "Delete note if editor exits with no content"},
+		{Key: "ai.enabled", Default: false, Comment: "Opt in to AI notes; disabled requests save raw fallback notes without launching providers"},
+		{Key: "ai.provider", Default: "opencode", Comment: "Default configured provider name"},
+		{Key: "ai.timeout", Default: "120s", Comment: "Provider execution timeout; invalid provider settings fall back to raw notes"},
+		{Key: "ai.notes.context_limit", Default: 8, Comment: "Maximum recent/relevant notes supplied as context"},
+		{Key: "ai.providers", Default: map[string]any{}, Comment: "Named [ai.providers.<name>] tables: type=opencode|cli|openai-compatible; executable/model/args/base_url/api_key_env/ephemeral_auth. OpenCode saved auth needs >=2.0.25; ephemeral_auth=true supports API-key mode on 2.0.19"},
 	}
 }
 
@@ -133,7 +130,6 @@ func ResolveDBPath(v *viper.Viper) string {
 	if dir == "" {
 		dir = defaultDataDir()
 	}
-	// Expand ~ for convenience
 	if len(dir) > 0 && dir[0] == '~' {
 		if home, err := os.UserHomeDir(); err == nil {
 			dir = filepath.Join(home, dir[1:])

@@ -32,8 +32,18 @@ message Provenance {
   repeated Source sources = 1;
 }
 
-message NoteAdd { string title = 1; string body = 2; repeated string tags = 3; string namespace = 4; }
-message NoteEdit { string id = 1; int64 if_version = 2; string title = 3; string body = 4; repeated string tags = 5; string namespace = 6; }
+message NoteAdd { string title = 1; string body = 2; repeated string tags = 3; string namespace = 4; Provenance provenance = 5; }
+message NoteEdit { string id = 1; int64 if_version = 2; string title = 3; string body = 4; repeated string tags = 5; string namespace = 6; Provenance provenance = 7; }
+message AINote {
+  string text = 1;
+  string namespace = 2;
+  string title = 3;
+  string action = 4;
+  string note_id = 5;
+  repeated string tags = 6;
+  string provider = 7;
+  google.protobuf.Timestamp deadline = 8;
+}
 message NoteDelete { string id = 1; string namespace = 2; }
 message NoteShow { string id = 1; string namespace = 2; }
 
@@ -70,6 +80,7 @@ message Request {
     NamespaceList namespace_list = 10;
     TagList tag_list = 11;
     NamespaceDelete namespace_delete = 12;
+    AINote ai_note = 13;
   }
 }
 
@@ -88,6 +99,8 @@ message Response {
   repeated string namespaces = 6;
   repeated TagStat tags = 7;
   Page page = 8;
+  string action = 9;
+  string fallback_reason = 10;
 }
 
 message Page {
