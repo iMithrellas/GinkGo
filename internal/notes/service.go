@@ -109,17 +109,14 @@ func (s *Service) ExpandCASWithSource(ctx context.Context, current api.Entry, ti
 		return api.Entry{}, err
 	}
 	updated := current
+	updated.UpdatedAt = time.Now().UTC()
 	if title != "" {
 		updated.Title = title
 	}
 	updated.Body = current.Body
-	if updated.Body != "" {
-		updated.Body += "\n\n"
-	}
-	updated.Body += addition
+	updated.Body = appendDatedSection(updated.Body, addition, updated.UpdatedAt)
 	updated.Tags = NormalizeTags(append(append([]string(nil), current.Tags...), tags...))
 	updated.Version = current.Version + 1
-	updated.UpdatedAt = time.Now().UTC()
 	updated.Provenance = &api.Provenance{}
 	if current.Provenance != nil {
 		updated.Provenance.Sources = append([]api.Source(nil), current.Provenance.Sources...)
@@ -133,4 +130,45 @@ func (s *Service) ExpandCASWithSource(ctx context.Context, current api.Entry, ti
 		return api.Entry{}, fmt.Errorf("expand note: %w", err)
 	}
 	return result, nil
+}
+
+// appendDatedSection keeps the existing body byte-for-byte and places each
+// expansion under a minute-resolution UTC heading. Consecutive same-minute
+// expansions share the final timestamp heading instead of duplicating it.
+func appendDatedSection(body, addition string, at time.Time) string {
+	timestamp := at.UTC().Format("2006-01-02 15:04 UTC")
+	separator := ""
+	if body != "" {
+		separator = "\n\n"
+	}
+	if !hasFinalTimestampHeading(body, timestamp) {
+		return body + separator + "## " + timestamp + "\n\n" + addition
+	}
+	return body + separator + addition
+}
+
+func hasFinalTimestampHeading(body, timestamp string) bool {
+	inFence := false
+	lastHeading := ""
+	for _, line := range strings.Split(body, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
+			inFence = !inFence
+			continue
+		}
+		if inFence || len(trimmed) < 3 {
+			continue
+		}
+		if trimmed[0] != '#' {
+			continue
+		}
+		level := 0
+		for level < len(trimmed) && trimmed[level] == '#' {
+			level++
+		}
+		if level >= 1 && level <= 6 && level < len(trimmed) && trimmed[level] == ' ' {
+			lastHeading = trimmed
+		}
+	}
+	return lastHeading == "## "+timestamp
 }

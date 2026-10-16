@@ -75,6 +75,10 @@ discussion's "post gress" → "PostgreSQL"). Uncertain names should be retained.
 The saved AI note can use corrected terminology while `note show NOTE_ID --original`
 still displays the exact transcript. Raw mode and raw fallback retain the transcript
 verbatim; terminology correction quality depends on the selected model.
+When AI expands an existing note, GinkGo appends the addition under a
+`## YYYY-MM-DD HH:MM UTC` subsection using the daemon's UTC time. Same-minute
+additions share the current timestamp subsection; prior note text and provenance
+remain intact.
 
 ## Endpointing and resource bounds
 

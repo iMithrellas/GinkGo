@@ -122,8 +122,8 @@ func TestNoteExpansionAppendsAndSnapshotsBaselineOnce(t *testing.T) {
 		if result.Action != "expand_note" || result.FallbackReason != "" || result.Entry.ID != initial.ID || result.Entry.Namespace != initial.Namespace || !result.Entry.CreatedAt.Equal(initial.CreatedAt) || result.Entry.Version != int64(index+2) {
 			t.Fatalf("bad expansion: %#v", result)
 		}
-		if !strings.HasPrefix(result.Entry.Body, initial.Body+"\n\nNew material") {
-			t.Fatal("old body lost")
+		if !strings.HasPrefix(result.Entry.Body, initial.Body+"\n\n## "+result.Entry.UpdatedAt.UTC().Format("2006-01-02 15:04 UTC")+"\n\nNew material") {
+			t.Fatalf("dated append lost old body or heading: %q", result.Entry.Body)
 		}
 		if len(result.Entry.Provenance.Sources) != index+2 {
 			t.Fatal("baseline duplicated")
@@ -453,8 +453,8 @@ func TestVoiceExpansionRetainsTextBaselineAndEarlierSources(t *testing.T) {
 		if result.FallbackReason != "" {
 			t.Fatal(result)
 		}
-		if result.Entry.Body != initial.Body+strings.Repeat("\n\n"+addition, index+1) {
-			t.Fatal("terminology correction rewrote existing body or lost new material")
+		if !strings.HasPrefix(result.Entry.Body, initial.Body+"\n\n## "+result.Entry.UpdatedAt.UTC().Format("2006-01-02 15:04 UTC")+"\n\n") || !strings.Contains(result.Entry.Body, addition) {
+			t.Fatal("terminology correction rewrote existing body or lost dated material")
 		}
 		assertSource(t, result.Entry, 0, initial.Body)
 		assertVoiceSource(t, result.Entry, index+1, input, before)

@@ -18,6 +18,11 @@ provenance; raw mode/fallback remains verbatim, explicit title/tag overrides kee
 their existing behavior, and expansion still appends without rewriting old body
 text. No extra retrieval, model call or configuration is needed.
 
+Each expansion is stored under an application-generated `## YYYY-MM-DD HH:MM UTC`
+subsection. The minute-resolution timestamp uses the daemon's UTC clock;
+consecutive same-minute expansions share the final timestamp subsection. The model
+returns only the addition, not a date/time heading, so user input cannot choose it.
+
 # AI note topic-tag policy
 
 Successful AI creation or expansion requires a **nonempty final normalized tag

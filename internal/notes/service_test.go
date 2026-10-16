@@ -3,6 +3,7 @@ package notes
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -34,5 +35,31 @@ func TestCreateSourceMetadataCannotReplaceOriginalOrIdentity(t *testing.T) {
 				t.Fatalf("invalid source capture: %#v", source)
 			}
 		})
+	}
+}
+
+func TestAppendDatedSectionPreservesBodyAndGroupsSameMinute(t *testing.T) {
+	firstTime := time.Date(2026, 10, 16, 23, 30, 0, 0, time.FixedZone("UTC-7", -7*60*60))
+	first := appendDatedSection("Existing body\nwith exact spacing  ", "First addition", firstTime)
+	wantHeading := "## 2026-10-17 06:30 UTC"
+	if !strings.HasPrefix(first, "Existing body\nwith exact spacing  \n\n"+wantHeading+"\n\nFirst addition") {
+		t.Fatalf("unexpected dated append: %q", first)
+	}
+	second := appendDatedSection(first, "Second addition", firstTime.Add(30*time.Second))
+	if strings.Count(second, wantHeading) != 1 || !strings.HasSuffix(second, "First addition\n\nSecond addition") {
+		t.Fatalf("same-minute addition should share its subsection: %q", second)
+	}
+	nextMinute := appendDatedSection(second, "Third addition", firstTime.Add(time.Minute))
+	if !strings.HasSuffix(nextMinute, "## 2026-10-17 06:31 UTC\n\nThird addition") {
+		t.Fatalf("new minute should get a new subsection: %q", nextMinute)
+	}
+}
+
+func TestAppendDatedSectionDoesNotReuseHeadingInsideCodeFence(t *testing.T) {
+	at := time.Date(2026, 10, 16, 0, 0, 0, 0, time.UTC)
+	body := "Example:\n```md\n## 2026-10-16\n```"
+	got := appendDatedSection(body, "Addition", at)
+	if !strings.HasSuffix(got, "\n\n## 2026-10-16 00:00 UTC\n\nAddition") {
+		t.Fatalf("code sample heading was treated as a section: %q", got)
 	}
 }
