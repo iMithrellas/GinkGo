@@ -7,6 +7,8 @@ import (
 
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
+
+	"github.com/mithrel/ginkgo/internal/ai"
 )
 
 func TestAIDefaultsAndNestedTOML(t *testing.T) {
@@ -29,6 +31,7 @@ executable = "/usr/local/bin/wrapper"
 	require.Equal(t, "opencode", v.GetString("ai.provider"))
 	require.Equal(t, "120s", v.GetString("ai.timeout"))
 	require.Equal(t, 8, v.GetInt("ai.notes.context_limit"))
+	require.Equal(t, ai.DefaultNoteSystemPrompt, v.GetString("ai.notes.system_prompt"))
 	require.True(t, v.GetBool("ai.providers.opencode.ephemeral_auth"))
 	require.Equal(t, []string{"--json"}, v.GetStringSlice("ai.providers.wrapper.args"))
 	updated, _ := UpdateTOML(text)
@@ -36,6 +39,23 @@ executable = "/usr/local/bin/wrapper"
 	v.SetConfigType("toml")
 	require.NoError(t, v.ReadConfig(strings.NewReader(updated)))
 	require.Equal(t, "openai/gpt-5", v.GetString("ai.providers.opencode.model"))
+}
+
+func TestRenderDefaultTOMLGroupsOptionsWithoutBlankLines(t *testing.T) {
+	text := RenderDefaultTOML()
+	for _, section := range []string{"[ai]", "[ai.notes]"} {
+		start := strings.Index(text, section+"\n")
+		require.NotEqual(t, -1, start, "missing section %s", section)
+		rest := text[start+len(section)+1:]
+		end := strings.Index(rest, "\n\n[")
+		if end < 0 {
+			end = len(rest)
+		}
+		block := strings.TrimRight(rest[:end], "\n")
+		require.NotContains(t, block, "\n\n", "blank line inside %s block", section)
+	}
+	text = strings.ReplaceAll(text, "\n", " ")
+	require.Contains(t, text, `system_prompt = "Return exactly one JSON object`)
 }
 
 func TestAIConfigUpdateExistingNestedSections(t *testing.T) {
@@ -55,10 +75,12 @@ api_key_env = "TEST_API_KEY"
 	v.SetConfigType("toml")
 	require.NoError(t, v.ReadConfig(strings.NewReader(updated)))
 	require.Equal(t, 3, v.GetInt("ai.notes.context_limit"))
+	require.Equal(t, ai.DefaultNoteSystemPrompt, v.GetString("ai.notes.system_prompt"))
 	require.Equal(t, "opencode", v.GetString("ai.provider"))
 	require.Equal(t, "TEST_API_KEY", v.GetString("ai.providers.test.api_key_env"))
 	_, changed = UpdateTOML(updated)
 	require.False(t, changed, "update must not repeat sections or dynamic maps")
+	require.NotContains(t, updated, "context_limit = 3\n\n# System prompt")
 }
 
 func TestAIDisabledConfigDoesNotValidateProviders(t *testing.T) {

@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -36,6 +37,9 @@ func RenderDefaultTOML() string {
 
 	for _, o := range topLevel {
 		writeTOMLOption(&b, o.Key, o.Default, o.Comment)
+	}
+	if len(topLevel) > 0 && len(sectionOrder) > 0 {
+		b.WriteString("\n")
 	}
 
 	for _, section := range sectionOrder {
@@ -138,6 +142,9 @@ func UpdateTOML(existing string) (string, bool) {
 		for _, o := range missingTop {
 			writeTOMLOptionLines(&root, o.Key, o.Default, o.Comment)
 		}
+		if len(root) > 0 && len(out) > 0 {
+			root = append(root, "")
+		}
 		out = append(root, out...)
 		for _, section := range sectionOrder {
 			opts := missingSections[section]
@@ -164,8 +171,13 @@ func UpdateTOML(existing string) (string, bool) {
 			if start < 0 {
 				out = append(out, "", "["+section+"]")
 				out = append(out, additions...)
+				out = append(out, "")
 			} else {
-				out = append(append(append([]string(nil), out[:end]...), additions...), out[end:]...)
+				insert := append([]string(nil), additions...)
+				if end < len(out) && strings.TrimSpace(out[end]) != "" {
+					insert = append(insert, "")
+				}
+				out = append(append(append([]string(nil), out[:end]...), insert...), out[end:]...)
 			}
 		}
 		changed = true
@@ -207,21 +219,21 @@ func writeTOMLOption(b *strings.Builder, key string, value any, comment string) 
 	}
 	switch v := value.(type) {
 	case string:
-		b.WriteString(fmt.Sprintf("%s = \"%s\"\n\n", key, v))
+		b.WriteString(fmt.Sprintf("%s = %s\n", key, strconv.Quote(v)))
 	case bool, int, int64, float32, float64:
-		b.WriteString(fmt.Sprintf("%s = %v\n\n", key, v))
+		b.WriteString(fmt.Sprintf("%s = %v\n", key, v))
 	case []string:
 		b.WriteString(fmt.Sprintf("%s = [", key))
 		for i, s := range v {
 			if i > 0 {
 				b.WriteString(", ")
 			}
-			b.WriteString(fmt.Sprintf("\"%s\"", s))
+			b.WriteString(strconv.Quote(s))
 		}
-		b.WriteString("]\n\n")
+		b.WriteString("]\n")
 	case map[string]any:
 		if len(v) == 0 {
-			b.WriteString(fmt.Sprintf("# Add named tables for %s below.\n\n", key))
+			b.WriteString(fmt.Sprintf("# Add named tables for %s below.\n", key))
 			return
 		}
 		keys := make([]string, 0, len(v))
@@ -234,9 +246,9 @@ func writeTOMLOption(b *strings.Builder, key string, value any, comment string) 
 			if i > 0 {
 				b.WriteString(", ")
 			}
-			b.WriteString(fmt.Sprintf("%s = \"%v\"", k, v[k]))
+			b.WriteString(fmt.Sprintf("%s = %s", k, strconv.Quote(fmt.Sprint(v[k]))))
 		}
-		b.WriteString("}\n\n")
+		b.WriteString("}\n")
 	}
 }
 
@@ -246,9 +258,9 @@ func writeTOMLOptionLines(lines *[]string, key string, value any, comment string
 	}
 	switch v := value.(type) {
 	case string:
-		*lines = append(*lines, fmt.Sprintf("%s = \"%s\"", key, v), "")
+		*lines = append(*lines, fmt.Sprintf("%s = %s", key, strconv.Quote(v)))
 	case bool, int, int64, float32, float64:
-		*lines = append(*lines, fmt.Sprintf("%s = %v", key, v), "")
+		*lines = append(*lines, fmt.Sprintf("%s = %v", key, v))
 	case []string:
 		var b strings.Builder
 		b.WriteString(fmt.Sprintf("%s = [", key))
@@ -256,13 +268,13 @@ func writeTOMLOptionLines(lines *[]string, key string, value any, comment string
 			if i > 0 {
 				b.WriteString(", ")
 			}
-			b.WriteString(fmt.Sprintf("\"%s\"", s))
+			b.WriteString(strconv.Quote(s))
 		}
 		b.WriteString("]")
-		*lines = append(*lines, b.String(), "")
+		*lines = append(*lines, b.String())
 	case map[string]any:
 		if len(v) == 0 {
-			*lines = append(*lines, fmt.Sprintf("%s = {}", key), "")
+			*lines = append(*lines, fmt.Sprintf("%s = {}", key))
 			return
 		}
 		keys := make([]string, 0, len(v))
@@ -276,9 +288,9 @@ func writeTOMLOptionLines(lines *[]string, key string, value any, comment string
 			if i > 0 {
 				b.WriteString(", ")
 			}
-			b.WriteString(fmt.Sprintf("%s = \"%v\"", k, v[k]))
+			b.WriteString(fmt.Sprintf("%s = %s", k, strconv.Quote(fmt.Sprint(v[k]))))
 		}
 		b.WriteString("}")
-		*lines = append(*lines, b.String(), "")
+		*lines = append(*lines, b.String())
 	}
 }

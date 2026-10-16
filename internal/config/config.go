@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"github.com/spf13/viper"
+
+	"github.com/mithrel/ginkgo/internal/ai"
 )
 
 func applyDefaults(v *viper.Viper) {
@@ -135,6 +137,7 @@ func GetConfigOptions() []ConfigOption {
 		{Key: "ai.provider", Default: "opencode", Comment: "Default configured provider name"},
 		{Key: "ai.timeout", Default: "120s", Comment: "Provider execution timeout; invalid provider settings fall back to raw notes"},
 		{Key: "ai.notes.context_limit", Default: 8, Comment: "Maximum recent/relevant notes supplied as context"},
+		{Key: "ai.notes.system_prompt", Default: ai.DefaultNoteSystemPrompt, Comment: "System prompt controlling AI note cleanup, terminology correction and formatting"},
 		{Key: "ai.providers", Default: map[string]any{}, Comment: "Named [ai.providers.<name>] tables: type=opencode|opencode-session|cli|openai-compatible; executable/model/args/base_url/api_key_env/ephemeral_auth. OpenCode saved auth and session mode need >=2.0.25; stateless ephemeral_auth=true supports API-key mode on 2.0.19"},
 	}
 }

@@ -1,3 +1,23 @@
+# AI note terminology correction
+
+AI note prompts ask for contextual correction of jargon, technical names and
+acronyms in generated titles, new body material and proposed tags. A bounded
+`input_kind` (`text` or `voice`) tells the model when the input is an STT transcript
+so it can consider phonetic substitutions, word boundaries and spoken acronyms.
+Capture metadata, model paths and earlier originals are not added to the prompt.
+
+The model uses the input and existing bounded note/tag context, preferring relevant
+local spellings. Familiar canonical spellings are allowed when the intended term
+is clear; ambiguous or unfamiliar names should be retained rather than guessed.
+Literal code, identifiers, commands, paths, URLs, versions and numbers are to be
+preserved, along with language, meaning, negation and uncertainty. These are model
+instructions, not deterministic spell-check rules or measured accuracy guarantees.
+
+Corrections affect AI-generated note content only. Exact input remains in
+provenance; raw mode/fallback remains verbatim, explicit title/tag overrides keep
+their existing behavior, and expansion still appends without rewriting old body
+text. No extra retrieval, model call or configuration is needed.
+
 # AI note topic-tag policy
 
 Successful AI creation or expansion requires a **nonempty final normalized tag

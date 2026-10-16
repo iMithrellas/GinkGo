@@ -69,6 +69,13 @@ through raw fallback, and saved entries preserve voice provenance. Remote AI
 receives the selected transcript and bounded note/tag context; sync encryption
 does not protect this separate request.
 
+AI mode asks the model to correct likely transcription errors in jargon,
+technical names and acronyms using the supplied context (for example, a database
+discussion's "post gress" → "PostgreSQL"). Uncertain names should be retained.
+The saved AI note can use corrected terminology while `note show NOTE_ID --original`
+still displays the exact transcript. Raw mode and raw fallback retain the transcript
+verbatim; terminology correction quality depends on the selected model.
+
 ## Endpointing and resource bounds
 
 - RMS energy is measured in 10ms frames, with up to 200ms pre-roll and 150ms of

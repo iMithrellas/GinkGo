@@ -417,24 +417,34 @@ func TestVoiceRawFallbackPreservesCaptureMetadata(t *testing.T) {
 
 func TestVoiceAICreatePreservesTranscriptSeparately(t *testing.T) {
 	repo := noteTestRepo(t)
-	service := fixedNoteService(repo, `{"action":"create_note","title":"Clean voice note","body":"Cleaned voice body","tags":["topic"]}`, ServiceOptions{Enabled: true})
+	const original = "  use post gress 16 and cube er netties; keep db_host unchanged.\n"
+	const corrected = "Use PostgreSQL 16 and Kubernetes; keep db_host unchanged."
+	service := fixedNoteService(repo, `{"action":"create_note","title":"PostgreSQL and Kubernetes","body":"Use PostgreSQL 16 and Kubernetes; keep db_host unchanged.","tags":["postgresql","kubernetes"]}`, ServiceOptions{Enabled: true})
 	before := time.Now()
-	result, err := service.Note(context.Background(), NoteRequest{Text: " exact spoken input ", Action: "create", Source: voiceMetadata()}, "")
+	result, err := service.Note(context.Background(), NoteRequest{Text: original, Action: "create", Source: voiceMetadata()}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Entry.Body != "Cleaned voice body" || result.FallbackReason != "" {
+	if result.Entry.Body != corrected || result.FallbackReason != "" {
 		t.Fatal(result)
 	}
-	assertVoiceSource(t, result.Entry, 0, " exact spoken input ", before)
+	stored, err := repo.GetEntry(context.Background(), result.Entry.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Body != corrected {
+		t.Fatal("corrected note body was not stored")
+	}
+	assertVoiceSource(t, stored, 0, original, before)
 }
 
 func TestVoiceExpansionRetainsTextBaselineAndEarlierSources(t *testing.T) {
 	repo := noteTestRepo(t)
-	initial := seedNote(t, repo, "voice-target", "voice", " Exact preexisting text body ")
-	service := fixedNoteService(repo, `{"action":"expand_note","target_id":"voice-target","title":"Voice additions","body":"New voice material"}`, ServiceOptions{Enabled: true, DefaultNamespace: "voice"})
+	initial := seedNote(t, repo, "voice-target", "voice", " Existing spelling stays: post gress ")
+	const addition = "Use PostgreSQL for the database."
+	service := fixedNoteService(repo, `{"action":"expand_note","target_id":"voice-target","title":"PostgreSQL additions","body":"Use PostgreSQL for the database."}`, ServiceOptions{Enabled: true, DefaultNamespace: "voice"})
 	var previous []api.Source
-	for index, input := range []string{" first spoken transcript ", " second spoken transcript "} {
+	for index, input := range []string{" use post gress for the database ", " use postgress for the database "} {
 		before := time.Now()
 		result, err := service.Note(context.Background(), NoteRequest{Text: input, Action: "expand", NoteID: initial.ID, Source: voiceMetadata()}, "")
 		if err != nil {
@@ -442,6 +452,9 @@ func TestVoiceExpansionRetainsTextBaselineAndEarlierSources(t *testing.T) {
 		}
 		if result.FallbackReason != "" {
 			t.Fatal(result)
+		}
+		if result.Entry.Body != initial.Body+strings.Repeat("\n\n"+addition, index+1) {
+			t.Fatal("terminology correction rewrote existing body or lost new material")
 		}
 		assertSource(t, result.Entry, 0, initial.Body)
 		assertVoiceSource(t, result.Entry, index+1, input, before)
@@ -452,6 +465,76 @@ func TestVoiceExpansionRetainsTextBaselineAndEarlierSources(t *testing.T) {
 			t.Fatal("earlier voice sources changed")
 		}
 		previous = append([]api.Source(nil), result.Entry.Provenance.Sources...)
+	}
+}
+
+func TestNotePromptSharesInputKindWithoutCaptureMetadata(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		source *api.Source
+		kind   string
+	}{
+		{"typed input", nil, "text"},
+		{"voice transcript", voiceMetadata(), "voice"},
+		{"unknown kind", &api.Source{Kind: "untrusted-kind", OriginalText: "private-original", STTModel: "/private/model.bin"}, "text"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := noteTestRepo(t)
+			const original = "  post gress database\n"
+			calls := 0
+			service := NewService(repo, func(string) (Provider, error) {
+				return noteProviderFunc(func(_ context.Context, request Request) (Response, error) {
+					calls++
+					var prompt struct {
+						Input     string `json:"input"`
+						InputKind string `json:"input_kind"`
+					}
+					if err := json.Unmarshal([]byte(request.Prompt), &prompt); err != nil {
+						t.Fatal(err)
+					}
+					if prompt.Input != original || prompt.InputKind != tc.kind {
+						t.Fatalf("unexpected provider input: %#v", prompt)
+					}
+					for _, private := range []string{"do-not-trust", "private-original", "/private/model.bin", "untrusted-kind", "stt_model", "provenance"} {
+						if strings.Contains(request.Prompt, private) {
+							t.Fatalf("capture metadata leaked: %s", private)
+						}
+					}
+					return Response{Text: `{"action":"create_note","title":"PostgreSQL","body":"PostgreSQL database","tags":["postgresql"]}`}, nil
+				}), nil
+			}, ServiceOptions{Enabled: true})
+			result, err := service.Note(context.Background(), NoteRequest{Text: original, Action: "create", Source: tc.source}, "")
+			if err != nil || result.FallbackReason != "" || calls != 1 {
+				t.Fatalf("note request failed: calls=%d result=%#v err=%v", calls, result, err)
+			}
+		})
+	}
+}
+
+func TestNoteSystemPromptIsConfigurableAndDefaults(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		prompt string
+		want   string
+	}{
+		{name: "default", want: DefaultNoteSystemPrompt},
+		{name: "configured", prompt: "Use our team's terminology guide.", want: "Use our team's terminology guide."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := noteTestRepo(t)
+			service := NewService(repo, func(string) (Provider, error) {
+				return noteProviderFunc(func(_ context.Context, request Request) (Response, error) {
+					if request.System != tc.want {
+						t.Fatalf("wrong system prompt: %q", request.System)
+					}
+					return Response{Text: `{"action":"create_note","title":"Title","body":"Body","tags":["topic"]}`}, nil
+				}), nil
+			}, ServiceOptions{Enabled: true, SystemPrompt: tc.prompt})
+			result, err := service.Note(context.Background(), NoteRequest{Text: "input", Action: "create"}, "")
+			if err != nil || result.FallbackReason != "" {
+				t.Fatalf("note failed: result=%#v err=%v", result, err)
+			}
+		})
 	}
 }
 

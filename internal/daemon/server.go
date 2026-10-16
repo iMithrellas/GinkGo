@@ -375,6 +375,7 @@ func newAINoteService(app *wire.App) *ai.Service {
 		Enabled: app.Cfg.GetBool("ai.enabled"), DefaultNamespace: app.Cfg.GetString("namespace"),
 		DefaultTags: app.Cfg.GetStringSlice("default_tags"), ContextLimit: limit,
 		MaxInputBytes: 256 * 1024, MaxContextBytes: 256 * 1024,
+		SystemPrompt: app.Cfg.GetString("ai.notes.system_prompt"),
 	})
 }
 
