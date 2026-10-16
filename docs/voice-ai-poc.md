@@ -154,6 +154,30 @@ credentials into GinkGo config. For stable OpenCode **>=2.0.25**, omit
 compatibility does not validate a user's real login or model access. See
 [`internal/ai/README.md`](../internal/ai/README.md) for provider isolation details.
 
+### Optional session-generation adapter
+
+For stable OpenCode **>=2.0.25**, configure a separate provider to use the supported
+session generation-only API:
+
+```toml
+[ai.providers.opencode-session]
+type = "opencode-session"
+executable = "/absolute/path/to/opencode"
+model = "provider/your-model"
+# ephemeral_auth = true  # optional disposable auth profile, API-key env mode
+```
+
+Select it with `--provider opencode-session` or `ai.provider`. It uses a private
+server and creates/deletes only its own temporary session. In saved-auth mode,
+that session shares the ordinary auth database; failed cleanup or a process crash
+can leave a `GinkGo ephemeral generation` session behind. Existing sessions are
+not reused. Tools, custom hooks/plugins, MCP, skills and discovered instructions
+are disabled; this is not a coding-agent `opencode run` invocation.
+
+A no-inference protocol check passed on **2.0.31** with synthetic saved auth.
+Actual model compatibility, including the reported free-tier restriction, remains
+unverified. See [session isolation and cleanup details](../internal/ai/README.md#session-generation-adapter).
+
 AI config is loaded by the daemon at startup. Run an AI-capable daemon built from the
 same release as the CLI; `make build` builds the CLI only. **Restart the daemon after
 changing config** using your normal service workflow. This guide does not restart or
@@ -204,8 +228,8 @@ save a fallback note**. If the caller disconnects or its deadline expires,
 preserve/re-submit the input yourself if needed.
 
 Remote providers receive the input and any selected bounded note context. Sync E2EE
-does not protect that separate provider request. The OpenCode adapter uses isolated,
-tool-free generation rather than a normal coding-agent session.
+does not protect that separate provider request. Both OpenCode adapters use isolated,
+tool-free generation rather than a normal coding-agent prompt.
 
 ## No-paid black-box smoke test
 
@@ -241,8 +265,8 @@ python3 -B scripts/smoke-voice-poc.py \
 Wake words, semantic speech detection, TTS, automatic suspend/device recovery,
 hooks/visualizers, resident models (`persistent`/`idle_timeout`), model
 catalog/download management, AI search/summaries, and Codex/Claude adapters remain
-deferred. The OpenCode provider still uses the private stateless path; supported
-run/session isolation and model compatibility need verification. Microphone
+deferred. OpenCode's original stateless path remains available alongside the
+session-generation adapter; real model compatibility still needs verification. Microphone
 endpointing currently uses RMS energy and can mistake noise for speech. The
 public-sample smoke test verifies the pinned CPU file-transcription build, not
 microphone quality or compatibility with every whisper.cpp release.

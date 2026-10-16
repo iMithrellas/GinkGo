@@ -348,7 +348,7 @@ func checkOpenCodeVersion(parent context.Context, executable, dir string, savedA
 	// well-known plugins before applying removals: plugin:* policy only gates
 	// module imports starting in 2.0.25 (verified against the release tags).
 	if savedAuth && minor == 0 && patch < 25 {
-		return fmt.Errorf("opencode saved-login isolation requires version >=2.0.25; upgrade OpenCode or explicitly use EphemeralAuth with provider API-key environment variables")
+		return fmt.Errorf("opencode saved-login/session isolation requires version >=2.0.25; upgrade OpenCode")
 	}
 	return nil
 }

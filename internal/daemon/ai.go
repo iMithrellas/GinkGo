@@ -44,6 +44,8 @@ func resolveAIProvider(v *viper.Viper, name string) (ai.Provider, error) {
 	switch kind {
 	case "opencode":
 		return ai.NewOpenCode(ai.OpenCodeOptions{Options: options, Executable: v.GetString(base + "executable"), Model: v.GetString(base + "model"), EphemeralAuth: v.GetBool(base + "ephemeral_auth")})
+	case "opencode-session":
+		return ai.NewOpenCodeSession(ai.OpenCodeSessionOptions{Options: options, Executable: v.GetString(base + "executable"), Model: v.GetString(base + "model"), EphemeralAuth: v.GetBool(base + "ephemeral_auth")})
 	case "cli":
 		return ai.NewCLI(ai.CLIOptions{Options: options, Executable: v.GetString(base + "executable"), Args: v.GetStringSlice(base + "args")})
 	case "openai-compatible":

@@ -48,6 +48,11 @@ the ordinary exact-raw fallback without retrying or overwriting the target.
 
 # OpenCode provider compatibility
 
+Two provider types are available: `opencode` (the existing stateless adapter) and
+`opencode-session` (the supported session generation-only API). Both run a private
+server with fixed argv and isolated configuration; neither attaches to the shared
+OpenCode service or invokes a normal coding-agent prompt.
+
 `NewOpenCode` runs a private server with isolated configuration, fixed argv,
 tool-free stateless generation, bounded input/output, and process-group cleanup.
 It never connects to the shared daemon or loads project/user plugin configuration.
@@ -109,3 +114,50 @@ provider/model, which must return explicit unknown-model rejection. The second
 also verifies that a synthetic saved ordinary provider account is accepted and
 a synthetic Console account is rejected. Neither test verifies real-login
 validity, contacts a model for inference, or reads actual user accounts/notes.
+
+## Session generation adapter
+
+Configure a named provider with `type = "opencode-session"` and the same
+`executable`, `model`, and optional `ephemeral_auth` settings as the stateless
+adapter. `ai.timeout` bounds each request. The Go constructor
+`NewOpenCodeSession(OpenCodeSessionOptions)` also accepts the shared `Options`
+byte/time limits and a `TempDir` for private work files.
+
+This adapter uses supported session create/generate/delete HTTP routes, **not**
+`opencode run` or session prompt. It creates one random `ses_ginkgo_...` session
+in a temporary working directory, invokes generation without adding conversation
+messages, then deletes only that owned session. Saved-auth mode uses the ordinary
+profile's database: creating/deleting this temporary session is a write to that
+database, even though existing sessions are not reused or modified. With
+`ephemeral_auth = true`, both auth and sessions use a disposable database instead.
+
+Tool definitions are filtered before constructing the model request through
+deny-all agent/session permissions; generation never enters the tool-execution
+loop. Private configuration and project-discovery controls additionally suppress
+discovered instructions, skills, MCP and custom plugins. Only the required built-in
+model/provider and agent-config plugins are selected. Console accounts are rejected
+before integration initialization, as in the stateless adapter. Installed
+`/etc/opencode` configuration is refused because it could override isolation.
+
+The minimum supported stable version is **2.0.25**, including ephemeral-auth
+session mode. Isolation paths were source-checked at v2.0.25 (`b44eea9`) and
+v2.0.31 (`22728d6`). A real **v2.0.31** no-inference protocol smoke passed with a
+disposable profile, synthetic saved credential, and an intentionally impossible
+model. This does **not** establish real saved-login validity or preferred model
+compatibility; provider generation-only restrictions can still reject requests.
+
+Session deletion has an independent two-second cleanup deadline, followed by
+private process-group cleanup. Cleanup uses the locally generated session ID,
+including when the creation response is malformed or lost. A process crash or
+failed deletion may leave a session titled `GinkGo ephemeral generation` in the auth
+database. Cleanup failures never turn an unsuccessful request into success. The
+adapter does not sweep other sessions or copy/export the credential database.
+
+```sh
+GINKGO_OPENCODE_SESSION_SMOKE_EXECUTABLE=/absolute/path/opencode \
+go test ./internal/ai -run '^TestOpenCodeRealSessionNoInference$' -v -count=1
+```
+
+Routine fake-executable tests cover session ownership, output and process-log
+bounds, malformed output, provider errors, Console rejection, cancellation, and
+bounded deletion. Hardware/model calls remain outside routine tests.
