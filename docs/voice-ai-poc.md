@@ -1,9 +1,8 @@
 # Optional AI notes and voice POC
 
-**Status: provisional.** This describes the intended POC, not shipped behavior. Treat
-the scope and interfaces as unsettled until implementation commits and tests verify
-them. A runnable quickstart will be added after integration; this document does not
-specify final configuration keys or command flags.
+**Status: provisional; black-box smoke script prepared, not yet verified against the
+integrated CLI.** Treat the scope and interfaces as unsettled until implementation
+commits and tests verify them.
 
 ## POC priorities
 
@@ -83,5 +82,25 @@ specify final configuration keys or command flags.
 - AI search, summaries, embeddings, relevance ranking, and other semantic retrieval.
 
 These are later milestones, not implied POC commitments. Revisit them only after the
-relevant capability is implemented, tested, and documented; add the runnable quickstart
-then, based on actual supported flags and configuration rather than proposals.
+relevant capability is implemented, tested, and documented; publish the verified
+quickstart based on actual supported flags and configuration rather than proposals.
+
+## Smoke test and OpenCode setup
+
+After the AI note CLI is integrated, run `python3 scripts/smoke-ai-poc.py`. It builds
+the CLI in a private `/tmp/opencode` directory (or accepts `--binary`), writes a
+temporary config/database/socket, and starts/stops only its own daemon. Its executable
+fixture returns typed drafts; it makes no real provider/model call and tests create,
+expand/CAS, provenance display, invalid-output fallback, and disabled-AI fallback. The
+fixture reads mode/target from a private state file (so changes reach the already-running
+daemon); inherited `GINKGO_*` overrides are scrubbed. The script currently targets the
+agreed interface and remains pending verification against integration. It does not
+edit user config or install binaries.
+
+For a later real OpenCode check, configure the installed executable explicitly, for
+example `/path/to/opencode`; the user currently has `/home/mithrel/.opencode/bin/opencode`
+(v2.0.19), which is not on PATH. Saved-auth mode requires stable OpenCode **>=2.0.25**.
+For v2.0.19, explicitly set `ephemeral_auth = true` to use API-key mode rather than
+saved auth. Do not put keys in this document or run a real inference as part of the
+smoke script. No paid-provider smoke test is required; use the fake fixture for routine
+verification.
