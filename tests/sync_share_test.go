@@ -3,7 +3,9 @@ package tests
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -25,6 +27,96 @@ func setupSyncDB(t *testing.T, name string) *db.Store {
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 	return s
+}
+
+func TestSyncEncryptedOfflineExpansionHistory(t *testing.T) {
+	ctx := context.Background()
+	const token = "test-token"
+	pub, priv, err := gcrypto.NewSignerKeypair()
+	require.NoError(t, err)
+	serverStore := setupSyncDB(t, "server_offline")
+	serverCfg := viper.New()
+	serverCfg.Set("auth.token", token)
+	serverCfg.Set("namespaces.shared.trusted_signers", []string{gcrypto.SignerID(pub)})
+	ts := httptest.NewServer(server.New(serverCfg, serverStore).Router())
+	defer ts.Close()
+	key := base64.StdEncoding.EncodeToString(make([]byte, 32))
+	configure := func(v *viper.Viper) {
+		v.Set("namespaces.shared.e2ee", true)
+		v.Set("namespaces.shared.key_provider", "config")
+		v.Set("namespaces.shared.read_key", key)
+		v.Set("namespaces.shared.write_key", key)
+		v.Set("namespaces.shared.signer_key_provider", "config")
+		v.Set("namespaces.shared.signer_pub", base64.StdEncoding.EncodeToString(pub))
+		v.Set("namespaces.shared.signer_priv", base64.StdEncoding.EncodeToString(priv))
+	}
+	first := setupSyncDB(t, "first_offline")
+	second := setupSyncDB(t, "second_offline")
+	firstDir, secondDir := t.TempDir(), t.TempDir()
+	firstSync := setupSyncServiceWithConfig(t, first, ts.URL, token, firstDir, configure)
+	secondSync := setupSyncServiceWithConfig(t, second, ts.URL, token, secondDir, configure)
+	now := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	unrelated, err := second.Entries.CreateEntry(ctx, api.Entry{
+		ID: "unrelated", Namespace: "shared", Title: "Other note", Body: "other content", CreatedAt: now, UpdatedAt: now,
+	})
+	require.NoError(t, err)
+	initial, err := first.Entries.CreateEntry(ctx, api.Entry{
+		ID: "offline-note", Version: 1, Namespace: "shared", Title: "Offline note", Body: "first cleaned body",
+		CreatedAt: now, UpdatedAt: now,
+		Provenance: &api.Provenance{Sources: []api.Source{{ID: "A", CapturedAt: now, Kind: "text", OriginalText: "original A"}}},
+	})
+	require.NoError(t, err)
+	expansion := initial
+	expansion.Version++
+	expansion.Body = "expanded cleaned body"
+	expansion.UpdatedAt = now.Add(time.Minute)
+	expansion.Provenance = &api.Provenance{Sources: append(append([]api.Source(nil), initial.Provenance.Sources...), api.Source{
+		ID: "B", CapturedAt: now.Add(time.Minute), Kind: "text", OriginalText: "original B",
+	})}
+	expanded, err := first.Entries.UpdateEntryCAS(ctx, expansion, initial.Version)
+	require.NoError(t, err)
+	// Seed an unrelated event before the first client pulls its own A then A+B
+	// history. A rolled-back batch must not be mistaken for successful progress.
+	require.NoError(t, secondSync.SyncNow(ctx))
+	require.NoError(t, firstSync.SyncNow(ctx))
+	events, _, err := serverStore.Events.List(ctx, api.Cursor{}, 100)
+	require.NoError(t, err)
+	require.Len(t, events, 3)
+	for _, ev := range events {
+		require.Equal(t, "enc_v1", ev.PayloadType)
+	}
+	assertCursor := func(dir string) {
+		t.Helper()
+		data, err := os.ReadFile(filepath.Join(dir, "sync", "cursor_origin.json"))
+		require.NoError(t, err)
+		var cursor struct {
+			PullAfter time.Time `json:"pull_after"`
+		}
+		require.NoError(t, json.Unmarshal(data, &cursor))
+		require.True(t, cursor.PullAfter.Equal(events[len(events)-1].Time), "pull cursor must advance through the complete history")
+	}
+	assertCursor(firstDir)
+	gotOther, err := first.Entries.GetEntry(ctx, unrelated.ID)
+	require.NoError(t, err)
+	require.Equal(t, unrelated, gotOther, "unrelated event in stale-history batch must commit")
+
+	// Both devices sync again: the second materializes A -> A+B, and the first
+	// has already advanced beyond its own historical events, rather than stalling.
+	require.NoError(t, secondSync.SyncNow(ctx))
+	require.NoError(t, firstSync.SyncNow(ctx))
+	for _, store := range []*db.Store{first, second} {
+		got, err := store.Entries.GetEntry(ctx, expanded.ID)
+		require.NoError(t, err)
+		require.Equal(t, expanded, got)
+		got, err = store.Entries.GetEntry(ctx, unrelated.ID)
+		require.NoError(t, err)
+		require.Equal(t, unrelated, got)
+	}
+	assertCursor(firstDir)
+	assertCursor(secondDir)
+	events, _, err = serverStore.Events.List(ctx, api.Cursor{}, 100)
+	require.NoError(t, err)
+	require.Len(t, events, 3, "replayed history must not produce new events")
 }
 
 func setupSyncServiceWithConfig(t *testing.T, s *db.Store, remoteURL, token, dataDir string, configure func(*viper.Viper)) *sync.Service {
@@ -99,6 +191,10 @@ func TestSyncSharedNamespaceTrustedSigners(t *testing.T) {
 		Namespace: "shared",
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
+		Provenance: &api.Provenance{Sources: []api.Source{{
+			ID: "source-voice", CapturedAt: time.Now().UTC(), Kind: "voice", OriginalText: "unmodified transcript",
+			Language: "en", STTEngine: "whisper.cpp", STTModel: "base",
+		}}},
 	}
 	_, err = client1Store.Entries.CreateEntry(ctx, note1)
 	require.NoError(t, err)
@@ -150,4 +246,24 @@ func TestSyncSharedNamespaceTrustedSigners(t *testing.T) {
 	got2, err := client2Store.Entries.GetEntry(ctx, "shared_note_1")
 	require.NoError(t, err)
 	require.Equal(t, "Shared 1", got2.Title)
+	require.Equal(t, note1.Provenance, got2.Provenance)
+
+	// Expansion on another device appends a second original and returns both
+	// sources through the same encrypted, signed replication path.
+	got2.Provenance.Sources = append(got2.Provenance.Sources, api.Source{
+		ID: "source-text", CapturedAt: time.Now().UTC(), Kind: "text", OriginalText: "additional input",
+	})
+	previousVersion := got2.Version
+	got2.Version++
+	got2.Body = "Expanded cleaned body"
+	got2.UpdatedAt = time.Now().UTC()
+	expanded, err := client2Store.Entries.UpdateEntryCAS(ctx, got2, previousVersion)
+	require.NoError(t, err)
+	require.NoError(t, client2Sync.SyncNow(ctx))
+	require.NoError(t, client1Sync.SyncNow(ctx))
+	received, err := client1Store.Entries.GetEntry(ctx, got2.ID)
+	require.NoError(t, err)
+	require.Equal(t, expanded.Provenance, received.Provenance)
+	require.Equal(t, expanded.Body, received.Body)
+	require.Equal(t, expanded.Hash(), received.Hash())
 }

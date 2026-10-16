@@ -1,11 +1,65 @@
 package api
 
 import (
+	"encoding/hex"
+	"encoding/json"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/zeebo/blake3"
 )
+
+func TestEntryHashLegacyNilProvenance(t *testing.T) {
+	now := time.Date(2026, 10, 16, 12, 0, 0, 123, time.UTC)
+	e := Entry{ID: "note", Title: "title", Body: "body", Tags: []string{"b", "a"}, Namespace: "personal", CreatedAt: now, UpdatedAt: now}
+	// Exact historical byte sequence: no new field marker for nil provenance.
+	oldBytes := "note\x00title\x00body\x00a\x00b\x00\x00personal\x002026-10-16T12:00:00.000000123Z\x002026-10-16T12:00:00.000000123Z"
+	sum := blake3.Sum256([]byte(oldBytes))
+	require.Equal(t, hex.EncodeToString(sum[:]), e.Hash())
+	data, err := json.Marshal(e)
+	require.NoError(t, err)
+	require.NotContains(t, string(data), "provenance")
+}
+
+func TestEntryHashProvenance(t *testing.T) {
+	now := time.Date(2026, 10, 16, 12, 0, 0, 123, time.UTC)
+	source := Source{ID: "source", CapturedAt: now, Kind: "voice", OriginalText: "original\x00text", Language: "en", STTEngine: "whisper.cpp", STTModel: "base"}
+	e := Entry{ID: "note", Provenance: &Provenance{Sources: []Source{source}}}
+	nilEntry := e
+	nilEntry.Provenance = nil
+	require.NotEqual(t, nilEntry.Hash(), e.Hash())
+	for _, mutate := range []func(*Source){
+		func(s *Source) { s.ID += "x" },
+		func(s *Source) { s.CapturedAt = s.CapturedAt.Add(time.Nanosecond) },
+		func(s *Source) { s.Kind = "text" },
+		func(s *Source) { s.OriginalText += "x" },
+		func(s *Source) { s.Language = "fr" },
+		func(s *Source) { s.STTEngine = "other" },
+		func(s *Source) { s.STTModel = "small" },
+	} {
+		changed := source
+		mutate(&changed)
+		other := Entry{ID: e.ID, Provenance: &Provenance{Sources: []Source{changed}}}
+		require.NotEqual(t, e.Hash(), other.Hash())
+	}
+	zoneSource := source
+	zoneSource.CapturedAt = now.In(time.FixedZone("offset", 3600))
+	other := Entry{ID: e.ID, Provenance: &Provenance{Sources: []Source{zoneSource}}}
+	require.Equal(t, e.Hash(), other.Hash())
+
+	second := source
+	second.ID = "second"
+	ordered := Entry{Provenance: &Provenance{Sources: []Source{source, second}}}
+	reversed := Entry{Provenance: &Provenance{Sources: []Source{second, source}}}
+	require.NotEqual(t, ordered.Hash(), reversed.Hash())
+	var decoded Entry
+	data, err := json.Marshal(e)
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	require.Equal(t, e.Hash(), decoded.Hash())
+}
 
 func TestEntry_Hash(t *testing.T) {
 	now := time.Now().UTC()

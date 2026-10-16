@@ -1,0 +1,89 @@
+# Optional file STT (POC)
+
+Linux-only, local, **on_demand** whisper.cpp adapter. No AI or note-service
+dependencies, downloads, microphone, wake word, persistent worker, or idle policy.
+Configuration/CLI/IPC integration belongs to the caller.
+
+```go
+transcriber := voice.NewTranscriber(voice.Config{
+    Enabled: true,
+    Executable: "/usr/bin/whisper-cli",
+    Model: "/home/user/models/ggml-base.bin",
+    Language: "auto", // or e.g. "en"
+    Device: "cpu",   // "auto" permits the installed engine's default GPU/CPU behavior
+    Threads: 4,
+    Timeout: 5 * time.Minute,
+})
+transcript, err := transcriber.Transcribe(ctx, audioPath, voice.Options{})
+// Optional per-request overrides: Options{Model: "/path/ggml-small.bin", Language: "fr"}.
+// On err, do not create a note. Otherwise preserve transcript.Text exactly.
+// If strings.TrimSpace(transcript.Text) == "", do not create a note.
+```
+
+`Transcript` has `Text`, optional detected `Language`, `Engine` (`whisper.cpp`),
+and `Model` (resolved absolute model path). JSON segment `text` strings are
+concatenated without added separators, trimming, timestamps, or rewriting. The
+whisper-cli JSON file, not stdout/logs, is the source of transcription. No engine
+version is inferred from filenames or invented in metadata.
+
+## Installed-engine compatibility controls
+
+Use a trusted installed **whisper.cpp whisper-cli**, not Python's `whisper` CLI.
+The adapter requires `-m`, `-f`, `-l`, `-t`, `-oj`, `-of`, `-np`, `-nt`, and
+`-ng` (for CPU), along with JSON shape:
+
+```json
+{"result":{"language":"en"},"transcription":[{"text":" exact segment text"}]}
+```
+
+`result.language` is optional; `transcription` and every segment's string `text`
+are required. The engine must append `.json` to the `-of` prefix and open that
+path normally, following its symlink to an inherited pipe. Engines using atomic
+output replacement or requiring a seekable JSON destination are not compatible.
+Model/audio `/proc/self/fd` paths must be supported by the installed build.
+
+No minimum numeric release has been verified against a real installation here:
+tests use fake executables, never real models or network. Packaging must pin and
+smoke-test a specific whisper.cpp build against these flags/schema/descriptor
+semantics before advertising compatibility. There is no `--version` probe at
+construction or when disabled, and no automatic feature/version fallback.
+Missing/unsupported controls, malformed output, and engine failures are errors.
+`Device: "gpu"` is rejected rather than falsely guaranteeing GPU execution;
+`auto` may fall back to CPU. GGML magic is checked, but full model compatibility
+and integrity remain the installed engine/user's responsibility.
+
+## Bounds and lifecycle
+
+- `NewTranscriber(Config)` does no I/O, validation, or spawning. Disabled calls
+  return `ErrDisabled` before path or configuration probing.
+- One inference per adapter, including request-deadline-aware queueing. Reuse one
+  adapter for a daemon; creating many adapters bypasses this concurrency bound.
+- Default timeout 5 minutes (the caller's earlier deadline wins).
+- Nonempty regular RIFF/WAVE only: standard 16-byte PCM format chunk, signed
+  16-bit, 16000 Hz, mono, correct rates/alignment/chunk lengths, one data chunk.
+  No automatic conversion. Errors include an ffmpeg conversion example.
+- Defaults: audio 32 MiB, duration 5 minutes, model 8 GiB, **each** of stdout,
+  stderr, and JSON 1 MiB. Config fields: `MaxAudioBytes`, `MaxAudioDuration`,
+  `MaxModelBytes`, `MaxOutputBytes`; zero selects defaults, negatives are errors.
+  Hard ceilings: audio 1 GiB, model 16 GiB, each output 16 MiB. Threads: 1–256.
+- Input symlinks are resolved; final-component replacement symlinks are rejected
+  on open. Nonblocking opens plus inode checks reject FIFOs/devices/directories.
+  The executable/model are passed as pinned descriptors. Audio is copied into a
+  private temporary WAV after bounded validation, preventing subsequent path or
+  content edits from changing inference input. Temporary WAV storage is bounded
+  by the audio limit; JSON flows through a bounded pipe, not a growing disk file.
+- Explicit exec argv; no shell. No engine diagnostics are included in errors,
+  to avoid disclosing audio/model/engine log content. Output overflow returns
+  `ErrOutputLimit`; cancellation/deadline errors support `errors.Is`.
+- Cancellation SIGKILLs the child process group; remaining same-group descendants
+  are also killed after completion. Pipes have bounded cleanup waits. A malicious
+  child that creates a new session/process group can escape: this is not a sandbox.
+- The executable and installed model are trusted local files. Descriptor pinning
+  prevents path substitution **after open**, not in-place model/executable edits
+  or hostile ancestor-directory mutation before open. No CPU/RSS/GPU quota is
+  enforced beyond threads, deadline, file/output limits and adapter serialization.
+  Local filesystem reads are bounded in size but are not interruptible kernel I/O.
+
+Focused verification: `go test -race ./internal/voice` and
+`go vet ./internal/voice`. Empty transcripts return success; this package never
+creates notes, so the caller must enforce the empty/no-note rule.

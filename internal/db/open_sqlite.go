@@ -200,6 +200,7 @@ func (s *sqliteStore) List(ctx context.Context, cur api.Cursor, limit int) ([]ap
 func (s *sqliteStore) GetEntry(ctx context.Context, id string) (api.Entry, error) {
 	var e api.Entry
 	var tagsJSON string
+	var provenanceJSON sql.NullString
 	tx, owned, err := s.txFor(ctx)
 	if err != nil {
 		return api.Entry{}, err
@@ -207,14 +208,17 @@ func (s *sqliteStore) GetEntry(ctx context.Context, id string) (api.Entry, error
 	if owned {
 		defer tx.Rollback()
 	}
-	row := tx.QueryRowContext(ctx, `SELECT id, version, title, body, tags, created_at, updated_at, namespace FROM entries WHERE id=?`, id)
-	if err := row.Scan(&e.ID, &e.Version, &e.Title, &e.Body, &tagsJSON, &e.CreatedAt, &e.UpdatedAt, &e.Namespace); err != nil {
+	row := tx.QueryRowContext(ctx, `SELECT id, version, title, body, tags, created_at, updated_at, namespace, provenance FROM entries WHERE id=?`, id)
+	if err := row.Scan(&e.ID, &e.Version, &e.Title, &e.Body, &tagsJSON, &e.CreatedAt, &e.UpdatedAt, &e.Namespace, &provenanceJSON); err != nil {
 		if err == sql.ErrNoRows {
 			return api.Entry{}, ErrNotFound
 		}
 		return api.Entry{}, err
 	}
 	_ = json.Unmarshal([]byte(tagsJSON), &e.Tags)
+	if err := decodeProvenance(provenanceJSON, &e); err != nil {
+		return api.Entry{}, err
+	}
 	if owned {
 		if err := tx.Commit(); err != nil {
 			return api.Entry{}, err
@@ -231,6 +235,10 @@ func (s *sqliteStore) CreateEntry(ctx context.Context, e api.Entry) (api.Entry, 
 		e.Version = 1
 	}
 	tagsJSON, _ := json.Marshal(e.Tags)
+	provenanceJSON, err := encodeProvenance(e.Provenance)
+	if err != nil {
+		return api.Entry{}, err
+	}
 	tagsTokens := strings.Join(e.Tags, " ")
 	tx, owned, err := s.txFor(ctx)
 	if err != nil {
@@ -240,8 +248,8 @@ func (s *sqliteStore) CreateEntry(ctx context.Context, e api.Entry) (api.Entry, 
 		defer tx.Rollback()
 	}
 
-	if _, err = tx.ExecContext(ctx, `INSERT INTO entries(id, version, title, body, tags, created_at, updated_at, namespace) VALUES(?,?,?,?,?,?,?,?)`,
-		e.ID, e.Version, e.Title, e.Body, string(tagsJSON), e.CreatedAt.UTC(), e.UpdatedAt.UTC(), e.Namespace); err != nil {
+	if _, err = tx.ExecContext(ctx, `INSERT INTO entries(id, version, title, body, tags, created_at, updated_at, namespace, provenance) VALUES(?,?,?,?,?,?,?,?,?)`,
+		e.ID, e.Version, e.Title, e.Body, string(tagsJSON), e.CreatedAt.UTC(), e.UpdatedAt.UTC(), e.Namespace, provenanceJSON); err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			err = ErrConflict
 		}
@@ -280,9 +288,23 @@ func (s *sqliteStore) UpdateEntryCAS(ctx context.Context, e api.Entry, ifVersion
 		defer tx.Rollback()
 	}
 
-	// Update using explicit version from 'e'
-	res, err := tx.ExecContext(ctx, `UPDATE entries SET version=?, title=?, body=?, tags=?, updated_at=?, namespace=? WHERE id=? AND version=?`,
-		e.Version, e.Title, e.Body, string(tagsJSON), e.UpdatedAt.UTC(), e.Namespace, e.ID, ifVersion)
+	// Resolve omission inside the same transaction as CAS and the event snapshot.
+	current, err := s.GetEntry(WithTx(ctx, tx), e.ID)
+	if err == ErrNotFound || (err == nil && current.Version != ifVersion) {
+		return api.Entry{}, ErrConflict
+	}
+	if err != nil {
+		return api.Entry{}, err
+	}
+	if err := preserveProvenance(&e, current.Provenance); err != nil {
+		return api.Entry{}, err
+	}
+	provenanceJSON, err := encodeProvenance(e.Provenance)
+	if err != nil {
+		return api.Entry{}, err
+	}
+	res, err := tx.ExecContext(ctx, `UPDATE entries SET version=?, title=?, body=?, tags=?, updated_at=?, namespace=?, provenance=? WHERE id=? AND version=?`,
+		e.Version, e.Title, e.Body, string(tagsJSON), e.UpdatedAt.UTC(), e.Namespace, provenanceJSON, e.ID, ifVersion)
 	if err != nil {
 		return api.Entry{}, err
 	}
@@ -299,13 +321,10 @@ func (s *sqliteStore) UpdateEntryCAS(ctx context.Context, e api.Entry, ifVersion
 	}
 
 	// Read back current entry
-	var ne api.Entry
-	var tagsJSONBack string
-	row := tx.QueryRowContext(ctx, `SELECT id, version, title, body, tags, created_at, updated_at, namespace FROM entries WHERE id=?`, e.ID)
-	if err = row.Scan(&ne.ID, &ne.Version, &ne.Title, &ne.Body, &tagsJSONBack, &ne.CreatedAt, &ne.UpdatedAt, &ne.Namespace); err != nil {
+	ne, err := s.GetEntry(WithTx(ctx, tx), e.ID)
+	if err != nil {
 		return api.Entry{}, err
 	}
-	_ = json.Unmarshal([]byte(tagsJSONBack), &ne.Tags)
 
 	// Refresh FTS
 	if _, err = tx.ExecContext(ctx, `DELETE FROM entries_fts WHERE id=?`, ne.ID); err != nil {
@@ -444,7 +463,7 @@ func (s *sqliteStore) ListEntries(ctx context.Context, q api.ListQuery) ([]api.E
 	cursorClause, cursorArgs := cursorWhereClause(cursor, hasCursor, q.Reverse)
 	orderClause := orderByClause(q.Reverse)
 	pageLimit := limit + 1
-	sqlq := pf.CTE + `SELECT e.id, e.version, e.title, ` + bodySelect + `, e.tags, e.created_at, e.updated_at, e.namespace
+	sqlq := pf.CTE + `SELECT e.id, e.version, e.title, ` + bodySelect + `, e.tags, e.created_at, e.updated_at, e.namespace, e.provenance
 FROM filtered f
 JOIN entries e ON e.id = f.id
 ` + cursorClause + `
@@ -463,10 +482,14 @@ LIMIT ?`
 	for rows.Next() {
 		var e api.Entry
 		var tagsJSON string
-		if err := rows.Scan(&e.ID, &e.Version, &e.Title, &e.Body, &tagsJSON, &e.CreatedAt, &e.UpdatedAt, &e.Namespace); err != nil {
+		var provenanceJSON sql.NullString
+		if err := rows.Scan(&e.ID, &e.Version, &e.Title, &e.Body, &tagsJSON, &e.CreatedAt, &e.UpdatedAt, &e.Namespace, &provenanceJSON); err != nil {
 			return nil, api.Page{}, err
 		}
 		_ = json.Unmarshal([]byte(tagsJSON), &e.Tags)
+		if err := decodeProvenance(provenanceJSON, &e); err != nil {
+			return nil, api.Page{}, err
+		}
 		out = append(out, e)
 	}
 	hasMore := len(out) > limit
@@ -885,7 +908,35 @@ CREATE VIRTUAL TABLE IF NOT EXISTS entries_fts USING fts5(
 	if err != nil {
 		return err
 	}
-	return ensureEventColumns(ctx, db)
+	if err := ensureEventColumns(ctx, db); err != nil {
+		return err
+	}
+	return ensureProvenanceColumn(ctx, db)
+}
+
+func ensureProvenanceColumn(ctx context.Context, db *sql.DB) error {
+	rows, err := db.QueryContext(ctx, `PRAGMA table_info(entries)`)
+	if err != nil {
+		return err
+	}
+	found := false
+	for rows.Next() {
+		var cid, notnull, pk int
+		var name, ctype string
+		var dflt any
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			rows.Close()
+			return err
+		}
+		found = found || name == "provenance"
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil || found {
+		return err
+	}
+	_, err = db.ExecContext(ctx, `ALTER TABLE entries ADD COLUMN provenance TEXT`)
+	return err
 }
 
 func ensureEventColumns(ctx context.Context, db *sql.DB) error {

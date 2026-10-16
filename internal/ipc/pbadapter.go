@@ -20,7 +20,6 @@ func (h pbHandler) ProtoTypes() (proto.Message, proto.Message) {
 
 func (h pbHandler) Handle(ctx context.Context, req any) (any, error) {
 	preq := req.(*pb.Request)
-	// Convert pb.Request -> Message
 	m := Message{}
 	switch x := preq.Cmd.(type) {
 	case *pb.Request_NoteAdd:
@@ -83,7 +82,6 @@ func (h pbHandler) Handle(ctx context.Context, req any) (any, error) {
 	}
 
 	r := h.fn(m)
-	// Convert Response -> pb.Response
 	presp := &pb.Response{Ok: r.OK, Msg: r.Msg}
 	if r.Entry != nil {
 		e := toPbEntry(*r.Entry)
@@ -127,19 +125,25 @@ func (h pbHandler) Handle(ctx context.Context, req any) (any, error) {
 // PBHandler builds a transport.Handler around a Message handler.
 func PBHandler(fn func(Message) Response) transport.Handler { return pbHandler{fn: fn} }
 
-// Helpers
 const timeRFC3339 = "2006-01-02T15:04:05Z07:00"
 
 func toPbEntry(e api.Entry) pb.Entry {
+	var provenance *pb.Provenance
+	if e.Provenance != nil {
+		provenance = &pb.Provenance{}
+		for _, source := range e.Provenance.Sources {
+			provenance.Sources = append(provenance.Sources, &pb.Source{
+				Id: source.ID, CapturedAt: timestamppb.New(source.CapturedAt),
+				Kind: source.Kind, OriginalText: source.OriginalText,
+				Language: source.Language, SttEngine: source.STTEngine, SttModel: source.STTModel,
+			})
+		}
+	}
 	return pb.Entry{
-		Id:        e.ID,
-		Version:   e.Version,
-		Title:     e.Title,
-		Body:      e.Body,
-		Tags:      append([]string(nil), e.Tags...),
-		CreatedAt: timestamppb.New(e.CreatedAt),
-		UpdatedAt: timestamppb.New(e.UpdatedAt),
-		Namespace: e.Namespace,
+		Id: e.ID, Version: e.Version, Title: e.Title, Body: e.Body,
+		Tags: append([]string(nil), e.Tags...), CreatedAt: timestamppb.New(e.CreatedAt),
+		UpdatedAt: timestamppb.New(e.UpdatedAt), Namespace: e.Namespace,
+		Provenance: provenance,
 	}
 }
 

@@ -14,7 +14,6 @@ import (
 // Request sends a Message to the daemon and waits for a Response using protobuf transport.
 func Request(ctx context.Context, path string, m Message) (Response, error) {
 	var r Response
-	// Build protobuf request
 	preq := &pb.Request{}
 	switch m.Name {
 	case "note.add":
@@ -44,7 +43,6 @@ func Request(ctx context.Context, path string, m Message) (Response, error) {
 	}
 
 	c := transport.NewUnixClient(path)
-	// Allocate a response container for unmarshaling
 	ctx = transport.WithResp(ctx, &pb.Response{})
 	prespAny, err := c.Do(ctx, preq)
 	if err != nil {
@@ -133,6 +131,20 @@ func fromPbEntry(e *pb.Entry) *api.Entry {
 	}
 	if e.UpdatedAt != nil {
 		ae.UpdatedAt = e.UpdatedAt.AsTime()
+	}
+	if e.Provenance != nil {
+		ae.Provenance = &api.Provenance{}
+		for _, source := range e.Provenance.Sources {
+			if source == nil {
+				continue
+			}
+			s := api.Source{ID: source.Id, Kind: source.Kind, OriginalText: source.OriginalText,
+				Language: source.Language, STTEngine: source.SttEngine, STTModel: source.SttModel}
+			if source.CapturedAt != nil {
+				s.CapturedAt = source.CapturedAt.AsTime()
+			}
+			ae.Provenance.Sources = append(ae.Provenance.Sources, s)
+		}
 	}
 	return &ae
 }

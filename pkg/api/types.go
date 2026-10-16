@@ -2,15 +2,32 @@ package api
 
 import "time"
 
+// Provenance retains the ordered original inputs contributing to an entry.
+type Provenance struct {
+	Sources []Source `json:"sources"`
+}
+
+// Source is an application-captured original, never model-generated content.
+type Source struct {
+	ID           string    `json:"id"`
+	CapturedAt   time.Time `json:"captured_at"`
+	Kind         string    `json:"kind"` // "voice" or "text"
+	OriginalText string    `json:"original_text"`
+	Language     string    `json:"language,omitempty"`
+	STTEngine    string    `json:"stt_engine,omitempty"`
+	STTModel     string    `json:"stt_model,omitempty"`
+}
+
 type Entry struct {
-	ID        string    `json:"id"`
-	Version   int64     `json:"version"`
-	Title     string    `json:"title"`
-	Body      string    `json:"body"`
-	Tags      []string  `json:"tags"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	Namespace string    `json:"namespace"`
+	ID         string      `json:"id"`
+	Version    int64       `json:"version"`
+	Title      string      `json:"title"`
+	Body       string      `json:"body"`
+	Tags       []string    `json:"tags"`
+	CreatedAt  time.Time   `json:"created_at"`
+	UpdatedAt  time.Time   `json:"updated_at"`
+	Namespace  string      `json:"namespace"`
+	Provenance *Provenance `json:"provenance,omitempty"`
 }
 
 type EventType string

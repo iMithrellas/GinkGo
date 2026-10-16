@@ -15,6 +15,21 @@ message Entry {
   google.protobuf.Timestamp created_at = 6;
   google.protobuf.Timestamp updated_at = 7;
   string namespace = 8;
+  Provenance provenance = 9;
+}
+
+message Source {
+  string id = 1;
+  google.protobuf.Timestamp captured_at = 2;
+  string kind = 3;
+  string original_text = 4;
+  string language = 5;
+  string stt_engine = 6;
+  string stt_model = 7;
+}
+
+message Provenance {
+  repeated Source sources = 1;
 }
 
 message NoteAdd { string title = 1; string body = 2; repeated string tags = 3; string namespace = 4; }

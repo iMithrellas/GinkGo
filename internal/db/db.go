@@ -18,6 +18,8 @@ type EventLog interface {
 type EntryRepo interface {
 	GetEntry(ctx context.Context, id string) (api.Entry, error)
 	CreateEntry(ctx context.Context, e api.Entry) (api.Entry, error)
+	// UpdateEntryCAS preserves provenance when omitted. Explicit sources must
+	// retain the existing prefix; removal or replacement wraps ErrConflict.
 	UpdateEntryCAS(ctx context.Context, e api.Entry, ifVersion int64) (api.Entry, error)
 	DeleteEntry(ctx context.Context, id string) error
 	DeleteNamespace(ctx context.Context, namespace string) (int64, error)
@@ -71,12 +73,11 @@ func (s *Store) ApplyReplication(ctx context.Context, ev api.Event) error {
 		if ev.Entry == nil {
 			return nil
 		}
-		// Idempotency check: if we already have this EXACT entry, skip write.
+		// Replayed history must not downgrade a newer materialized snapshot.
 		cur, err := s.Entries.GetEntry(ctx, ev.Entry.ID)
 		if err == nil {
-			// Found local entry. Check hash.
-			if cur.Hash() == ev.Entry.Hash() {
-				return nil
+			if done, err := replicationSnapshotDone(cur, *ev.Entry); done || err != nil {
+				return err
 			}
 			// If different, overwrite logic below will handle it.
 		} else if err != ErrNotFound {
@@ -89,6 +90,11 @@ func (s *Store) ApplyReplication(ctx context.Context, ev api.Event) error {
 				// But concurrent writes could happen, so this is safe fallback.
 				cur, err := s.Entries.GetEntry(ctx, ev.Entry.ID)
 				if err != nil {
+					return err
+				}
+				// Recheck after CreateEntry's conflict: another writer may have
+				// advanced the entry since the initial read.
+				if done, err := replicationSnapshotDone(cur, *ev.Entry); done || err != nil {
 					return err
 				}
 				_, err = s.Entries.UpdateEntryCAS(ctx, *ev.Entry, cur.Version)
