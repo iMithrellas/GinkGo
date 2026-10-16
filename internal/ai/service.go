@@ -19,6 +19,9 @@ import (
 type NoteRequest struct {
 	Text, Namespace, Title, Action, NoteID string
 	Tags                                   []string
+	// Source contains trusted application capture metadata, never model output.
+	// The notes service generates source identity/time and uses Text as original.
+	Source *api.Source
 }
 
 // NoteResult describes a committed creation, expansion, or raw fallback.
@@ -116,7 +119,7 @@ func (s *Service) raw(ctx context.Context, request NoteRequest, reason string) (
 	if strings.TrimSpace(title) == "" {
 		title = notes.RawTitle(request.Text)
 	}
-	entry, err := s.notes.Create(ctx, notes.CreateRequest{Namespace: request.Namespace, Title: title, Body: request.Text, OriginalText: request.Text, Tags: append(append([]string(nil), s.options.DefaultTags...), request.Tags...)})
+	entry, err := s.notes.Create(ctx, notes.CreateRequest{Namespace: request.Namespace, Title: title, Body: request.Text, OriginalText: request.Text, Tags: append(append([]string(nil), s.options.DefaultTags...), request.Tags...), Source: request.Source})
 	if err != nil {
 		return NoteResult{}, err
 	}
@@ -207,9 +210,9 @@ func (s *Service) Note(ctx context.Context, request NoteRequest, providerName st
 	}
 	if draft.Action == "create_note" {
 		tags := append(append(append([]string(nil), s.options.DefaultTags...), request.Tags...), draft.Tags...)
-		entry, err = s.notes.Create(ctx, notes.CreateRequest{Namespace: request.Namespace, Title: title, Body: draft.Body, Tags: tags, OriginalText: request.Text})
+		entry, err = s.notes.Create(ctx, notes.CreateRequest{Namespace: request.Namespace, Title: title, Body: draft.Body, Tags: tags, OriginalText: request.Text, Source: request.Source})
 	} else {
-		entry, err = s.notes.ExpandCAS(ctx, candidates.entries[draft.TargetID], title, draft.Body, append(append([]string(nil), request.Tags...), draft.Tags...), request.Text)
+		entry, err = s.notes.ExpandCASWithSource(ctx, candidates.entries[draft.TargetID], title, draft.Body, append(append([]string(nil), request.Tags...), draft.Tags...), request.Text, request.Source)
 		if err != nil {
 			if cancel := ctx.Err(); cancel != nil {
 				return NoteResult{}, cancel

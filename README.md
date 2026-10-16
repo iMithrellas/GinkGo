@@ -40,10 +40,11 @@ Entries can be created as quick one-liners or rich Markdown notes via `$EDITOR`.
 - Export entries to Markdown, JSON, or NDJSON.
 - Interactive list table using Bubble Tea (`ginkgo-cli note list`).
 
-### Optional AI notes (POC)
-- Daemon-owned AI note creation/append with separate original-input provenance. See
-  the [AI note POC guide](docs/voice-ai-poc.md) for setup, safety limits, and the
-  isolated fake-provider smoke test.
+### Optional voice and AI notes (POC)
+- Local WAV transcription with installed whisper.cpp; save raw notes independently
+  of AI or use daemon-owned AI creation/append with original-input provenance. See
+  the [voice and AI POC guide](docs/voice-ai-poc.md) for setup, external recording,
+  safety limits, and test status.
 
 ### Sync
 - Local outbox queues edits when offline.

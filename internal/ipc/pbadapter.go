@@ -24,6 +24,19 @@ func (h pbHandler) Handle(ctx context.Context, req any) (any, error) {
 	preq := req.(*pb.Request)
 	m := Message{}
 	switch x := preq.Cmd.(type) {
+	case *pb.Request_VoiceTranscribe:
+		if n := x.VoiceTranscribe; n != nil {
+			m.Name, m.AudioPath, m.Save, m.Mode = "voice.transcribe", n.AudioPath, n.Save, n.Mode
+			m.Namespace, m.Title, m.Tags = n.Namespace, n.Title, append([]string(nil), n.Tags...)
+			m.Provider, m.Action, m.NoteID = n.Provider, n.Action, n.NoteId
+			m.Model, m.Language = n.Model, n.Language
+			if n.Deadline != nil {
+				if err := n.Deadline.CheckValid(); err != nil {
+					return &pb.Response{Ok: false, Msg: "invalid deadline"}, nil
+				}
+				m.Deadline = n.Deadline.AsTime()
+			}
+		}
 	case *pb.Request_AiNote:
 		if x.AiNote != nil {
 			n := x.AiNote
@@ -100,6 +113,10 @@ func (h pbHandler) Handle(ctx context.Context, req any) (any, error) {
 
 	r := h.fn(ctx, m)
 	presp := &pb.Response{Ok: r.OK, Msg: r.Msg, Action: r.Action, FallbackReason: r.FallbackReason}
+	if r.Transcript != nil {
+		t := r.Transcript
+		presp.Transcript = &pb.Transcript{Text: t.Text, Language: t.Language, Engine: t.Engine, Model: t.Model}
+	}
 	if r.Entry != nil {
 		e := toPbEntry(*r.Entry)
 		presp.Entry = &e

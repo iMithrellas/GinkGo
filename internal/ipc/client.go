@@ -17,6 +17,16 @@ func Request(ctx context.Context, path string, m Message) (Response, error) {
 	var r Response
 	preq := &pb.Request{}
 	switch m.Name {
+	case "voice.transcribe":
+		n := &pb.VoiceTranscribe{AudioPath: m.AudioPath, Save: m.Save, Mode: m.Mode, Namespace: m.Namespace, Title: m.Title, Tags: m.Tags, Provider: m.Provider, Action: m.Action, NoteId: m.NoteID, Model: m.Model, Language: m.Language}
+		deadline := m.Deadline
+		if d, ok := ctx.Deadline(); ok && (deadline.IsZero() || d.Before(deadline)) {
+			deadline = d
+		}
+		if !deadline.IsZero() {
+			n.Deadline = timestamppb.New(deadline)
+		}
+		preq.Cmd = &pb.Request_VoiceTranscribe{VoiceTranscribe: n}
 	case "ai.note":
 		note := &pb.AINote{Text: m.Text, Namespace: m.Namespace, Title: m.Title, Action: m.Action, NoteId: m.NoteID, Tags: m.Tags, Provider: m.Provider}
 		deadline := m.Deadline
@@ -68,6 +78,10 @@ func Request(ctx context.Context, path string, m Message) (Response, error) {
 	r.Msg = presp.Msg
 	r.Action = presp.Action
 	r.FallbackReason = presp.FallbackReason
+	if presp.Transcript != nil {
+		t := presp.Transcript
+		r.Transcript = &Transcript{Text: t.Text, Language: t.Language, Engine: t.Engine, Model: t.Model}
+	}
 	if presp.Entry != nil {
 		r.Entry = fromPbEntry(presp.Entry)
 	}

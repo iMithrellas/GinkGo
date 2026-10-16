@@ -1,10 +1,114 @@
-# Optional AI note POC
+# Optional voice and AI note POC
 
-**Status: implemented and smoke-tested; provisional POC, not a general AI assistant.**
-The daemon owns provider calls and note writes. AI is disabled by default. Existing
-note commands continue to work without an AI provider.
+**Status: provisional POC, not a general AI assistant.** File transcription and
+AI note workflows are implemented; isolated fake-engine/provider tests cover their
+behavior. A real local audio-to-note smoke test also passed with whisper.cpp
+v1.7.6, the English-only `base.en` model, and the public upstream `jfk.wav` sample.
+The verified local runtime and model are installed under
+`$HOME/.cache/ginkgo/voice-poc/`; see the repeatable real-audio smoke command below.
 
-## Configure OpenCode
+The daemon owns transcription, provider calls, and note writes. Voice and AI are
+independently disabled by default. Existing note commands need neither dependency.
+
+## Start with raw local voice transcription
+
+Prerequisites: Linux with `/proc`, a trusted installed whisper.cpp **`whisper-cli`**
+executable, and its compatible installed `ggml-base.en.bin` English model
+(approximately **142 MiB**). This is not Python's `whisper` CLI. Models live in a
+user-managed local cache; GinkGo neither downloads them nor manages that cache.
+Replace both absolute-path placeholders below with the final installed locations.
+The daemon must be able to read the WAV/model and execute whisper-cli.
+
+Merge these tables into the existing GinkGo TOML config; do not duplicate tables:
+
+```toml
+[voice]
+enabled = true
+mode = "raw"
+
+[voice.stt]
+executable = "/absolute/path/to/whisper-cli"
+model = "/absolute/path/to/local-cache/ggml-base.en.bin"
+language = "en"
+device = "cpu"
+threads = 4
+timeout = "5m"
+residency = "on_demand"
+
+[ai]
+enabled = false
+```
+
+`language = "en"` is appropriate for the English-only `base.en` model. A compatible
+multilingual model may instead use a language code or `"auto"`. Only
+`residency = "on_demand"` and `device = "cpu"` or `"auto"` are supported; `auto`
+lets the installed engine choose CPU/GPU and does not guarantee GPU availability.
+See the [adapter compatibility and resource limits](../internal/voice/README.md).
+
+Build matching CLI/daemon binaries and **restart the daemon after changing config**
+using your normal service workflow (for the installed user service:
+`systemctl --user restart ginkgo.service`). `make build` builds the binary but does
+not update a running daemon. These instructions do not change your config or
+restart your service automatically.
+
+### Record a compatible WAV with PipeWire
+
+Use the installed PipeWire recorder directly, then press **Ctrl-C** to finish:
+
+```sh
+pw-record --container wav --rate 16000 --channels 1 --format s16 /tmp/recording.wav
+```
+
+This is an external recording command, **not** a GinkGo microphone feature. Audio
+must be a regular RIFF/WAVE file: PCM signed 16-bit, 16000 Hz, mono. Other audio
+formats are rejected rather than converted. Default limits are 32 MiB and five
+minutes of audio. The file path refers to the daemon's local filesystem; no audio
+upload is sent through IPC. Recordings can contain private information; remove
+your test recording when you no longer need it.
+
+### Test raw first, then AI mode
+
+Before saving voice provenance, [upgrade every synced writer](provenance.md): older
+binaries can discard originals when they rewrite a note.
+
+```sh
+make build
+# Transcribe only: no note is written without --save.
+./build/ginkgo-cli voice transcribe /tmp/recording.wav --output json
+
+# First real test: save the exact transcript with AI disabled.
+./build/ginkgo-cli voice transcribe /tmp/recording.wav --save --mode raw --output json
+
+# Optional second test: with AI still disabled, save raw and report fallback_reason.
+./build/ginkgo-cli voice transcribe /tmp/recording.wav --save --mode ai --new --output json
+```
+
+Each `--save` command creates its own note for nonempty speech; running both saves
+two notes. JSON includes `transcript` (`text`, optional `language`, `engine`, `model`)
+and, when saved, `entry`, `action`, and optional `fallback_reason`. Empty or
+whitespace-only transcripts create **no note**, even with `--save`. Copy the saved
+`entry.id` to inspect its body and separately preserved voice original:
+
+```sh
+./build/ginkgo-cli note show NOTE_ID
+./build/ginkgo-cli note show NOTE_ID --original
+```
+
+Raw mode never calls an AI provider. AI mode uses the same transcript-to-note
+workflow as `ai note`: until AI is enabled and its provider is configured, it saves
+a new raw note with a fallback reason. After configuring OpenCode below and
+restarting the daemon, use `--save --mode ai --provider opencode --new` for a new
+AI-organized note, or `--note NOTE_ID` instead of `--new` for explicit expansion.
+AI failure also falls back to raw; cancellation does not save a fallback note.
+
+Other supported overrides: `--namespace`, `--title`, repeated `--tag`, installed
+model path `--model`, and `--language`. `--new`/`--note` require `--save --mode ai`
+and are mutually exclusive. `--timeout` bounds the whole request (default eight
+minutes); the daemon's STT timeout independently bounds transcription and its
+serialized queue wait. STT is on demand: each request starts and releases an
+engine process, rather than retaining a model between requests.
+
+## Configure OpenCode for AI notes
 
 Add or merge this into the GinkGo TOML config. Replace the executable and model with
 your installed OpenCode path and selected provider/model. Never put API keys in this
@@ -95,6 +199,7 @@ installed service:
 ```sh
 go test ./...
 python3 scripts/smoke-ai-poc.py
+python3 scripts/smoke-voice-poc.py
 ```
 
 The script builds the binary in its private `/tmp/opencode` directory. It covers
@@ -103,10 +208,23 @@ cancellation without a late note. See the
 [`OpenCode adapter notes`](../internal/ai/README.md) for optional no-inference
 compatibility tests.
 
-## Not wired in this POC
+To repeat the real local speech test with the installed POC assets (all notes
+remain in disposable storage):
 
-An internal `whisper-cli` WAV transcription adapter exists, but there is no user-facing
-voice CLI or transcript-to-note workflow yet. Microphone capture, STT residency/model
-catalog or downloads, wake/VAD, TTS, AI search/summaries, and Codex/Claude adapters
-remain deferred. Do not infer these capabilities from this document or the broader
-proposal in `PLAN.md`.
+```sh
+python3 -B scripts/smoke-voice-poc.py \
+  --whisper "$HOME/.cache/ginkgo/voice-poc/bin/whisper-cli" \
+  --model "$HOME/.cache/ginkgo/voice-poc/models/ggml-base.en.bin" \
+  --audio "$HOME/.cache/ginkgo/voice-poc/samples/jfk.wav"
+```
+
+## Deferred in this POC
+
+`voice transcribe FILE` is available, including raw/AI saving. A direct
+`ginkgo-cli voice record` command, managed microphone capture, wake word, VAD, TTS,
+resident models (`persistent`/`idle_timeout`), model catalog/download management,
+AI search/summaries, and Codex/Claude adapters remain deferred. Do not infer these
+capabilities from the broader proposal in `PLAN.md`. The external `pw-record`
+command above is the recording path for this POC. The public-sample smoke test
+verifies this pinned CPU build, not microphone quality or compatibility with
+every whisper.cpp release.

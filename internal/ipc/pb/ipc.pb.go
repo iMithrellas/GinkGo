@@ -586,6 +586,206 @@ func (x *NoteDelete) GetNamespace() string {
 	return ""
 }
 
+type VoiceTranscribe struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AudioPath     string                 `protobuf:"bytes,1,opt,name=audio_path,json=audioPath,proto3" json:"audio_path,omitempty"`
+	Save          bool                   `protobuf:"varint,2,opt,name=save,proto3" json:"save,omitempty"`
+	Mode          string                 `protobuf:"bytes,3,opt,name=mode,proto3" json:"mode,omitempty"`
+	Namespace     string                 `protobuf:"bytes,4,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	Title         string                 `protobuf:"bytes,5,opt,name=title,proto3" json:"title,omitempty"`
+	Tags          []string               `protobuf:"bytes,6,rep,name=tags,proto3" json:"tags,omitempty"`
+	Provider      string                 `protobuf:"bytes,7,opt,name=provider,proto3" json:"provider,omitempty"`
+	Action        string                 `protobuf:"bytes,8,opt,name=action,proto3" json:"action,omitempty"`
+	NoteId        string                 `protobuf:"bytes,9,opt,name=note_id,json=noteId,proto3" json:"note_id,omitempty"`
+	Model         string                 `protobuf:"bytes,10,opt,name=model,proto3" json:"model,omitempty"`
+	Language      string                 `protobuf:"bytes,11,opt,name=language,proto3" json:"language,omitempty"`
+	Deadline      *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=deadline,proto3" json:"deadline,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VoiceTranscribe) Reset() {
+	*x = VoiceTranscribe{}
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VoiceTranscribe) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VoiceTranscribe) ProtoMessage() {}
+
+func (x *VoiceTranscribe) ProtoReflect() protoreflect.Message {
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VoiceTranscribe.ProtoReflect.Descriptor instead.
+func (*VoiceTranscribe) Descriptor() ([]byte, []int) {
+	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *VoiceTranscribe) GetAudioPath() string {
+	if x != nil {
+		return x.AudioPath
+	}
+	return ""
+}
+
+func (x *VoiceTranscribe) GetSave() bool {
+	if x != nil {
+		return x.Save
+	}
+	return false
+}
+
+func (x *VoiceTranscribe) GetMode() string {
+	if x != nil {
+		return x.Mode
+	}
+	return ""
+}
+
+func (x *VoiceTranscribe) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+func (x *VoiceTranscribe) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *VoiceTranscribe) GetTags() []string {
+	if x != nil {
+		return x.Tags
+	}
+	return nil
+}
+
+func (x *VoiceTranscribe) GetProvider() string {
+	if x != nil {
+		return x.Provider
+	}
+	return ""
+}
+
+func (x *VoiceTranscribe) GetAction() string {
+	if x != nil {
+		return x.Action
+	}
+	return ""
+}
+
+func (x *VoiceTranscribe) GetNoteId() string {
+	if x != nil {
+		return x.NoteId
+	}
+	return ""
+}
+
+func (x *VoiceTranscribe) GetModel() string {
+	if x != nil {
+		return x.Model
+	}
+	return ""
+}
+
+func (x *VoiceTranscribe) GetLanguage() string {
+	if x != nil {
+		return x.Language
+	}
+	return ""
+}
+
+func (x *VoiceTranscribe) GetDeadline() *timestamppb.Timestamp {
+	if x != nil {
+		return x.Deadline
+	}
+	return nil
+}
+
+type Transcript struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Text          string                 `protobuf:"bytes,1,opt,name=text,proto3" json:"text,omitempty"`
+	Language      string                 `protobuf:"bytes,2,opt,name=language,proto3" json:"language,omitempty"`
+	Engine        string                 `protobuf:"bytes,3,opt,name=engine,proto3" json:"engine,omitempty"`
+	Model         string                 `protobuf:"bytes,4,opt,name=model,proto3" json:"model,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Transcript) Reset() {
+	*x = Transcript{}
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Transcript) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Transcript) ProtoMessage() {}
+
+func (x *Transcript) ProtoReflect() protoreflect.Message {
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Transcript.ProtoReflect.Descriptor instead.
+func (*Transcript) Descriptor() ([]byte, []int) {
+	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *Transcript) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+func (x *Transcript) GetLanguage() string {
+	if x != nil {
+		return x.Language
+	}
+	return ""
+}
+
+func (x *Transcript) GetEngine() string {
+	if x != nil {
+		return x.Engine
+	}
+	return ""
+}
+
+func (x *Transcript) GetModel() string {
+	if x != nil {
+		return x.Model
+	}
+	return ""
+}
+
 type NoteShow struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -596,7 +796,7 @@ type NoteShow struct {
 
 func (x *NoteShow) Reset() {
 	*x = NoteShow{}
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[7]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -608,7 +808,7 @@ func (x *NoteShow) String() string {
 func (*NoteShow) ProtoMessage() {}
 
 func (x *NoteShow) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[7]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -621,7 +821,7 @@ func (x *NoteShow) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NoteShow.ProtoReflect.Descriptor instead.
 func (*NoteShow) Descriptor() ([]byte, []int) {
-	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{7}
+	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *NoteShow) GetId() string {
@@ -655,7 +855,7 @@ type ListFilter struct {
 
 func (x *ListFilter) Reset() {
 	*x = ListFilter{}
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[8]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -667,7 +867,7 @@ func (x *ListFilter) String() string {
 func (*ListFilter) ProtoMessage() {}
 
 func (x *ListFilter) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[8]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -680,7 +880,7 @@ func (x *ListFilter) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFilter.ProtoReflect.Descriptor instead.
 func (*ListFilter) Descriptor() ([]byte, []int) {
-	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{8}
+	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ListFilter) GetNamespace() string {
@@ -756,7 +956,7 @@ type SearchFTS struct {
 
 func (x *SearchFTS) Reset() {
 	*x = SearchFTS{}
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[9]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -768,7 +968,7 @@ func (x *SearchFTS) String() string {
 func (*SearchFTS) ProtoMessage() {}
 
 func (x *SearchFTS) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[9]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -781,7 +981,7 @@ func (x *SearchFTS) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SearchFTS.ProtoReflect.Descriptor instead.
 func (*SearchFTS) Descriptor() ([]byte, []int) {
-	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{9}
+	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *SearchFTS) GetQuery() string {
@@ -808,7 +1008,7 @@ type SearchRegex struct {
 
 func (x *SearchRegex) Reset() {
 	*x = SearchRegex{}
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[10]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -820,7 +1020,7 @@ func (x *SearchRegex) String() string {
 func (*SearchRegex) ProtoMessage() {}
 
 func (x *SearchRegex) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[10]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -833,7 +1033,7 @@ func (x *SearchRegex) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SearchRegex.ProtoReflect.Descriptor instead.
 func (*SearchRegex) Descriptor() ([]byte, []int) {
-	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{10}
+	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *SearchRegex) GetPattern() string {
@@ -859,7 +1059,7 @@ type TagList struct {
 
 func (x *TagList) Reset() {
 	*x = TagList{}
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[11]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -871,7 +1071,7 @@ func (x *TagList) String() string {
 func (*TagList) ProtoMessage() {}
 
 func (x *TagList) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[11]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -884,7 +1084,7 @@ func (x *TagList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TagList.ProtoReflect.Descriptor instead.
 func (*TagList) Descriptor() ([]byte, []int) {
-	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{11}
+	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *TagList) GetNamespace() string {
@@ -911,6 +1111,7 @@ type Request struct {
 	//	*Request_TagList
 	//	*Request_NamespaceDelete
 	//	*Request_AiNote
+	//	*Request_VoiceTranscribe
 	Cmd           isRequest_Cmd `protobuf_oneof:"cmd"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -918,7 +1119,7 @@ type Request struct {
 
 func (x *Request) Reset() {
 	*x = Request{}
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[12]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -930,7 +1131,7 @@ func (x *Request) String() string {
 func (*Request) ProtoMessage() {}
 
 func (x *Request) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[12]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -943,7 +1144,7 @@ func (x *Request) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Request.ProtoReflect.Descriptor instead.
 func (*Request) Descriptor() ([]byte, []int) {
-	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{12}
+	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *Request) GetCmd() isRequest_Cmd {
@@ -1070,6 +1271,15 @@ func (x *Request) GetAiNote() *AINote {
 	return nil
 }
 
+func (x *Request) GetVoiceTranscribe() *VoiceTranscribe {
+	if x != nil {
+		if x, ok := x.Cmd.(*Request_VoiceTranscribe); ok {
+			return x.VoiceTranscribe
+		}
+	}
+	return nil
+}
+
 type isRequest_Cmd interface {
 	isRequest_Cmd()
 }
@@ -1126,6 +1336,10 @@ type Request_AiNote struct {
 	AiNote *AINote `protobuf:"bytes,13,opt,name=ai_note,json=aiNote,proto3,oneof"`
 }
 
+type Request_VoiceTranscribe struct {
+	VoiceTranscribe *VoiceTranscribe `protobuf:"bytes,14,opt,name=voice_transcribe,json=voiceTranscribe,proto3,oneof"`
+}
+
 func (*Request_NoteAdd) isRequest_Cmd() {}
 
 func (*Request_NoteEdit) isRequest_Cmd() {}
@@ -1152,6 +1366,8 @@ func (*Request_NamespaceDelete) isRequest_Cmd() {}
 
 func (*Request_AiNote) isRequest_Cmd() {}
 
+func (*Request_VoiceTranscribe) isRequest_Cmd() {}
+
 type TagStat struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Tag           string                 `protobuf:"bytes,1,opt,name=tag,proto3" json:"tag,omitempty"`
@@ -1163,7 +1379,7 @@ type TagStat struct {
 
 func (x *TagStat) Reset() {
 	*x = TagStat{}
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[13]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1175,7 +1391,7 @@ func (x *TagStat) String() string {
 func (*TagStat) ProtoMessage() {}
 
 func (x *TagStat) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[13]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1188,7 +1404,7 @@ func (x *TagStat) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TagStat.ProtoReflect.Descriptor instead.
 func (*TagStat) Descriptor() ([]byte, []int) {
-	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{13}
+	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *TagStat) GetTag() string {
@@ -1224,13 +1440,14 @@ type Response struct {
 	Page           *Page                  `protobuf:"bytes,8,opt,name=page,proto3" json:"page,omitempty"`
 	Action         string                 `protobuf:"bytes,9,opt,name=action,proto3" json:"action,omitempty"`
 	FallbackReason string                 `protobuf:"bytes,10,opt,name=fallback_reason,json=fallbackReason,proto3" json:"fallback_reason,omitempty"`
+	Transcript     *Transcript            `protobuf:"bytes,11,opt,name=transcript,proto3" json:"transcript,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Response) Reset() {
 	*x = Response{}
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[14]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1242,7 +1459,7 @@ func (x *Response) String() string {
 func (*Response) ProtoMessage() {}
 
 func (x *Response) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[14]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1255,7 +1472,7 @@ func (x *Response) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Response.ProtoReflect.Descriptor instead.
 func (*Response) Descriptor() ([]byte, []int) {
-	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{14}
+	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *Response) GetOk() bool {
@@ -1328,6 +1545,13 @@ func (x *Response) GetFallbackReason() string {
 	return ""
 }
 
+func (x *Response) GetTranscript() *Transcript {
+	if x != nil {
+		return x.Transcript
+	}
+	return nil
+}
+
 type Page struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Next          string                 `protobuf:"bytes,1,opt,name=next,proto3" json:"next,omitempty"`
@@ -1338,7 +1562,7 @@ type Page struct {
 
 func (x *Page) Reset() {
 	*x = Page{}
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[15]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1350,7 +1574,7 @@ func (x *Page) String() string {
 func (*Page) ProtoMessage() {}
 
 func (x *Page) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[15]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1363,7 +1587,7 @@ func (x *Page) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Page.ProtoReflect.Descriptor instead.
 func (*Page) Descriptor() ([]byte, []int) {
-	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{15}
+	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *Page) GetNext() string {
@@ -1397,7 +1621,7 @@ type RepEvent struct {
 
 func (x *RepEvent) Reset() {
 	*x = RepEvent{}
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[16]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1409,7 +1633,7 @@ func (x *RepEvent) String() string {
 func (*RepEvent) ProtoMessage() {}
 
 func (x *RepEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[16]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1422,7 +1646,7 @@ func (x *RepEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RepEvent.ProtoReflect.Descriptor instead.
 func (*RepEvent) Descriptor() ([]byte, []int) {
-	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{16}
+	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *RepEvent) GetTime() *timestamppb.Timestamp {
@@ -1497,7 +1721,7 @@ type PushBatch struct {
 
 func (x *PushBatch) Reset() {
 	*x = PushBatch{}
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[17]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1509,7 +1733,7 @@ func (x *PushBatch) String() string {
 func (*PushBatch) ProtoMessage() {}
 
 func (x *PushBatch) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[17]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1522,7 +1746,7 @@ func (x *PushBatch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PushBatch.ProtoReflect.Descriptor instead.
 func (*PushBatch) Descriptor() ([]byte, []int) {
-	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{17}
+	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *PushBatch) GetEvents() []*RepEvent {
@@ -1543,7 +1767,7 @@ type ItemStatus struct {
 
 func (x *ItemStatus) Reset() {
 	*x = ItemStatus{}
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[18]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1555,7 +1779,7 @@ func (x *ItemStatus) String() string {
 func (*ItemStatus) ProtoMessage() {}
 
 func (x *ItemStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[18]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1568,7 +1792,7 @@ func (x *ItemStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ItemStatus.ProtoReflect.Descriptor instead.
 func (*ItemStatus) Descriptor() ([]byte, []int) {
-	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{18}
+	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ItemStatus) GetId() string {
@@ -1601,7 +1825,7 @@ type Cursor struct {
 
 func (x *Cursor) Reset() {
 	*x = Cursor{}
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[19]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1613,7 +1837,7 @@ func (x *Cursor) String() string {
 func (*Cursor) ProtoMessage() {}
 
 func (x *Cursor) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[19]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1626,7 +1850,7 @@ func (x *Cursor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Cursor.ProtoReflect.Descriptor instead.
 func (*Cursor) Descriptor() ([]byte, []int) {
-	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{19}
+	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *Cursor) GetAfter() *timestamppb.Timestamp {
@@ -1646,7 +1870,7 @@ type PushResult struct {
 
 func (x *PushResult) Reset() {
 	*x = PushResult{}
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[20]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1658,7 +1882,7 @@ func (x *PushResult) String() string {
 func (*PushResult) ProtoMessage() {}
 
 func (x *PushResult) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[20]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1671,7 +1895,7 @@ func (x *PushResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PushResult.ProtoReflect.Descriptor instead.
 func (*PushResult) Descriptor() ([]byte, []int) {
-	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{20}
+	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *PushResult) GetItems() []*ItemStatus {
@@ -1698,7 +1922,7 @@ type PullResult struct {
 
 func (x *PullResult) Reset() {
 	*x = PullResult{}
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[21]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1710,7 +1934,7 @@ func (x *PullResult) String() string {
 func (*PullResult) ProtoMessage() {}
 
 func (x *PullResult) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[21]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1723,7 +1947,7 @@ func (x *PullResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PullResult.ProtoReflect.Descriptor instead.
 func (*PullResult) Descriptor() ([]byte, []int) {
-	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{21}
+	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *PullResult) GetEvents() []*RepEvent {
@@ -1748,7 +1972,7 @@ type SyncRun struct {
 
 func (x *SyncRun) Reset() {
 	*x = SyncRun{}
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[22]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1760,7 +1984,7 @@ func (x *SyncRun) String() string {
 func (*SyncRun) ProtoMessage() {}
 
 func (x *SyncRun) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[22]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1773,7 +1997,7 @@ func (x *SyncRun) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SyncRun.ProtoReflect.Descriptor instead.
 func (*SyncRun) Descriptor() ([]byte, []int) {
-	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{22}
+	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{24}
 }
 
 type NamespaceList struct {
@@ -1784,7 +2008,7 @@ type NamespaceList struct {
 
 func (x *NamespaceList) Reset() {
 	*x = NamespaceList{}
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[23]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1796,7 +2020,7 @@ func (x *NamespaceList) String() string {
 func (*NamespaceList) ProtoMessage() {}
 
 func (x *NamespaceList) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[23]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1809,7 +2033,7 @@ func (x *NamespaceList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NamespaceList.ProtoReflect.Descriptor instead.
 func (*NamespaceList) Descriptor() ([]byte, []int) {
-	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{23}
+	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{25}
 }
 
 type NamespaceDelete struct {
@@ -1821,7 +2045,7 @@ type NamespaceDelete struct {
 
 func (x *NamespaceDelete) Reset() {
 	*x = NamespaceDelete{}
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[24]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1833,7 +2057,7 @@ func (x *NamespaceDelete) String() string {
 func (*NamespaceDelete) ProtoMessage() {}
 
 func (x *NamespaceDelete) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[24]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1846,7 +2070,7 @@ func (x *NamespaceDelete) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NamespaceDelete.ProtoReflect.Descriptor instead.
 func (*NamespaceDelete) Descriptor() ([]byte, []int) {
-	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{24}
+	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *NamespaceDelete) GetNamespace() string {
@@ -1866,7 +2090,7 @@ type QueueRequest struct {
 
 func (x *QueueRequest) Reset() {
 	*x = QueueRequest{}
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[25]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1878,7 +2102,7 @@ func (x *QueueRequest) String() string {
 func (*QueueRequest) ProtoMessage() {}
 
 func (x *QueueRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[25]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1891,7 +2115,7 @@ func (x *QueueRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueueRequest.ProtoReflect.Descriptor instead.
 func (*QueueRequest) Descriptor() ([]byte, []int) {
-	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{25}
+	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *QueueRequest) GetLimit() int32 {
@@ -1919,7 +2143,7 @@ type QueueEvent struct {
 
 func (x *QueueEvent) Reset() {
 	*x = QueueEvent{}
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[26]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1931,7 +2155,7 @@ func (x *QueueEvent) String() string {
 func (*QueueEvent) ProtoMessage() {}
 
 func (x *QueueEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[26]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1944,7 +2168,7 @@ func (x *QueueEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueueEvent.ProtoReflect.Descriptor instead.
 func (*QueueEvent) Descriptor() ([]byte, []int) {
-	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{26}
+	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *QueueEvent) GetTime() *timestamppb.Timestamp {
@@ -1980,7 +2204,7 @@ type QueueRemote struct {
 
 func (x *QueueRemote) Reset() {
 	*x = QueueRemote{}
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[27]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1992,7 +2216,7 @@ func (x *QueueRemote) String() string {
 func (*QueueRemote) ProtoMessage() {}
 
 func (x *QueueRemote) ProtoReflect() protoreflect.Message {
-	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[27]
+	mi := &file_internal_ipc_pb_ipc_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2005,7 +2229,7 @@ func (x *QueueRemote) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QueueRemote.ProtoReflect.Descriptor instead.
 func (*QueueRemote) Descriptor() ([]byte, []int) {
-	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{27}
+	return file_internal_ipc_pb_ipc_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *QueueRemote) GetName() string {
@@ -2099,7 +2323,28 @@ const file_internal_ipc_pb_ipc_proto_rawDesc = "" +
 	"\n" +
 	"NoteDelete\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1c\n" +
-	"\tnamespace\x18\x02 \x01(\tR\tnamespace\"8\n" +
+	"\tnamespace\x18\x02 \x01(\tR\tnamespace\"\xd7\x02\n" +
+	"\x0fVoiceTranscribe\x12\x1d\n" +
+	"\n" +
+	"audio_path\x18\x01 \x01(\tR\taudioPath\x12\x12\n" +
+	"\x04save\x18\x02 \x01(\bR\x04save\x12\x12\n" +
+	"\x04mode\x18\x03 \x01(\tR\x04mode\x12\x1c\n" +
+	"\tnamespace\x18\x04 \x01(\tR\tnamespace\x12\x14\n" +
+	"\x05title\x18\x05 \x01(\tR\x05title\x12\x12\n" +
+	"\x04tags\x18\x06 \x03(\tR\x04tags\x12\x1a\n" +
+	"\bprovider\x18\a \x01(\tR\bprovider\x12\x16\n" +
+	"\x06action\x18\b \x01(\tR\x06action\x12\x17\n" +
+	"\anote_id\x18\t \x01(\tR\x06noteId\x12\x14\n" +
+	"\x05model\x18\n" +
+	" \x01(\tR\x05model\x12\x1a\n" +
+	"\blanguage\x18\v \x01(\tR\blanguage\x126\n" +
+	"\bdeadline\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\bdeadline\"j\n" +
+	"\n" +
+	"Transcript\x12\x12\n" +
+	"\x04text\x18\x01 \x01(\tR\x04text\x12\x1a\n" +
+	"\blanguage\x18\x02 \x01(\tR\blanguage\x12\x16\n" +
+	"\x06engine\x18\x03 \x01(\tR\x06engine\x12\x14\n" +
+	"\x05model\x18\x04 \x01(\tR\x05model\"8\n" +
 	"\bNoteShow\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1c\n" +
 	"\tnamespace\x18\x02 \x01(\tR\tnamespace\"\xaf\x02\n" +
@@ -2121,7 +2366,7 @@ const file_internal_ipc_pb_ipc_proto_rawDesc = "" +
 	"\apattern\x18\x01 \x01(\tR\apattern\x12'\n" +
 	"\x06filter\x18\x02 \x01(\v2\x0f.ipc.ListFilterR\x06filter\"'\n" +
 	"\aTagList\x12\x1c\n" +
-	"\tnamespace\x18\x01 \x01(\tR\tnamespace\"\xa7\x05\n" +
+	"\tnamespace\x18\x01 \x01(\tR\tnamespace\"\xea\x05\n" +
 	"\aRequest\x12)\n" +
 	"\bnote_add\x18\x01 \x01(\v2\f.ipc.NoteAddH\x00R\anoteAdd\x12,\n" +
 	"\tnote_edit\x18\x02 \x01(\v2\r.ipc.NoteEditH\x00R\bnoteEdit\x122\n" +
@@ -2138,12 +2383,13 @@ const file_internal_ipc_pb_ipc_proto_rawDesc = "" +
 	" \x01(\v2\x12.ipc.NamespaceListH\x00R\rnamespaceList\x12)\n" +
 	"\btag_list\x18\v \x01(\v2\f.ipc.TagListH\x00R\atagList\x12A\n" +
 	"\x10namespace_delete\x18\f \x01(\v2\x14.ipc.NamespaceDeleteH\x00R\x0fnamespaceDelete\x12&\n" +
-	"\aai_note\x18\r \x01(\v2\v.ipc.AINoteH\x00R\x06aiNoteB\x05\n" +
+	"\aai_note\x18\r \x01(\v2\v.ipc.AINoteH\x00R\x06aiNote\x12A\n" +
+	"\x10voice_transcribe\x18\x0e \x01(\v2\x14.ipc.VoiceTranscribeH\x00R\x0fvoiceTranscribeB\x05\n" +
 	"\x03cmd\"S\n" +
 	"\aTagStat\x12\x10\n" +
 	"\x03tag\x18\x01 \x01(\tR\x03tag\x12\x14\n" +
 	"\x05count\x18\x02 \x01(\x05R\x05count\x12 \n" +
-	"\vdescription\x18\x03 \x01(\tR\vdescription\"\xbe\x02\n" +
+	"\vdescription\x18\x03 \x01(\tR\vdescription\"\xef\x02\n" +
 	"\bResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x10\n" +
 	"\x03msg\x18\x02 \x01(\tR\x03msg\x12 \n" +
@@ -2159,7 +2405,10 @@ const file_internal_ipc_pb_ipc_proto_rawDesc = "" +
 	"\x04page\x18\b \x01(\v2\t.ipc.PageR\x04page\x12\x16\n" +
 	"\x06action\x18\t \x01(\tR\x06action\x12'\n" +
 	"\x0ffallback_reason\x18\n" +
-	" \x01(\tR\x0efallbackReason\".\n" +
+	" \x01(\tR\x0efallbackReason\x12/\n" +
+	"\n" +
+	"transcript\x18\v \x01(\v2\x0f.ipc.TranscriptR\n" +
+	"transcript\".\n" +
 	"\x04Page\x12\x12\n" +
 	"\x04next\x18\x01 \x01(\tR\x04next\x12\x12\n" +
 	"\x04prev\x18\x02 \x01(\tR\x04prev\"\x90\x02\n" +
@@ -2220,7 +2469,7 @@ func file_internal_ipc_pb_ipc_proto_rawDescGZIP() []byte {
 	return file_internal_ipc_pb_ipc_proto_rawDescData
 }
 
-var file_internal_ipc_pb_ipc_proto_msgTypes = make([]protoimpl.MessageInfo, 28)
+var file_internal_ipc_pb_ipc_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
 var file_internal_ipc_pb_ipc_proto_goTypes = []any{
 	(*Entry)(nil),                 // 0: ipc.Entry
 	(*Source)(nil),                // 1: ipc.Source
@@ -2229,74 +2478,79 @@ var file_internal_ipc_pb_ipc_proto_goTypes = []any{
 	(*NoteEdit)(nil),              // 4: ipc.NoteEdit
 	(*AINote)(nil),                // 5: ipc.AINote
 	(*NoteDelete)(nil),            // 6: ipc.NoteDelete
-	(*NoteShow)(nil),              // 7: ipc.NoteShow
-	(*ListFilter)(nil),            // 8: ipc.ListFilter
-	(*SearchFTS)(nil),             // 9: ipc.SearchFTS
-	(*SearchRegex)(nil),           // 10: ipc.SearchRegex
-	(*TagList)(nil),               // 11: ipc.TagList
-	(*Request)(nil),               // 12: ipc.Request
-	(*TagStat)(nil),               // 13: ipc.TagStat
-	(*Response)(nil),              // 14: ipc.Response
-	(*Page)(nil),                  // 15: ipc.Page
-	(*RepEvent)(nil),              // 16: ipc.RepEvent
-	(*PushBatch)(nil),             // 17: ipc.PushBatch
-	(*ItemStatus)(nil),            // 18: ipc.ItemStatus
-	(*Cursor)(nil),                // 19: ipc.Cursor
-	(*PushResult)(nil),            // 20: ipc.PushResult
-	(*PullResult)(nil),            // 21: ipc.PullResult
-	(*SyncRun)(nil),               // 22: ipc.SyncRun
-	(*NamespaceList)(nil),         // 23: ipc.NamespaceList
-	(*NamespaceDelete)(nil),       // 24: ipc.NamespaceDelete
-	(*QueueRequest)(nil),          // 25: ipc.QueueRequest
-	(*QueueEvent)(nil),            // 26: ipc.QueueEvent
-	(*QueueRemote)(nil),           // 27: ipc.QueueRemote
-	(*timestamppb.Timestamp)(nil), // 28: google.protobuf.Timestamp
+	(*VoiceTranscribe)(nil),       // 7: ipc.VoiceTranscribe
+	(*Transcript)(nil),            // 8: ipc.Transcript
+	(*NoteShow)(nil),              // 9: ipc.NoteShow
+	(*ListFilter)(nil),            // 10: ipc.ListFilter
+	(*SearchFTS)(nil),             // 11: ipc.SearchFTS
+	(*SearchRegex)(nil),           // 12: ipc.SearchRegex
+	(*TagList)(nil),               // 13: ipc.TagList
+	(*Request)(nil),               // 14: ipc.Request
+	(*TagStat)(nil),               // 15: ipc.TagStat
+	(*Response)(nil),              // 16: ipc.Response
+	(*Page)(nil),                  // 17: ipc.Page
+	(*RepEvent)(nil),              // 18: ipc.RepEvent
+	(*PushBatch)(nil),             // 19: ipc.PushBatch
+	(*ItemStatus)(nil),            // 20: ipc.ItemStatus
+	(*Cursor)(nil),                // 21: ipc.Cursor
+	(*PushResult)(nil),            // 22: ipc.PushResult
+	(*PullResult)(nil),            // 23: ipc.PullResult
+	(*SyncRun)(nil),               // 24: ipc.SyncRun
+	(*NamespaceList)(nil),         // 25: ipc.NamespaceList
+	(*NamespaceDelete)(nil),       // 26: ipc.NamespaceDelete
+	(*QueueRequest)(nil),          // 27: ipc.QueueRequest
+	(*QueueEvent)(nil),            // 28: ipc.QueueEvent
+	(*QueueRemote)(nil),           // 29: ipc.QueueRemote
+	(*timestamppb.Timestamp)(nil), // 30: google.protobuf.Timestamp
 }
 var file_internal_ipc_pb_ipc_proto_depIdxs = []int32{
-	28, // 0: ipc.Entry.created_at:type_name -> google.protobuf.Timestamp
-	28, // 1: ipc.Entry.updated_at:type_name -> google.protobuf.Timestamp
+	30, // 0: ipc.Entry.created_at:type_name -> google.protobuf.Timestamp
+	30, // 1: ipc.Entry.updated_at:type_name -> google.protobuf.Timestamp
 	2,  // 2: ipc.Entry.provenance:type_name -> ipc.Provenance
-	28, // 3: ipc.Source.captured_at:type_name -> google.protobuf.Timestamp
+	30, // 3: ipc.Source.captured_at:type_name -> google.protobuf.Timestamp
 	1,  // 4: ipc.Provenance.sources:type_name -> ipc.Source
 	2,  // 5: ipc.NoteAdd.provenance:type_name -> ipc.Provenance
 	2,  // 6: ipc.NoteEdit.provenance:type_name -> ipc.Provenance
-	28, // 7: ipc.AINote.deadline:type_name -> google.protobuf.Timestamp
-	28, // 8: ipc.ListFilter.since:type_name -> google.protobuf.Timestamp
-	28, // 9: ipc.ListFilter.until:type_name -> google.protobuf.Timestamp
-	8,  // 10: ipc.SearchFTS.filter:type_name -> ipc.ListFilter
-	8,  // 11: ipc.SearchRegex.filter:type_name -> ipc.ListFilter
-	3,  // 12: ipc.Request.note_add:type_name -> ipc.NoteAdd
-	4,  // 13: ipc.Request.note_edit:type_name -> ipc.NoteEdit
-	6,  // 14: ipc.Request.note_delete:type_name -> ipc.NoteDelete
-	7,  // 15: ipc.Request.note_show:type_name -> ipc.NoteShow
-	8,  // 16: ipc.Request.note_list:type_name -> ipc.ListFilter
-	9,  // 17: ipc.Request.note_search_fts:type_name -> ipc.SearchFTS
-	10, // 18: ipc.Request.note_search_regex:type_name -> ipc.SearchRegex
-	22, // 19: ipc.Request.sync_run:type_name -> ipc.SyncRun
-	25, // 20: ipc.Request.queue_list:type_name -> ipc.QueueRequest
-	23, // 21: ipc.Request.namespace_list:type_name -> ipc.NamespaceList
-	11, // 22: ipc.Request.tag_list:type_name -> ipc.TagList
-	24, // 23: ipc.Request.namespace_delete:type_name -> ipc.NamespaceDelete
-	5,  // 24: ipc.Request.ai_note:type_name -> ipc.AINote
-	0,  // 25: ipc.Response.entry:type_name -> ipc.Entry
-	0,  // 26: ipc.Response.entries:type_name -> ipc.Entry
-	27, // 27: ipc.Response.queue:type_name -> ipc.QueueRemote
-	13, // 28: ipc.Response.tags:type_name -> ipc.TagStat
-	15, // 29: ipc.Response.page:type_name -> ipc.Page
-	28, // 30: ipc.RepEvent.time:type_name -> google.protobuf.Timestamp
-	16, // 31: ipc.PushBatch.events:type_name -> ipc.RepEvent
-	28, // 32: ipc.Cursor.after:type_name -> google.protobuf.Timestamp
-	18, // 33: ipc.PushResult.items:type_name -> ipc.ItemStatus
-	19, // 34: ipc.PushResult.next:type_name -> ipc.Cursor
-	16, // 35: ipc.PullResult.events:type_name -> ipc.RepEvent
-	19, // 36: ipc.PullResult.next:type_name -> ipc.Cursor
-	28, // 37: ipc.QueueEvent.time:type_name -> google.protobuf.Timestamp
-	26, // 38: ipc.QueueRemote.events:type_name -> ipc.QueueEvent
-	39, // [39:39] is the sub-list for method output_type
-	39, // [39:39] is the sub-list for method input_type
-	39, // [39:39] is the sub-list for extension type_name
-	39, // [39:39] is the sub-list for extension extendee
-	0,  // [0:39] is the sub-list for field type_name
+	30, // 7: ipc.AINote.deadline:type_name -> google.protobuf.Timestamp
+	30, // 8: ipc.VoiceTranscribe.deadline:type_name -> google.protobuf.Timestamp
+	30, // 9: ipc.ListFilter.since:type_name -> google.protobuf.Timestamp
+	30, // 10: ipc.ListFilter.until:type_name -> google.protobuf.Timestamp
+	10, // 11: ipc.SearchFTS.filter:type_name -> ipc.ListFilter
+	10, // 12: ipc.SearchRegex.filter:type_name -> ipc.ListFilter
+	3,  // 13: ipc.Request.note_add:type_name -> ipc.NoteAdd
+	4,  // 14: ipc.Request.note_edit:type_name -> ipc.NoteEdit
+	6,  // 15: ipc.Request.note_delete:type_name -> ipc.NoteDelete
+	9,  // 16: ipc.Request.note_show:type_name -> ipc.NoteShow
+	10, // 17: ipc.Request.note_list:type_name -> ipc.ListFilter
+	11, // 18: ipc.Request.note_search_fts:type_name -> ipc.SearchFTS
+	12, // 19: ipc.Request.note_search_regex:type_name -> ipc.SearchRegex
+	24, // 20: ipc.Request.sync_run:type_name -> ipc.SyncRun
+	27, // 21: ipc.Request.queue_list:type_name -> ipc.QueueRequest
+	25, // 22: ipc.Request.namespace_list:type_name -> ipc.NamespaceList
+	13, // 23: ipc.Request.tag_list:type_name -> ipc.TagList
+	26, // 24: ipc.Request.namespace_delete:type_name -> ipc.NamespaceDelete
+	5,  // 25: ipc.Request.ai_note:type_name -> ipc.AINote
+	7,  // 26: ipc.Request.voice_transcribe:type_name -> ipc.VoiceTranscribe
+	0,  // 27: ipc.Response.entry:type_name -> ipc.Entry
+	0,  // 28: ipc.Response.entries:type_name -> ipc.Entry
+	29, // 29: ipc.Response.queue:type_name -> ipc.QueueRemote
+	15, // 30: ipc.Response.tags:type_name -> ipc.TagStat
+	17, // 31: ipc.Response.page:type_name -> ipc.Page
+	8,  // 32: ipc.Response.transcript:type_name -> ipc.Transcript
+	30, // 33: ipc.RepEvent.time:type_name -> google.protobuf.Timestamp
+	18, // 34: ipc.PushBatch.events:type_name -> ipc.RepEvent
+	30, // 35: ipc.Cursor.after:type_name -> google.protobuf.Timestamp
+	20, // 36: ipc.PushResult.items:type_name -> ipc.ItemStatus
+	21, // 37: ipc.PushResult.next:type_name -> ipc.Cursor
+	18, // 38: ipc.PullResult.events:type_name -> ipc.RepEvent
+	21, // 39: ipc.PullResult.next:type_name -> ipc.Cursor
+	30, // 40: ipc.QueueEvent.time:type_name -> google.protobuf.Timestamp
+	28, // 41: ipc.QueueRemote.events:type_name -> ipc.QueueEvent
+	42, // [42:42] is the sub-list for method output_type
+	42, // [42:42] is the sub-list for method input_type
+	42, // [42:42] is the sub-list for extension type_name
+	42, // [42:42] is the sub-list for extension extendee
+	0,  // [0:42] is the sub-list for field type_name
 }
 
 func init() { file_internal_ipc_pb_ipc_proto_init() }
@@ -2304,7 +2558,7 @@ func file_internal_ipc_pb_ipc_proto_init() {
 	if File_internal_ipc_pb_ipc_proto != nil {
 		return
 	}
-	file_internal_ipc_pb_ipc_proto_msgTypes[12].OneofWrappers = []any{
+	file_internal_ipc_pb_ipc_proto_msgTypes[14].OneofWrappers = []any{
 		(*Request_NoteAdd)(nil),
 		(*Request_NoteEdit)(nil),
 		(*Request_NoteDelete)(nil),
@@ -2318,6 +2572,7 @@ func file_internal_ipc_pb_ipc_proto_init() {
 		(*Request_TagList)(nil),
 		(*Request_NamespaceDelete)(nil),
 		(*Request_AiNote)(nil),
+		(*Request_VoiceTranscribe)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -2325,7 +2580,7 @@ func file_internal_ipc_pb_ipc_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_internal_ipc_pb_ipc_proto_rawDesc), len(file_internal_ipc_pb_ipc_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   28,
+			NumMessages:   30,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

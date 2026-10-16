@@ -45,6 +45,26 @@ message AINote {
   google.protobuf.Timestamp deadline = 8;
 }
 message NoteDelete { string id = 1; string namespace = 2; }
+message VoiceTranscribe {
+  string audio_path = 1;
+  bool save = 2;
+  string mode = 3;
+  string namespace = 4;
+  string title = 5;
+  repeated string tags = 6;
+  string provider = 7;
+  string action = 8;
+  string note_id = 9;
+  string model = 10;
+  string language = 11;
+  google.protobuf.Timestamp deadline = 12;
+}
+message Transcript {
+  string text = 1;
+  string language = 2;
+  string engine = 3;
+  string model = 4;
+}
 message NoteShow { string id = 1; string namespace = 2; }
 
 message ListFilter {
@@ -81,6 +101,7 @@ message Request {
     TagList tag_list = 11;
     NamespaceDelete namespace_delete = 12;
     AINote ai_note = 13;
+    VoiceTranscribe voice_transcribe = 14;
   }
 }
 
@@ -101,6 +122,7 @@ message Response {
   Page page = 8;
   string action = 9;
   string fallback_reason = 10;
+  Transcript transcript = 11;
 }
 
 message Page {

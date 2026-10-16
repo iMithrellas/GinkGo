@@ -42,11 +42,14 @@ path normally, following its symlink to an inherited pipe. Engines using atomic
 output replacement or requiring a seekable JSON destination are not compatible.
 Model/audio `/proc/self/fd` paths must be supported by the installed build.
 
-No minimum numeric release has been verified against a real installation here:
-tests use fake executables, never real models or network. Packaging must pin and
-smoke-test a specific whisper.cpp build against these flags/schema/descriptor
-semantics before advertising compatibility. There is no `--version` probe at
-construction or when disabled, and no automatic feature/version fallback.
+Verified on Linux CPU with whisper.cpp v1.7.6 (commit
+`a8d002cfd879315632a579e73f0148d06959de36`), `ggml-base.en.bin` (SHA256
+`a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002`), and upstream
+`jfk.wav` through the real CLI/daemon preview and note-saving paths. Ordinary Go
+tests still use fake executables, never real models or network. Other packaged
+builds must be smoke-tested against these flags/schema/descriptor semantics.
+There is no `--version` probe at construction or when disabled, and no automatic
+feature/version fallback.
 Missing/unsupported controls, malformed output, and engine failures are errors.
 `Device: "gpu"` is rejected rather than falsely guaranteeing GPU execution;
 `auto` may fall back to CPU. GGML magic is checked, but full model compatibility

@@ -32,6 +32,19 @@ type Message struct {
 	NoteID      string          `json:"note_id,omitempty"`
 	Deadline    time.Time       `json:"deadline,omitempty"`
 	Provenance  *api.Provenance `json:"provenance,omitempty"`
+	AudioPath   string          `json:"audio_path,omitempty"`
+	Save        bool            `json:"save,omitempty"`
+	Mode        string          `json:"mode,omitempty"`
+	Model       string          `json:"model,omitempty"`
+	Language    string          `json:"language,omitempty"`
+}
+
+// Transcript is the exact local STT output and its engine metadata.
+type Transcript struct {
+	Text     string `json:"text"`
+	Language string `json:"language,omitempty"`
+	Engine   string `json:"engine"`
+	Model    string `json:"model"`
 }
 
 // Response is a minimal daemon reply.
@@ -46,6 +59,7 @@ type Response struct {
 	Page           api.Page      `json:"page,omitempty"`
 	Action         string        `json:"action,omitempty"`
 	FallbackReason string        `json:"fallback_reason,omitempty"`
+	Transcript     *Transcript   `json:"transcript,omitempty"`
 }
 
 type QueueEvent struct {

@@ -41,6 +41,7 @@ func Run(ctx context.Context, app *wire.App) error {
 	defer cancel()
 	daemonCtx := ctx
 	aiNotes := newAINoteService(app)
+	voiceNotes := newVoiceRuntime(app, aiNotes)
 	// Start continuous background sync loop
 	go app.Syncer.RunBackground(ctx)
 	// Adapt CLI message handler to protobuf transport
@@ -50,6 +51,13 @@ func Run(ctx context.Context, app *wire.App) error {
 			ns = app.Cfg.GetString("namespace")
 		}
 		switch m.Name {
+		case "voice.transcribe":
+			m.Namespace = ns
+			result := voiceNotes.transcribe(ctx, m)
+			if result.OK && result.Entry != nil {
+				go app.Syncer.SyncNow(daemonCtx)
+			}
+			return result
 		case "ai.note":
 			if !m.Deadline.IsZero() {
 				var cancel context.CancelFunc

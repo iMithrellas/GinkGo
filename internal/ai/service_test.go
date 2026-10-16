@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -362,5 +363,151 @@ func TestNoteInferenceSlotCancellation(t *testing.T) {
 	}
 	if calls.Load() != 1 || noteCount(t, repo) != 1 {
 		t.Fatal("cancelled waiter ran inference or saved")
+	}
+}
+
+func voiceMetadata() *api.Source {
+	return &api.Source{ID: "do-not-trust-id", CapturedAt: time.Date(1900, 1, 1, 0, 0, 0, 0, time.UTC), Kind: "voice", OriginalText: "do-not-trust-original", Language: "cs", STTEngine: "whisper.cpp", STTModel: "small"}
+}
+
+func assertVoiceSource(t *testing.T, entry api.Entry, index int, text string, after time.Time) {
+	t.Helper()
+	if entry.Provenance == nil || len(entry.Provenance.Sources) <= index {
+		t.Fatal("missing voice source")
+	}
+	source := entry.Provenance.Sources[index]
+	if source.Kind != "voice" || source.Language != "cs" || source.STTEngine != "whisper.cpp" || source.STTModel != "small" || source.OriginalText != text || source.ID == "" || source.ID == "do-not-trust-id" || source.CapturedAt.Before(after) || source.CapturedAt.After(time.Now()) {
+		t.Fatalf("invalid application-generated voice source: %#v", source)
+	}
+}
+
+func TestVoiceRawFallbackPreservesCaptureMetadata(t *testing.T) {
+	for _, mode := range []string{"disabled", "provider-failure", "invalid-draft"} {
+		t.Run(mode, func(t *testing.T) {
+			repo := noteTestRepo(t)
+			calls := 0
+			service := NewService(repo, func(string) (Provider, error) {
+				calls++
+				if mode == "provider-failure" {
+					return nil, errors.New("provider unavailable")
+				}
+				return noteProviderFunc(func(context.Context, Request) (Response, error) { return Response{Text: `{"bad":"draft"}`}, nil }), nil
+			}, ServiceOptions{Enabled: mode != "disabled", DefaultNamespace: "voice"})
+			before := time.Now()
+			metadata := voiceMetadata()
+			original := *metadata
+			const text = "  Exact spoken transcript\nwith spacing  "
+			result, err := service.Note(context.Background(), NoteRequest{Text: text, Source: metadata}, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.FallbackReason == "" || result.Entry.Body != text {
+				t.Fatalf("invalid raw voice fallback: %#v", result)
+			}
+			if mode == "disabled" && calls != 0 {
+				t.Fatal("AI-disabled voice resolved provider")
+			}
+			assertVoiceSource(t, result.Entry, 0, text, before)
+			if *metadata != original {
+				t.Fatal("caller metadata mutated")
+			}
+		})
+	}
+}
+
+func TestVoiceAICreatePreservesTranscriptSeparately(t *testing.T) {
+	repo := noteTestRepo(t)
+	service := fixedNoteService(repo, `{"action":"create_note","title":"Clean voice note","body":"Cleaned voice body"}`, ServiceOptions{Enabled: true})
+	before := time.Now()
+	result, err := service.Note(context.Background(), NoteRequest{Text: " exact spoken input ", Action: "create", Source: voiceMetadata()}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Entry.Body != "Cleaned voice body" || result.FallbackReason != "" {
+		t.Fatal(result)
+	}
+	assertVoiceSource(t, result.Entry, 0, " exact spoken input ", before)
+}
+
+func TestVoiceExpansionRetainsTextBaselineAndEarlierSources(t *testing.T) {
+	repo := noteTestRepo(t)
+	initial := seedNote(t, repo, "voice-target", "voice", " Exact preexisting text body ")
+	service := fixedNoteService(repo, `{"action":"expand_note","target_id":"voice-target","title":"Voice additions","body":"New voice material"}`, ServiceOptions{Enabled: true, DefaultNamespace: "voice"})
+	var previous []api.Source
+	for index, input := range []string{" first spoken transcript ", " second spoken transcript "} {
+		before := time.Now()
+		result, err := service.Note(context.Background(), NoteRequest{Text: input, Action: "expand", NoteID: initial.ID, Source: voiceMetadata()}, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.FallbackReason != "" {
+			t.Fatal(result)
+		}
+		assertSource(t, result.Entry, 0, initial.Body)
+		assertVoiceSource(t, result.Entry, index+1, input, before)
+		if len(result.Entry.Provenance.Sources) != index+2 {
+			t.Fatal("source history lost or baseline duplicated")
+		}
+		if previous != nil && !reflect.DeepEqual(previous, result.Entry.Provenance.Sources[:len(previous)]) {
+			t.Fatal("earlier voice sources changed")
+		}
+		previous = append([]api.Source(nil), result.Entry.Provenance.Sources...)
+	}
+}
+
+func TestCancelledVoiceRequestNeverSaves(t *testing.T) {
+	repo := noteTestRepo(t)
+	service := NewService(repo, nil, ServiceOptions{})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := service.Note(ctx, NoteRequest{Text: "cancelled transcript", Source: voiceMetadata()}, "")
+	if !errors.Is(err, context.Canceled) || noteCount(t, repo) != 0 {
+		t.Fatalf("cancelled voice request saved: %v", err)
+	}
+}
+
+func TestNoteSafeProviderDiagnostics(t *testing.T) {
+	for _, tc := range []struct {
+		err    error
+		reason string
+	}{
+		{ErrGenerationRestricted, "free-tier policy"},
+		{ErrOpenCodeConsole, "separate profile without Console"},
+		{ErrAuthentication, "authentication failed"},
+		{ErrModelUnavailable, "model unavailable"},
+		{ErrProviderUnavailable, "temporarily unavailable"},
+		{ErrRateLimited, "rate limited"},
+		{context.DeadlineExceeded, "timed out"},
+		{context.Canceled, "request remained active"},
+		{ErrInputLimit, "input limit"},
+		{ErrOutputLimit, "output exceeds"},
+		{ErrProtocol, "incompatible response"},
+		{errors.New("secret-auth-and-prompt"), "check provider configuration"},
+	} {
+		for _, stage := range []string{"resolve", "complete"} {
+			t.Run(tc.reason+"/"+stage, func(t *testing.T) {
+				repo := noteTestRepo(t)
+				failure := fmt.Errorf("secret-auth-and-prompt: %w", tc.err)
+				service := NewService(repo, func(string) (Provider, error) {
+					if stage == "resolve" {
+						return nil, failure
+					}
+					return noteProviderFunc(func(context.Context, Request) (Response, error) { return Response{}, failure }), nil
+				}, ServiceOptions{Enabled: true})
+				const text = " exact original voice transcript \n"
+				before := time.Now()
+				result, err := service.Note(context.Background(), NoteRequest{Text: text, Source: voiceMetadata()}, "")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !strings.Contains(result.FallbackReason, tc.reason) || strings.Contains(result.FallbackReason, "secret-auth-and-prompt") {
+					t.Fatal("unsafe or unhelpful fallback diagnostic")
+				}
+				if result.Entry.Body != text || noteCount(t, repo) != 1 {
+					t.Fatal("raw fallback lost")
+				}
+				assertVoiceSource(t, result.Entry, 0, text, before)
+			})
+		}
 	}
 }
