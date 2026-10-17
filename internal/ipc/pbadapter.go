@@ -43,6 +43,7 @@ func (h pbHandler) Handle(ctx context.Context, req any) (any, error) {
 			m.Name, m.Namespace, m.Save, m.Mode = "voice."+n.Action, n.Namespace, n.Save, n.Mode
 			m.Provider, m.Title, m.Tags, m.NoteID = n.Provider, n.Title, append([]string(nil), n.Tags...), n.NoteId
 			m.Model, m.Language, m.Action = n.Model, n.Language, n.NoteAction
+			m.Trigger = n.Trigger
 			if c := n.Capture; c != nil {
 				m.Capture = &CaptureOptions{Target: c.Target, SilenceTimeout: time.Duration(c.SilenceTimeout), MaxDuration: time.Duration(c.MaxDuration), StartTimeout: time.Duration(c.StartTimeout), Threshold: c.Threshold}
 			}

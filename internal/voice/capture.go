@@ -133,6 +133,13 @@ func (c *Capturer) Capture(ctx context.Context, opts CaptureOptions, stop <-chan
 	if emit == nil {
 		return errors.New("capture requires an emit callback")
 	}
+	return c.runCapture(ctx, s, stop, func(childCtx context.Context, frames <-chan captureFrame) error {
+		return captureFrames(childCtx, s, opts.Once, stop, frames, emit)
+	})
+}
+
+// runCapture owns the shared admission slot and exactly one recorder process.
+func (c *Capturer) runCapture(ctx context.Context, s CaptureConfig, stop <-chan struct{}, consume func(context.Context, <-chan captureFrame) error) error {
 	select {
 	case c.slot <- struct{}{}:
 		defer func() { <-c.slot }()
@@ -198,7 +205,7 @@ func (c *Capturer) Capture(ctx context.Context, opts CaptureOptions, stop <-chan
 			}
 		}
 	}()
-	err = captureFrames(childCtx, s, opts.Once, stop, frames, emit)
+	err = consume(childCtx, frames)
 	cancel()
 	kill()
 	_ = reader.Close()

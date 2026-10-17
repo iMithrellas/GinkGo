@@ -45,6 +45,9 @@ multilingual model may instead use a language code or `"auto"`. Only
 `residency = "on_demand"` and `device = "cpu"` or `"auto"` are supported; `auto`
 lets the installed engine choose CPU/GPU and does not guarantee GPU availability.
 See the [adapter compatibility and resource limits](../internal/voice/README.md).
+These settings describe legacy commands; the separate optional
+[`voice stream` workflow](voice-stream.md) retains an installed whisper-server
+model per stream and requires explicit local HTTP security consent.
 
 Build matching CLI/daemon binaries and **restart the daemon after changing config**
 using your normal service workflow (for the installed user service:

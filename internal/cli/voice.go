@@ -20,6 +20,8 @@ func newVoiceCmd() *cobra.Command {
 	cmd.PersistentFlags().StringP("namespace", "n", "", "override namespace for saved notes")
 	registerNamespaceCompletion(cmd)
 	cmd.AddCommand(newVoiceTranscribeCmd())
+	cmd.AddCommand(newVoiceWatchCmd())
+	cmd.AddCommand(newVoiceStreamCmd())
 	cmd.AddCommand(newVoiceControlCmd("enable"), newVoiceControlCmd("disable"), newVoiceControlCmd("listen"), newVoiceControlCmd("status"), newVoiceControlCmd("stop"), newVoiceControlCmd("cancel"))
 	return cmd
 }

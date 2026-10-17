@@ -60,7 +60,7 @@ message VoiceTranscribe {
   google.protobuf.Timestamp deadline = 12;
 }
 message CaptureOptions { string target = 1; int64 silence_timeout = 2; int64 max_duration = 3; int64 start_timeout = 4; double threshold = 5; }
-message VoiceControl { string action = 1; string namespace = 2; bool save = 3; string mode = 4; string provider = 5; string title = 6; repeated string tags = 7; string note_id = 8; string model = 9; string language = 10; string note_action = 11; CaptureOptions capture = 12; google.protobuf.Timestamp deadline = 13; }
+message VoiceControl { string action = 1; string namespace = 2; bool save = 3; string mode = 4; string provider = 5; string title = 6; repeated string tags = 7; string note_id = 8; string model = 9; string language = 10; string note_action = 11; CaptureOptions capture = 12; google.protobuf.Timestamp deadline = 13; string trigger = 14; }
 message VoiceStatus { bool enabled = 1; bool active = 2; bool continuous = 3; string state = 4; string namespace = 5; int64 silence_timeout = 6; google.protobuf.Timestamp started_at = 7; int64 segments = 8; string last_note_id = 9; string last_error = 10; }
 message Transcript {
   string text = 1;

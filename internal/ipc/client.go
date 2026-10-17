@@ -27,9 +27,10 @@ func Request(ctx context.Context, path string, m Message) (Response, error) {
 			n.Deadline = timestamppb.New(deadline)
 		}
 		preq.Cmd = &pb.Request_VoiceTranscribe{VoiceTranscribe: n}
-	case "voice.enable", "voice.disable", "voice.listen", "voice.status", "voice.stop", "voice.cancel":
+	case "voice.stream", "voice.enable", "voice.disable", "voice.listen", "voice.status", "voice.stop", "voice.cancel":
 		action := m.Name[len("voice."):]
 		n := &pb.VoiceControl{Action: action, Namespace: m.Namespace, Save: m.Save, Mode: m.Mode, Provider: m.Provider, Title: m.Title, Tags: m.Tags, NoteId: m.NoteID, Model: m.Model, Language: m.Language, NoteAction: m.Action}
+		n.Trigger = m.Trigger
 		if m.Capture != nil {
 			n.Capture = &pb.CaptureOptions{Target: m.Capture.Target, SilenceTimeout: int64(m.Capture.SilenceTimeout), MaxDuration: int64(m.Capture.MaxDuration), StartTimeout: int64(m.Capture.StartTimeout), Threshold: m.Capture.Threshold}
 		}

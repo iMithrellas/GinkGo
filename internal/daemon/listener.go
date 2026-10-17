@@ -28,6 +28,7 @@ type segmentCapturer interface {
 }
 
 type listenJob struct {
+	streamID string
 	cancel   context.CancelFunc
 	stop     chan struct{}
 	stopping bool

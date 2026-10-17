@@ -37,6 +37,7 @@ type Message struct {
 	Mode        string          `json:"mode,omitempty"`
 	Model       string          `json:"model,omitempty"`
 	Language    string          `json:"language,omitempty"`
+	Trigger     string          `json:"trigger,omitempty"`
 	Capture     *CaptureOptions `json:"capture,omitempty"`
 }
 

@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -14,13 +15,14 @@ import (
 	"github.com/mithrel/ginkgo/internal/db"
 	"github.com/mithrel/ginkgo/internal/ipc"
 	"github.com/mithrel/ginkgo/internal/ipc/transport"
+	"github.com/mithrel/ginkgo/internal/voiceevents"
 	"github.com/mithrel/ginkgo/internal/wire"
 	"github.com/mithrel/ginkgo/pkg/api"
 )
 
 // Run starts the daemon using the provided, already-wired App (config, store, logger).
 // The caller controls the lifecycle via ctx.
-func Run(ctx context.Context, app *wire.App) error {
+func Run(ctx context.Context, app *wire.App) (runErr error) {
 	// HTTP health endpoint
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -44,6 +46,30 @@ func Run(ctx context.Context, app *wire.App) error {
 	voiceNotes := newVoiceRuntime(app, aiNotes)
 	voiceNotes.root = daemonCtx
 	voiceNotes.syncNote = func(ctx context.Context) { _ = app.Syncer.SyncNow(ctx) }
+	if app.Cfg.GetBool("voice.events.enabled") {
+		hub, err := voiceevents.NewHub(voiceevents.Options{})
+		if err != nil {
+			return fmt.Errorf("create voice events: %w", err)
+		}
+		defer hub.Close()
+		path, err := voiceevents.SocketPath()
+		if err != nil {
+			return err
+		}
+		server, err := voiceevents.Listen(ctx, path, hub)
+		if err != nil {
+			return fmt.Errorf("serve voice events: %w", err)
+		}
+		eventDone := make(chan struct{})
+		go func() {
+			defer close(eventDone)
+			if server.Wait() != nil {
+				cancel()
+			}
+		}()
+		defer func() { runErr = errors.Join(runErr, server.Close()); <-eventDone }()
+		voiceNotes.events = hub
+	}
 	// Run must not return (and allow Store.Close) while detached listening is
 	// using the repository. Also covers either serving endpoint failing early.
 	backgroundSyncDone := make(chan struct{})
@@ -70,6 +96,9 @@ func Run(ctx context.Context, app *wire.App) error {
 			return voiceNotes.stopListener(false)
 		case "voice.stop":
 			return voiceNotes.stopListener(true)
+		case "voice.stream":
+			m.Namespace = ns
+			return voiceNotes.stream(ctx, m)
 		case "voice.enable", "voice.listen":
 			m.Namespace = ns
 			return voiceNotes.listen(ctx, m, m.Name == "voice.enable")

@@ -11,6 +11,7 @@ import (
 	"github.com/mithrel/ginkgo/internal/ipc"
 	"github.com/mithrel/ginkgo/internal/notes"
 	"github.com/mithrel/ginkgo/internal/voice"
+	"github.com/mithrel/ginkgo/internal/voiceevents"
 	"github.com/mithrel/ginkgo/internal/wire"
 	"github.com/mithrel/ginkgo/pkg/api"
 )
@@ -29,20 +30,28 @@ type voiceRuntime struct {
 
 	// mu protects lifecycle/status only; never hold it across capture, inference,
 	// storage, synchronization, or a worker join.
-	mu             sync.Mutex
-	root           context.Context
-	closed         bool
-	job            *listenJob
-	status         ipc.VoiceStatus
-	capturer       segmentCapturer
-	captureConfig  voice.CaptureConfig
-	captureErr     error
-	sttConfig      voice.Config
-	processSegment func(context.Context, ipc.Message, voice.Segment) ipc.Response
-	syncNote       func(context.Context)
-	syncPending    chan struct{}
-	syncCancel     context.CancelFunc
-	syncDone       chan struct{}
+	mu                         sync.Mutex
+	root                       context.Context
+	closed                     bool
+	job                        *listenJob
+	status                     ipc.VoiceStatus
+	capturer                   segmentCapturer
+	captureConfig              voice.CaptureConfig
+	captureErr                 error
+	sttConfig                  voice.Config
+	processSegment             func(context.Context, ipc.Message, voice.Segment) ipc.Response
+	syncNote                   func(context.Context)
+	syncPending                chan struct{}
+	syncCancel                 context.CancelFunc
+	syncDone                   chan struct{}
+	events                     *voiceevents.Hub
+	liveCapturer               liveCapturer
+	streamEnabled              bool
+	streamErr                  error
+	residentConfig             voice.ResidentConfig
+	streamUpdate, streamWindow time.Duration
+	triggerPhrase              string
+	residentFactory            func(voice.ResidentConfig) residentSTT
 }
 
 func newVoiceRuntime(app *wire.App, aiNotes *ai.Service) *voiceRuntime {
@@ -67,6 +76,29 @@ func newVoiceRuntime(app *wire.App, aiNotes *ai.Service) *voiceRuntime {
 	runtime.sttConfig = voice.Config{Executable: v.GetString("voice.stt.executable"), Model: v.GetString("voice.stt.model"), Language: v.GetString("voice.stt.language"), Device: v.GetString("voice.stt.device"), Threads: v.GetInt("voice.stt.threads")}
 	runtime.captureConfig, runtime.captureErr = captureSettings(v, runtime.enabled)
 	runtime.capturer = voice.NewCapturer(runtime.captureConfig)
+	runtime.liveCapturer = voice.NewCapturer(runtime.captureConfig)
+	runtime.streamEnabled = v.GetBool("voice.stream.enabled")
+	runtime.triggerPhrase = v.GetString("voice.trigger.phrase")
+	if v.IsSet("voice.stream.update_interval") {
+		update, err := time.ParseDuration(v.GetString("voice.stream.update_interval"))
+		if err != nil || update <= 0 {
+			runtime.streamErr = fmt.Errorf("voice.stream.update_interval must be a positive duration")
+		} else {
+			runtime.streamUpdate = update
+		}
+	}
+	if v.IsSet("voice.stream.window") {
+		window, err := time.ParseDuration(v.GetString("voice.stream.window"))
+		if err != nil || window <= 0 {
+			runtime.streamErr = fmt.Errorf("voice.stream.window must be a positive duration")
+		} else {
+			runtime.streamWindow = window
+		}
+	}
+	runtime.residentConfig = voice.ResidentConfig{Config: runtime.sttConfig, AllowLocalHTTP: v.GetBool("voice.stream.allow_local_http")}
+	runtime.residentConfig.Enabled = runtime.enabled
+	runtime.residentConfig.Executable = v.GetString("voice.stream.executable")
+	runtime.residentConfig.Timeout = timeout
 	runtime.status = ipc.VoiceStatus{Enabled: runtime.enabled, State: "idle", SilenceTimeout: runtime.captureConfig.SilenceTimeout}
 	return runtime
 }

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/viper"
 
@@ -133,6 +134,13 @@ func GetConfigOptions() []ConfigOption {
 		{Key: "editor.delete_empty", Default: true, Comment: "Delete note if editor exits with no content"},
 		{Key: "ai.enabled", Default: false, Comment: "Opt in to AI notes; disabled requests save raw fallback notes without launching providers"},
 		{Key: "voice.enabled", Default: false, Comment: "Opt in to local transcription and microphone capture; no device/engine/model probes while disabled"},
+		{Key: "voice.events.enabled", Default: false, Comment: "Serve private read-only NDJSON voice events; subscribing never starts audio or models"},
+		{Key: "voice.stream.enabled", Default: false, Comment: "Opt in to explicit voice stream resident captions; requires voice.enabled, events and local HTTP consent", Validate: validateStreamEnabled},
+		{Key: "voice.stream.executable", Default: "whisper-server", Comment: "Installed whisper.cpp server for stream only; legacy whisper-cli settings stay unchanged"},
+		{Key: "voice.stream.allow_local_http", Default: false, Comment: "Explicit trust consent for unauthenticated loopback whisper-server; unsafe on untrusted multi-user hosts"},
+		{Key: "voice.stream.update_interval", Default: "500ms", Comment: "Rolling preview cadence (10ms-5s)", Validate: streamDuration(10*time.Millisecond, 5*time.Second)},
+		{Key: "voice.stream.window", Default: "5s", Comment: "Rolling preview audio window (150ms-30s); revisions replace, never append", Validate: streamDuration(150*time.Millisecond, 30*time.Second)},
+		{Key: "voice.trigger.phrase", Default: "", Comment: "Literal leading transcript phrase for stream --save; final confirmation, not acoustic activation", Validate: validateTrigger},
 		{Key: "voice.capture.executable", Default: "pw-record", Comment: "PipeWire capture executable"},
 		{Key: "voice.capture.target", Default: "", Comment: "Default PipeWire capture target"},
 		{Key: "voice.capture.silence", Default: "1.5s", Comment: "Silence duration before one-shot capture ends"},

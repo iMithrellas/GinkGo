@@ -809,6 +809,7 @@ type VoiceControl struct {
 	NoteAction    string                 `protobuf:"bytes,11,opt,name=note_action,json=noteAction,proto3" json:"note_action,omitempty"`
 	Capture       *CaptureOptions        `protobuf:"bytes,12,opt,name=capture,proto3" json:"capture,omitempty"`
 	Deadline      *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=deadline,proto3" json:"deadline,omitempty"`
+	Trigger       string                 `protobuf:"bytes,14,opt,name=trigger,proto3" json:"trigger,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -932,6 +933,13 @@ func (x *VoiceControl) GetDeadline() *timestamppb.Timestamp {
 		return x.Deadline
 	}
 	return nil
+}
+
+func (x *VoiceControl) GetTrigger() string {
+	if x != nil {
+		return x.Trigger
+	}
+	return ""
 }
 
 type VoiceStatus struct {
@@ -2700,7 +2708,7 @@ const file_internal_ipc_pb_ipc_proto_rawDesc = "" +
 	"\x0fsilence_timeout\x18\x02 \x01(\x03R\x0esilenceTimeout\x12!\n" +
 	"\fmax_duration\x18\x03 \x01(\x03R\vmaxDuration\x12#\n" +
 	"\rstart_timeout\x18\x04 \x01(\x03R\fstartTimeout\x12\x1c\n" +
-	"\tthreshold\x18\x05 \x01(\x01R\tthreshold\"\x85\x03\n" +
+	"\tthreshold\x18\x05 \x01(\x01R\tthreshold\"\x9f\x03\n" +
 	"\fVoiceControl\x12\x16\n" +
 	"\x06action\x18\x01 \x01(\tR\x06action\x12\x1c\n" +
 	"\tnamespace\x18\x02 \x01(\tR\tnamespace\x12\x12\n" +
@@ -2716,7 +2724,8 @@ const file_internal_ipc_pb_ipc_proto_rawDesc = "" +
 	"\vnote_action\x18\v \x01(\tR\n" +
 	"noteAction\x12-\n" +
 	"\acapture\x18\f \x01(\v2\x13.ipc.CaptureOptionsR\acapture\x126\n" +
-	"\bdeadline\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\bdeadline\"\xd4\x02\n" +
+	"\bdeadline\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\bdeadline\x12\x18\n" +
+	"\atrigger\x18\x0e \x01(\tR\atrigger\"\xd4\x02\n" +
 	"\vVoiceStatus\x12\x18\n" +
 	"\aenabled\x18\x01 \x01(\bR\aenabled\x12\x16\n" +
 	"\x06active\x18\x02 \x01(\bR\x06active\x12\x1e\n" +

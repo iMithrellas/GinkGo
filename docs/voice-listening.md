@@ -2,8 +2,10 @@
 
 GinkGo can keep a PipeWire microphone stream open in the daemon and transcribe
 utterances after silence, or capture one utterance on demand. Voice is opt-in;
-raw dictation works with AI disabled. This is dictation, without wake words or
-spoken command routing.
+raw dictation works with AI disabled. Optional resident live captions and
+final-confirmed transcript-prefix note gating use the separate
+[`voice stream` action](voice-stream.md), not an acoustic wake model or spoken
+command router. Legacy `enable`/`listen` behavior below is unchanged.
 
 ## Setup
 
@@ -96,8 +98,8 @@ remain intact.
   one processing segment. Ordinary queue overflow fails the job explicitly and
   cancels pending work instead of silently dropping speech. Stop's final flush
   waits for queue space and can be interrupted by disable/cancel.
-- STT remains serialized and on demand; the model is released after each
-  transcription. There is no persistent-model residency yet.
+- Legacy STT remains serialized and on demand; the model is released after each
+  transcription. Only the separate `voice stream` action retains a resident model.
 - Temporary WAVs are private and removed after processing/cancellation. Raw audio
   is not retained in notes. Recorder children and their process group are cleaned
   up before stop/disable acknowledges completion.
@@ -125,8 +127,9 @@ Routine checks use fake devices, synthetic PCM, and fake STT:
 ```sh
 go test ./...
 go vet ./...
-go test -race ./internal/voice ./internal/daemon ./internal/ipc ./internal/cli
+go test -race ./internal/voice ./internal/voiceevents ./internal/daemon ./internal/ipc ./internal/cli ./internal/config
 python3 -B scripts/smoke-voice-listening.py
+python3 -B scripts/smoke-voice-poc.py
 ```
 
 The smoke test owns a disposable config/database/socket/daemon. It covers

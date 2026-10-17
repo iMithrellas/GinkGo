@@ -47,6 +47,9 @@ Entries can be created as quick one-liners or rich Markdown notes via `$EDITOR`.
 - Optional PipeWire microphone capture: `voice enable`/`disable` control daemon-owned
   continuous dictation; `voice listen --silence 2s` captures one utterance. See
   [listening controls](docs/voice-listening.md) for saving, stop/cancel, and limits.
+- Optional [resident live captions](docs/voice-stream.md): `voice stream` and
+  read-only `voice watch --output json`, with explicit final-confirmed prefix-gated
+  raw-note saving. No acoustic wake model or confirmed-GPU claim.
 
 ### Sync
 - Local outbox queues edits when offline.

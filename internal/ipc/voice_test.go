@@ -90,6 +90,15 @@ func TestVoiceListenDeadlineRoundTripAndEnableIgnoresJobDeadline(t *testing.T) {
 	require.NoError(t, err)
 	m = <-got
 	require.True(t, m.Deadline.IsZero(), "enable must not pass a job lifetime deadline")
+	_, err = Request(reqCtx, path, Message{Name: "voice.stream", Deadline: deadline, Save: true, Mode: "raw", Trigger: "Ginkgo, take note", Namespace: "work"})
+	require.NoError(t, err)
+	m = <-got
+	require.Equal(t, "voice.stream", m.Name)
+	require.Equal(t, "Ginkgo, take note", m.Trigger)
+	require.True(t, m.Save)
+	require.Equal(t, "raw", m.Mode)
+	require.Equal(t, "work", m.Namespace)
+	require.True(t, m.Deadline.IsZero(), "stream must not inherit a connection deadline")
 	cancel()
 	require.NoError(t, <-done)
 }

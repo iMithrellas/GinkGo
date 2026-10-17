@@ -57,6 +57,42 @@ func setupVoiceRuntime(t *testing.T, engineBody string) (*voiceRuntime, *wire.Ap
 
 const voiceTestOutput = `printf '%s' '{"result":{"language":"fr"},"transcription":[{"text":"  Bonjour\nmonde!  "}]}' > "$out.json"`
 
+func TestVoiceStreamDurationSettings(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		update     string
+		window     string
+		wantUpdate time.Duration
+		wantWindow time.Duration
+		wantError  string
+	}{
+		{name: "unset"},
+		{name: "valid", update: "250ms", window: "3s", wantUpdate: 250 * time.Millisecond, wantWindow: 3 * time.Second},
+		{name: "invalid update", update: "invalid", window: "3s", wantWindow: 3 * time.Second, wantError: "voice.stream.update_interval must be a positive duration"},
+		{name: "zero update", update: "0s", wantError: "voice.stream.update_interval must be a positive duration"},
+		{name: "negative window", update: "250ms", window: "-1s", wantUpdate: 250 * time.Millisecond, wantError: "voice.stream.window must be a positive duration"},
+		{name: "both invalid", update: "invalid", window: "invalid", wantError: "voice.stream.window must be a positive duration"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, app, _ := setupVoiceRuntime(t, voiceTestOutput)
+			if tc.update != "" {
+				app.Cfg.Set("voice.stream.update_interval", tc.update)
+			}
+			if tc.window != "" {
+				app.Cfg.Set("voice.stream.window", tc.window)
+			}
+			runtime := newVoiceRuntime(app, newAINoteService(app))
+			require.Equal(t, tc.wantUpdate, runtime.streamUpdate)
+			require.Equal(t, tc.wantWindow, runtime.streamWindow)
+			if tc.wantError == "" {
+				require.NoError(t, runtime.streamErr)
+			} else {
+				require.EqualError(t, runtime.streamErr, tc.wantError)
+			}
+		})
+	}
+}
+
 func TestVoiceRawAndAIDisabledSaveMetadata(t *testing.T) {
 	for _, mode := range []string{"raw", "ai"} {
 		t.Run(mode, func(t *testing.T) {
