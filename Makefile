@@ -19,11 +19,13 @@ MANOUT := $(DOCDIR)/man
 
 GO_TAGS ?=
 
-# Optional native helper only. Provision pinned v1.13.8 C API and the matching
-# ONNX Runtime yourself; this target never downloads, installs or starts anything.
+# Optional native packaging only; all dependencies must already be provisioned.
+SHERPA_SOURCE ?=
+SHERPA_BUILD ?=
 SHERPA_PREFIX ?=
 ORT_PREFIX ?=
-VOICE_OUTPUT := $(BUILD_DIR)/ginkgo-voice
+VOICE_BUNDLE_OUTPUT ?= /tmp/opencode/ginkgo-sherpa-build/voice-local
+BUNDLE_OUTPUT ?= /tmp/opencode/ginkgo-sherpa-build/bundle
 
 .PHONY: build lsp install-binary install-service reload-service run dev setup-precommit \
         docs install-man uninstall-man install uninstall
@@ -38,11 +40,11 @@ docs:
 	@echo "Docs generated into $(MARKDOWNDIR) and $(MANOUT)"
 
 build:
-	mkdir -p $(BUILD_DIR)
+	mkdir -p "$(BUILD_DIR)"
 	@if [ -n "$(GO_TAGS)" ]; then \
-		go build -tags '$(GO_TAGS)' -o $(BUILD_OUTPUT) ./cmd/ginkgo-cli; \
+		CGO_ENABLED=0 go build -tags '$(GO_TAGS)' -o "$(BUILD_OUTPUT)" ./cmd/ginkgo-cli; \
 	else \
-		go build -o $(BUILD_OUTPUT) ./cmd/ginkgo-cli; \
+		CGO_ENABLED=0 go build -o "$(BUILD_OUTPUT)" ./cmd/ginkgo-cli; \
 	fi
 
 lsp:
@@ -53,14 +55,19 @@ lsp:
 		go build -o $(LSP_OUTPUT) ./cmd/ginkgo-lsp; \
 	fi
 
-.PHONY: voice
+.PHONY: voice voice-bundle test-voice-bundle
 voice:
-	@test -n "$(SHERPA_PREFIX)" -a -n "$(ORT_PREFIX)" || { echo "Set SHERPA_PREFIX and ORT_PREFIX to trusted installed prefixes; see internal/sherpavoice/README.md"; exit 1; }
-	mkdir -p "$(BUILD_DIR)"
-	CGO_ENABLED=1 \
-	CGO_CFLAGS="$(CGO_CFLAGS) -I$(SHERPA_PREFIX)/include -I$(ORT_PREFIX)/include" \
-	CGO_LDFLAGS="$(CGO_LDFLAGS) -L$(SHERPA_PREFIX)/lib -L$(ORT_PREFIX)/lib -Wl,-rpath,$(SHERPA_PREFIX)/lib -Wl,-rpath,$(ORT_PREFIX)/lib" \
-	go build -tags sherpa_onnx -o "$(VOICE_OUTPUT)" ./cmd/ginkgo-voice
+	bash scripts/build-voice-bundle.sh --helper-only --output "$(VOICE_BUNDLE_OUTPUT)" \
+		--sherpa-source "$(SHERPA_SOURCE)" --sherpa-build "$(SHERPA_BUILD)" \
+		$(if $(SHERPA_PREFIX),--sherpa-prefix "$(SHERPA_PREFIX)") $(if $(ORT_PREFIX),--ort-prefix "$(ORT_PREFIX)")
+
+voice-bundle:
+	bash scripts/build-voice-bundle.sh --output "$(BUNDLE_OUTPUT)" \
+		--sherpa-source "$(SHERPA_SOURCE)" --sherpa-build "$(SHERPA_BUILD)" \
+		$(if $(SHERPA_PREFIX),--sherpa-prefix "$(SHERPA_PREFIX)") $(if $(ORT_PREFIX),--ort-prefix "$(ORT_PREFIX)")
+
+test-voice-bundle:
+	bash scripts/build-voice-bundle-test.sh
 
 install-man: docs
 	mkdir -p "$(MANDIR)"

@@ -1,0 +1,4 @@
+GINKGO_KWS_1 {
+  global: ginkgo_kws_v1_*;
+  local: *;
+};

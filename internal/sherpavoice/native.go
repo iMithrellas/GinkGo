@@ -3,7 +3,7 @@
 package sherpavoice
 
 /*
-#cgo LDFLAGS: -lsherpa-onnx-c-api -lonnxruntime
+#cgo LDFLAGS: -lginkgo-kws -lsherpa-onnx-c-api -lonnxruntime
 #include <stdlib.h>
 #include <string.h>
 #include <sherpa-onnx/c-api/c-api.h>
@@ -44,12 +44,17 @@ import "C"
 
 import (
 	"errors"
+	"math"
 	"strings"
+	"sync"
 	"unsafe"
 )
 
 type nativeFrontend struct {
-	vad *C.SherpaOnnxVoiceActivityDetector
+	mu     sync.Mutex
+	vad    *C.SherpaOnnxVoiceActivityDetector
+	kws    *nativeKWS
+	failed bool
 }
 type nativeRecognizer struct {
 	recognizer *C.SherpaOnnxOfflineRecognizer
@@ -93,6 +98,10 @@ func OpenNative(c NativeConfig) (Frontend, Recognizer, error) {
 		}
 	}()
 	f := &nativeFrontend{}
+	f.kws, err = openNativeKWS(c)
+	if err != nil {
+		return nil, nil, err
+	}
 	silence, maxSpeech := c.SilenceMS, c.MaxSpeechMS
 	if silence == 0 {
 		silence = 500
@@ -113,6 +122,9 @@ func OpenNative(c NativeConfig) (Frontend, Recognizer, error) {
 	return f, &nativeRecognizer{r}, nil
 }
 func (f *nativeFrontend) Close() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.kws.close()
 	if f.vad != nil {
 		C.SherpaOnnxDestroyVoiceActivityDetector(f.vad)
 		f.vad = nil
@@ -132,17 +144,50 @@ func (f *nativeFrontend) activity() (Activity, error) {
 	return a, nil
 }
 func (f *nativeFrontend) Accept(p []float32) ([]Wake, Activity, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.failed || f.vad == nil {
+		return nil, Activity{}, errors.New("native frontend unusable")
+	}
 	if len(p) == 0 {
 		return nil, Activity{}, nil
+	}
+	if len(p) > 16000 {
+		f.failed = true
+		return nil, Activity{}, errors.New("native PCM input too large")
+	}
+	for _, s := range p {
+		if math.IsNaN(float64(s)) || math.IsInf(float64(s), 0) || s < -1 || s > 1 {
+			f.failed = true
+			return nil, Activity{}, errors.New("invalid native PCM")
+		}
+	}
+	wakes, err := f.kws.accept(p)
+	if err != nil {
+		f.failed = true
+		return nil, Activity{}, err
 	}
 	// The API consumes/copies samples synchronously and does not retain Go memory.
 	C.SherpaOnnxVoiceActivityDetectorAcceptWaveform(f.vad, (*C.float)(unsafe.Pointer(&p[0])), C.int32_t(len(p)))
 	a, err := f.activity()
-	return nil, a, err
+	if err != nil {
+		f.failed = true
+		return nil, Activity{}, err
+	}
+	return wakes, a, nil
 }
 func (f *nativeFrontend) Flush() (Activity, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.failed || f.vad == nil {
+		return Activity{}, errors.New("native frontend unusable")
+	}
 	C.SherpaOnnxVoiceActivityDetectorFlush(f.vad)
-	return f.activity()
+	a, err := f.activity()
+	if err != nil {
+		f.failed = true
+	}
+	return a, err
 }
 func (r *nativeRecognizer) Close() {
 	if r.recognizer != nil {

@@ -20,22 +20,85 @@ still `whisper` so existing configurations do not change behavior.
 The main CLI/daemon stays pure Go/CGO-free. Only the separately built
 `cmd/ginkgo-voice` helper needs Go CGO, a C/C++ toolchain, **sherpa-onnx v1.13.8**
 with its C API enabled, and matching ONNX Runtime headers/shared libraries.
-Use the [helper build instructions](../internal/sherpavoice/README.md); do not mix C API
-headers, a different Sherpa version, or an unrelated ONNX Runtime installation.
-Build the CUDA-enabled C API/ORT combination if CUDA is wanted; a CPU-only build
-cannot acquire CUDA by changing configuration. Supply matching runtime library
-search paths explicitly in your daemon's environment. Do not add CGO/native
-linker requirements to the ordinary `make build` or CLI/daemon install.
+Do not mix C API headers, a different Sherpa version, or an unrelated ONNX
+Runtime installation. The local packaging target below uses **CPU ONNX Runtime
+1.28.2** and pinned, unmodified Sherpa source revision
+`11afbd009a7f8c08f4bcf2fc1b265d0df4670fbf`. It cannot acquire CUDA by changing
+configuration. CUDA is unavailable in this set: prefer explicit `provider = "cpu"`;
+auto/CUDA may use only the existing explicit CPU fallback policy, not claim GPU
+success. Ordinary `make build` explicitly uses `CGO_ENABLED=0`; native helper
+packaging is separate from `build`, `install`, `run`, and service setup.
+
+### Build a local, relocatable binary set
+
+Use already provisioned native assets; neither command downloads dependencies or
+models. Go dependencies must already be cached (`GOPROXY=off`,
+`GOTOOLCHAIN=local`). A C/C++ toolchain, CMake, Go, Git, binutils, and Linux
+`ldd`/coreutils are required. Choose a **fresh output outside the source tree**:
 
 ```sh
-make voice SHERPA_PREFIX=/trusted/sherpa-onnx-1.13.8 ORT_PREFIX=/trusted/matching-onnxruntime
+make voice-bundle \
+  SHERPA_SOURCE="/trusted/sherpa/source" \
+  SHERPA_BUILD="/trusted/sherpa/build" \
+  BUNDLE_OUTPUT="/absolute/fresh/ginkgo-bundle"
+
+# Helper plus its runtime libraries only:
+make voice \
+  SHERPA_SOURCE="/trusted/sherpa/source" \
+  SHERPA_BUILD="/trusted/sherpa/build" \
+  VOICE_BUNDLE_OUTPUT="/absolute/fresh/ginkgo-helper"
 ```
 
-This separate target sets `CGO_ENABLED=1`, `-tags sherpa_onnx`, include/library
-directories and runtime rpaths for those installed prefixes, producing
-`build/ginkgo-voice`. It is not part of `build`, `install`, `run` or service setup.
-It does not fetch anything. Native headers/libraries are not installed in the
-integration test environment, so a real tagged native build remains unverified.
+The source/build pair is required to compile GinkGo's `ginkgo-kws` C ABI shim;
+integrate `internal/sherpavoice/nativebridge` before building. The CMake contract
+is target `ginkgo-kws`, output `lib/libginkgo-kws.so`. Optional `SHERPA_PREFIX`
+and `ORT_PREFIX` still override the installed C API/ORT headers and shared
+libraries, but **the old prefix-only invocation is no longer sufficient**: the
+shim needs the matching pinned source and static build dependencies. ORT's prefix
+must include `VERSION_NUMBER`, `LICENSE`, and `ThirdPartyNotices.txt` as well as
+`include/` and `lib/`.
+
+The complete output contains:
+
+- `bin/ginkgo-cli`: CGO-free CLI/daemon; `bin/ginkgod -> ginkgo-cli`.
+- `bin/ginkgo-voice`: **real CGO** executable (`sherpa_onnx` tag), not a stub.
+- `lib/libginkgo-kws.so`, `libsherpa-onnx-c-api.so`, `libonnxruntime.so`.
+- `BUILD-MANIFEST.txt`, `SHA256SUMS`, dependency/help checks, and upstream licenses.
+
+The script builds the shim in an output-owned temporary directory, checks native
+ELF linkage and actual `ldd` resolution for every DSO without `LD_LIBRARY_PATH`,
+and smoke-tests `--help` without microphone/model initialization. A missing
+non-system transitive dependency fails packaging rather than silently shipping an
+incomplete set. Linux's loader, glibc, libstdc++, and libgcc remain host prerequisites;
+this is not a cross-distribution static native bundle. The helper uses an
+`$ORIGIN/../lib` executable rpath and the shim uses `$ORIGIN`; the upstream C API
+already searches `$ORIGIN` first. Existing upstream binaries are copied unchanged,
+so upstream debug strings or unused fallback build paths may remain; dependency
+checks must still resolve the packaged libraries locally.
+
+Outputs are never overwritten. Failure removes only this attempt's staging
+directory. Success publishes by a same-filesystem rename. For an optional CGO-free
+LSP, call `bash scripts/build-voice-bundle.sh` with the same paths plus `--with-lsp`.
+The manifest records revisions, versions, and build settings; hashes identify the
+actual binaries/libraries. This is a repeatable local recipe, not a claim of
+bit-identical upstream builds across different toolchains.
+
+Move the **whole directory**, keeping `bin/` and `lib/` together, then verify:
+
+```sh
+cd "/absolute/path/to/ginkgo-bundle"
+sha256sum -c SHA256SUMS
+env -u LD_LIBRARY_PATH -u LD_PRELOAD ldd bin/ginkgo-voice
+bin/ginkgo-cli --help
+bin/ginkgo-voice --help
+```
+
+Packaging does not launch a daemon or install/restart a service. Set the existing
+daemon's helper configuration to the absolute `bin/ginkgo-voice` path only when
+you explicitly choose to activate it. Starting `bin/ginkgod` is a separate,
+explicit action; do not start another daemon on an already-owned socket. A help
+or loader smoke check proves neither ASR model readiness nor native note-saving
+safety. Recording stays gated as described above.
 
 Install a trusted `pw-record` and a trusted helper executable yourself. Native
 code and models execute locally with the daemon's privileges; do not point these
@@ -51,6 +114,38 @@ Acquire these model assets manually from the Sherpa upstream model documentation
   joiner, tokens, and **compiled keywords file**.
 - A compatible Silero VAD ONNX model.
 
+Models stay external to the binary set. Parakeet FP32 (~2.5 GB, including the
+encoder's external `encoder.weights` data) and Silero require explicit provisioning
+permission; filenames alone do not prove completeness. Preserve external
+ONNX weight sidecars beside their graph. The frozen KWS model is
+`sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20`, with compiled keyword phones
+`HH EY1 G IH1 NG K OW1 @GINKGO`. Its accepted 5/6 wake result is not a promise of
+perfect recall and does not waive sample-clock/provenance alignment gates. No
+further model tuning or automatic model fetching is part of packaging.
+
+For the approved local staging set, verified model downloads are now available at
+`/tmp/opencode/ginkgo-sherpa-build/models/parakeet-v2-fp32/` and
+`/tmp/opencode/ginkgo-sherpa-build/models/silero/silero_vad.onnx`. Parakeet is pinned
+to Hugging Face revision `86891485dd8ad7cb28cb1aade45c3e23d0197c30`
+(2,512,987,040 bytes including sidecars); Silero is 643,854 bytes. Preserve their
+`provenance.json` source URLs/checksums with the external assets. Availability and
+download checksums alone do not assert a successful native ASR or microphone test.
+
+The bundle includes `voice-sherpa.example.toml` with capture **disabled**. To fill
+in the approved external paths while packaging (no copying or downloads), export:
+
+```sh
+export VOICE_MODELS_DIR="/tmp/opencode/ginkgo-sherpa-build/models"
+export VOICE_KWS_DIR="/tmp/opencode/ginkgo-sherpa-native/phoneme-validation/sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20"
+export VOICE_KEYWORDS_FILE="/absolute/path/to/frozen-compiled-keywords.txt"
+```
+
+Use the existing frozen compiled keyword file, not an invented filename or a new
+tokenization run. The example selects FP32 chunk-16 KWS graphs. Its model paths
+are illustrative references, not model hash verification; retain/verify the model
+provenance separately. Update the helper path after relocating the bundle. Never
+replace existing user configuration with the example wholesale.
+
 Keep each archive's origin/version, read the model's own license and usage terms,
 and verify publisher checksums before extraction. Where an upstream checksum is
 not published, record a locally verified SHA-256 manifest and pin the exact
@@ -61,7 +156,8 @@ or license acceptance is provided.
 
 ## Configure
 
-Merge into existing tables; all model paths must be explicit absolute installed
+Copy and adapt this example yourself; never overwrite an existing config. Merge
+into existing tables; all model paths must be explicit absolute installed
 paths. Executables may be installed absolute paths or trusted PATH names; the
 daemon resolves them to absolute paths **only on an enabled stream request**.
 
@@ -85,8 +181,8 @@ silence = "1.5s"
 # max_duration remains a legacy setting; Sherpa uses its own bound below.
 
 [voice.sherpa]
-executable = "/absolute/path/to/ginkgo-voice"
-provider = "auto"                  # auto prefers CUDA; also cuda or cpu
+executable = "/absolute/path/to/ginkgo-bundle/bin/ginkgo-voice"
+provider = "cpu"                   # this binary set contains CPU ORT only
 cpu_fallback = true                # opt out to fail instead of falling back
 keyword = "GINKGO"                 # installed compiled label; empty selects all
 max_recording = "60s"              # wake + pause + dictation; independent of legacy 2m

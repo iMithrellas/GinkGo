@@ -1,16 +1,11 @@
 # Optional native ginkgo-voice helper
 
-**BLOCKED: native note recording is unavailable.** Pinned v1.13.8 resets KWS
-decoder frame offsets both explicitly and automatically after 1.5 seconds of
-trailing blanks, while retaining online-stream duplicate timestamps and its old
-time origin. The public C API exposes no reset generation or new clock origin.
-The previous `start_time + timestamps[0]` attribution was unsafe. Native init now
-rejects `RecordingEnabled=true` before constructing engines or opening capture,
-with `ErrUnsafeKWSClock`. CPU fallback cannot fix it. Caption-only native init
-remains implemented; fake-engine selected-note tests are **not native support**.
-Restoring recording requires an audited upstream fix/clock shim covering BOTH
-reset paths and duplicate suppression. Short replacement streams are not used:
-they could lose long phrases or same-breath speech. No timestamps are fabricated.
+**Native captions and acoustic wakes work; note recording remains blocked.**
+The owned `nativebridge` resolves integer emission clocks using the same stock
+C++ stream's raw snapshot, not C API timestamps or a modulo/reset guess.
+`RecordingEnabled=true` still fails before native calls with `ErrUnsafeKWSClock`:
+physical wake onset, control-only rejection and complete-command retention are
+not validated. Accepting trigger recall does not waive these gates.
 
 `cmd/ginkgo-voice` is a separate optional process. Neither the normal CLI nor
 `ginkgod` imports native code. Ordinary builds include an explicit unsupported
@@ -24,20 +19,31 @@ libraries and the **same ONNX Runtime distribution that sherpa was linked to**.
 For CUDA, use a CUDA-enabled ONNX Runtime and its matching CUDA/cuDNN dependencies.
 Do not mix a CPU Go-module prebuilt runtime with a different GPU runtime.
 
-Example using already installed, trusted prefix directories (no installation or
-download is performed by this command):
+Build the bridge against the unmodified pinned source/build first (no downloads):
+
+```sh
+cmake -S internal/sherpavoice/nativebridge -B "$BRIDGE_BUILD" \
+  -DSHERPA_SOURCE="$SHERPA_SOURCE" -DSHERPA_BUILD="$SHERPA_BUILD"
+cmake --build "$BRIDGE_BUILD" --target ginkgo-kws
+ctest --test-dir "$BRIDGE_BUILD" --output-on-failure # build all targets first
+```
+
+This produces `$BRIDGE_BUILD/lib/libginkgo-kws.so`, unversioned SONAME, with
+only versioned `ginkgo_kws_v1_*` C symbols exported. CMake requires the reviewed
+source commit and exact static-core/ORT hashes. The existing static support
+libraries are linked in, not shipped as additional DSOs. Example helper link:
 
 ```sh
 CGO_ENABLED=1 \
 CGO_CFLAGS="-I${SHERPA_PREFIX}/include -I${ORT_PREFIX}/include" \
-CGO_LDFLAGS="-L${SHERPA_PREFIX}/lib -L${ORT_PREFIX}/lib -Wl,-rpath,${SHERPA_PREFIX}/lib -Wl,-rpath,${ORT_PREFIX}/lib" \
+CGO_LDFLAGS="-L${BRIDGE_BUILD}/lib -L${SHERPA_PREFIX}/lib -L${ORT_PREFIX}/lib -Wl,-rpath,${BRIDGE_BUILD}/lib -Wl,-rpath,${SHERPA_PREFIX}/lib -Wl,-rpath,${ORT_PREFIX}/lib" \
 go build -tags sherpa_onnx -o build/ginkgo-voice ./cmd/ginkgo-voice
 ```
 
 Required headers are `sherpa-onnx/c-api/c-api.h` and `onnxruntime_c_api.h`
 (including its distribution's associated headers). Link libraries are
-`libsherpa-onnx-c-api` and `libonnxruntime`. Avoid writable/untrusted library
-search directories. This package adds no Go dependency.
+`libginkgo-kws`, `libsherpa-onnx-c-api` and `libonnxruntime`. Avoid
+writable/untrusted library search directories. No new dependency is downloaded.
 
 Provision English **Parakeet TDT 0.6B v2 FP32**, specifically the upstream
 `sherpa-onnx-nemo-parakeet-tdt-0.6b-v2.tar.bz2` export's `encoder.onnx`,
@@ -47,12 +53,14 @@ Parakeet unified, v3, or an assumed CUDA/CPU-compatible int8/fp16 export.
 The helper trusts provisioning; it does not prove model identity from arbitrary
 file paths or hashes.
 
-Also provision a compatible English streaming transducer acoustic KWS graph,
-its tokenizer/tokens, a **matching precompiled keyword file**, and Silero VAD's
-ONNX model. A keyword label is not a tokenizer/compiler. Changing a phrase in
-configuration cannot magically make it detectable: compile matching keyword
-tokens externally first. `SelectedKeyword`, if nonempty, filters actual acoustic
-KWS detections; ASR text never activates recording.
+KWS supports ONLY the audited zh-en3M2025-12-20 FP32 epoch13/avg2/chunk16/left64
+artifacts. Exact hashes in `native_profile.go` are verified over sealed Linux
+memfd copies before native loading. The compiled file must contain the whole
+`HH EY1 G IH1 NG K OW1` path, optionally `:1 #0.25` and an ASCII `@label`.
+Other models, stress variants, extra phrases/options and fuzzy matching fail.
+Beam16, score1, threshold.25, trailing1, CPU/one thread are fixed. This explicit
+full English mapping yields `Hey Ginkgo`, independently of any selection label.
+Silero and Parakeet still use operator-provisioned paths, not KWS attestation.
 
 Pinned references:
 
@@ -102,8 +110,11 @@ ordinary silent audio still has frames and is not a stall.
 
 ## Native/provider ownership
 
-Silero runs on CPU in the capture owner. Native KWS construction and calls have
-been removed while its sample clock is unsafe; enabling recording fails closed.
+Silero and acoustic KWS run on CPU in the capture owner, with separate clocks
+over the same PCM. KWS calls/close are serialized by the frontend. A partial
+decode/error poisons the stream, and every nonempty raw/filtered result resets.
+There is no generic reset API. Sessions are bounded to eight hours before native
+int32 index horizons; event arrays and input calls are independently capped.
 A separate single ASR goroutine exclusively owns the resident offline recognizer
 and its destructor. Constructors copy native configuration before temporary C
 strings are freed. Each decode owns/destroys a fresh offline stream and result;
@@ -132,8 +143,8 @@ remain available with note recording disabled. Only `note_candidate` is a
 selected finalized result; caption attribution can never authorize saving.
 
 For injectable, trusted frontends, a verified epoch-relative acoustic span fixes
-the selected start. The disabled native KWS backend cannot currently supply that
-guarantee. The wake end is its **detection extent**, not a phrase-end claim.
+the selected start. Native KWS supplies an emission-grid span, NOT validated
+physical onset/end. Its end is the last-phone grid cell, not a phrase-end claim.
 The selection excludes the preceding ambient utterance. Phrase-alone wake plus
 pause and subsequent dictation retains the exact original selected start and ID;
 it is not replaced with the next ambient utterance's audio. Only qualifying
@@ -151,9 +162,9 @@ trigger-only content; this is never used to authorize wake. Precise body-prefix
 removal needs proven alignment or a separately reviewed protocol extension.
 `Wake.Phrase` is a selection label and may be an `@alias`; it is never assumed to
 be spoken text. Unknown canonical forms cannot open selected captures. A future
-native implementation needs audited English tokenizer decoding or a validated
-explicit spoken-form mapping in addition to the clock fix. The current native
-implementation supplies neither and therefore emits no wake events.
+recording implementation still needs physical boundary/control-only validation.
+The current adapter supplies a hash-bound explicit English mapping and integer
+clock; caption-mode engine policy ignores wake selection and cannot emit notes.
 
 ASR previews are repeated **offline** snapshots, not token streaming. Defaults
 are 500 ms cadence over a five-second tail. A single pending preview is coalesced;

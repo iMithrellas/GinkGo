@@ -13,8 +13,9 @@ const SampleRate = 16000
 // ErrUnsupported identifies a build without the optional native backend.
 var ErrUnsupported = errors.New("sherpa-onnx backend not built; requires sherpa_onnx and cgo")
 
-// ErrUnsafeKWSClock prevents recording with the pinned API's unobservable resets.
-var ErrUnsafeKWSClock = errors.New("native keyword sample clock unsupported")
+// ErrUnsafeKWSClock retains the recording-gate identity. The owned integer
+// emission clock is resolved; physical wake/command boundaries remain unvalidated.
+var ErrUnsafeKWSClock = errors.New("native recording boundaries unvalidated; integer emission clock is not a phonetic boundary")
 
 func nativeRecordingSupport(enabled bool) error {
 	if enabled {
