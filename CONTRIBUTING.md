@@ -1,38 +1,51 @@
-## Contributing to GinkGo
+# Contributing
 
-Thanks for your interest in contributing! This repo aims for small, focused changes with clear intent and good ergonomics for reviewers.
+## Build and test
 
-### Quick Start
-- Install pre-commit and enable hooks: `pre-commit install`
-- Build and test locally: `make build test`
-- Keep PRs small and scoped. Include rationale in the description.
+Use the Go version in [go.mod](go.mod). From the repository root:
 
-### Development
-- Prefer simple, composable packages under `internal/`.
-- Keep the CLI thin; most logic should live in services and packages.
-- Avoid global state; pass dependencies via constructors (see `internal/wire`).
-- Write small functions with clear inputs/outputs and error returns.
+```sh
+go fmt ./...
+go test ./...
+go vet ./...
+make build
+```
 
-### Code Style
-- Use `go fmt` and `go vet` (see `make fmt vet`).
-- Favor early returns and explicit errors.
-- Add godoc comments for exported types/functions.
+Run a package test for focused work, for example `go test ./internal/db`.
+Integration tests live in `tests/`. `make run` and `make dev` install binaries
+and restart the user service; `make build` only builds.
 
-### Commit Hygiene
-- Conventional commits style is welcome but not required.
-- Reference issues where possible.
-- Avoid mixing refactors with functional changes.
+These smoke scripts use disposable state and fake providers/audio:
 
-### Testing
-- Unit tests for non-trivial logic are encouraged.
-- CLI behavior should be exercised via package-level functions, not only `cobra.Command`.
+```sh
+python3 scripts/smoke-ai-poc.py
+python3 scripts/smoke-voice-poc.py
+python3 scripts/smoke-voice-listening.py
+make test-voice-bundle
+```
 
-### Security & Privacy
-- Do not log secrets or tokens. Use redaction helpers where necessary.
-- Prefer prepared statements and parameterized queries for DB code.
+Optional tests require explicitly provisioned assets:
 
-### Releases
-- The `main` branch should remain buildable.
-- Tag releases with semantic versions when the project matures.
+| Test | Inputs |
+| --- | --- |
+| OpenCode protocol tests in `internal/ai` | `GINKGO_OPENCODE_SMOKE_EXECUTABLE`; session tests use `GINKGO_OPENCODE_SESSION_SMOKE_EXECUTABLE`. These exercise a real binary without model inference. |
+| Native fixtures in `internal/sherpavoice` | `sherpa_onnx` build tag, native libraries, and `GINKGO_NATIVE_FIXTURE_CONFIG`. |
+| `TestSherpaNativeCLIWorkflow` in `tests/` | `GINKGO_VOICE_E2E_CONFIG` and `GINKGO_VOICE_E2E_CASES`; optional `GINKGO_VOICE_E2E_ARTIFACTS` retains private evidence. |
 
-Thank you for helping improve GinkGo!
+See test definitions for fixture formats and [native setup](docs/voice.md#native-setup)
+for build requirements. Keep recorded audio and retained evidence outside the repo.
+
+## Change guidelines
+
+Keep CLI handlers focused on parsing and I/O. Put reusable logic in `internal/`,
+pass dependencies through constructors, and return contextual errors. Document
+exported APIs with GoDoc and add deterministic tests for behavior changes.
+Use parameterized SQL and keep secrets out of logs.
+
+Check [data compatibility](docs/internals.md#note-provenance) and
+[voice protocols](docs/voice-protocol.md) when changing storage or transports.
+`make proto` regenerates IPC code and requires `protoc` and `protoc-gen-go`.
+
+Edit authored guides in `docs/`. Generate CLI Markdown and man pages with
+`make docs`; avoid unrelated date-only changes. When moving a guide, update
+incoming links, the [index](docs/README.md), and packaging references.

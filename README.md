@@ -1,212 +1,122 @@
 # GinkGo
 
-A resilient, local-first journaling tool with a simple CLI and optional client–server sync. Inspired by the excellent [jrnl](https://github.com/jrnl-org/jrnl), but written in Go for speed, portability, and extensibility.
+A local-first journaling CLI written in Go, inspired by
+[jrnl](https://github.com/jrnl-org/jrnl). Write Markdown notes, organize them with
+tags and namespaces, and search from the terminal. Sync, voice capture, and AI
+processing are optional.
 
-Designed for quick one-liner notes or full Markdown entries in your editor of choice, with tags, namespaces, offline sync, and powerful search (full-text and regex). GinkGo runs around an always-on daemon that unifies local and remote workflows, ensuring your notes are safe, consistent, and always accessible.
+## Install and start
 
----
+Build on Linux with Go 1.24.2 or newer, Git, and `make`. Microphone capture also
+requires PipeWire.
 
-## Core Purpose
-
-- **Primary**: Provide a lightweight, CLI-driven journaling system that works seamlessly offline and can sync to a remote server when desired.
-- **Optional**: Support syncing across devices via a server backend. Multi-user support and namespaces exist, but the main focus is a personal journaling workflow that just works.
-
-Entries can be created as quick one-liners or rich Markdown notes via `$EDITOR`. All entries support tags, can be searched with regex, and are rendered cleanly in the terminal.
-
----
-
-## Core Architecture
-
-- **Local Daemon**: A background process (`ginkgod`) always runs locally, handling storage, search, and notifications. CLI commands (`ginkgo-cli`) talk to it via IPC.
-- **Event Log Storage**: Entries are stored as immutable events with versions, enabling safe replication and offline buffering.
-- **Replication (Optional)**: The local daemon can sync events to one or more remote servers. Events carry namespace IDs and payloads; servers treat payloads as opaque.
-- **Security**: Namespace payloads can be end-to-end encrypted (E2EE) and replication events can be signed for trusted signers.
-- **Consistency**: Updates use CAS (compare-and-swap). Conflicts are rare; mismatches are refused rather than silently overwritten.
-
----
-
-## Features
-
-### Journaling
-- Quick one-liner notes from the CLI.
-- Full Markdown entries opened in `$EDITOR` (sudoedit-style flow).
-- Multi-line stdin input for piping notes or imports.
-- Tags (`#work`, `#personal`) with tag cloud and filtering.
-- Optional namespaces (e.g., `work`, `personal`, `ideas`).
-
-### Search & Rendering
-- Full-text and regex search with date range and tag filters.
-- Markdown rendering in the terminal for single-entry “pretty” output (Glamour-based).
-- Export entries to Markdown, JSON, or NDJSON.
-- Interactive list table using Bubble Tea (`ginkgo-cli note list`).
-
-### Optional voice and AI notes (POC)
-- Local WAV transcription with installed whisper.cpp; save raw notes independently
-  of AI or use daemon-owned AI creation/append with original-input provenance. See
-  the [voice and AI POC guide](docs/voice-ai-poc.md) for setup and test status.
-- Optional PipeWire microphone capture: `voice enable`/`disable` control daemon-owned
-  continuous dictation; `voice listen --silence 2s` captures one utterance. See
-  [listening controls](docs/voice-listening.md) for saving, stop/cancel, and limits.
-- Optional live captions: `voice stream` and read-only `voice watch --output json`.
-  The optional [Sherpa helper](docs/voice-sherpa.md) implements Silero VAD and
-  resident English Parakeet captions, with CUDA preferred and CPU fallback.
-  **Native acoustic-wake note recording is currently blocked/fails closed**;
-  fake-engine selection tests are not native recording support.
-  The [legacy Whisper stream](docs/voice-stream.md) remains the default for existing
-  configs. Neither backend saves captions without explicit `--save`.
-
-### Sync
-- Local outbox queues edits when offline.
-- Same permanent storage as offline cache — no special cases.
-- Manual one shot or background sync (`ginkgo-cli sync`).
-- Bulk note import/export (NDJSON, Markdown directories).
-- Optional E2EE for new namespaces with keyring support.
-
-### Bubble UI
-- `note list` supports an interactive table powered by Bubble Tea. It is enabled by default, can be overridden with `--output=json/pretty/plain`.
-
-#### How to Sync Between Two Clients
-1. Run the sync server (see Docker section) and pick a shared auth token.
-   - This is a shared secret that all clients must know.
-   - Set it on the server as `GINKGO_AUTH_TOKEN`.
-   - Use the exact same value in each client config under `remotes.origin.token`.
-   - Optional: configure `namespaces.<name>.trusted_signers` on the server to require signed replication events; only listed signer public keys are accepted.
-2. On both clients, configure the same remote URL + token.
-3. Keep the daemon running; it syncs in the background after local changes.
-4. Optional: use `ginkgo-cli sync` to trigger an immediate foreground sync.
-
-Example config:
-```
-[remotes.origin]
-enabled = true
-url = "https://sync.example.com"
-token = "replace-me"
-```
-
-### Notifications (Planned)
-- Configurable nudges if no notes are created for N days.
-- Delivered via the local daemon; can snooze or mute.
-
-### Storage & Backends
-- SQLite (WAL) default for local use.
-
----
-
-## Install
-
-### Arch Linux (AUR)
-
-```bash
-yay -S ginkgo-cli # or AUR helper of your choice
-```
-- https://aur.archlinux.org/packages/ginkgo-cli
-
-### Docker (sync remote)
-
-Build and run the HTTP replication server using Docker:
-
-```bash
-# Clone repo
-git clone https://github.com/iMithrellas/GinkGo.git
-cd GinkGo
-
-# Build image
-docker build -t ginkgo-server .
-
-# Run: map host 8080 and provide an auth token for replication clients
-docker run --rm \
-  -p 8080:8080/tcp \
-  -e GINKGO_AUTH_TOKEN="replace-me" \
-  -v ginkgo-data:/data \
-  ginkgo-server
-```
-
-- Volume `ginkgo-data` persists the server SQLite DB and state under `/data`.
-- The server stores opaque payloads; enable E2EE in client namespaces to keep payload content encrypted end-to-end (use TLS if you want transport encryption too).
-- If you configure `trusted_signers` on the server, replication events must be signed by an approved key.
-
-### Manual install
-
-Dependencies:
-- Go 1.24+ (per `go.mod`)
-- `make`
-- `gzip` (for `make install-man`)
-- `mandb` (optional, for updating man page cache)
-- systemd user service (optional, for `make install-service`)
-
-```bash
+```sh
 git clone https://github.com/iMithrellas/GinkGo.git
 cd GinkGo
 make build
+export PATH="$PWD/build:$PATH"
+```
+
+Arch users can install the [AUR package](https://aur.archlinux.org/packages/ginkgo-cli)
+with `yay -S ginkgo-cli`.
+
+For a new installation, create the configuration and initialize a namespace from
+an interactive terminal:
+
+```sh
+ginkgo-cli config generate
+ginkgo-cli config namespace init -n default
+ginkgo-cli config check
+```
+
+Skip generation if a config file already exists. See [configuration](docs/config.md)
+for paths and overrides, and [sync](docs/sync.md) before setting up shared
+encryption keys.
+
+Start the daemon in one terminal:
+
+```sh
+GINKGO_HTTP_ADDR=127.0.0.1:7465 ginkgo-cli daemon
+```
+
+This sets a loopback address for the daemon's health listener. Choose a free port
+and leave the process running. In another terminal, add the same `build/` directory
+to `PATH` and create a note:
+
+```sh
+ginkgo-cli note add "Started my journal" --tags journal
+ginkgo-cli note list --output plain
+ginkgo-cli note show NOTE_ID
+```
+
+Use the same configuration for both processes. Connection and startup errors are
+covered in [configuration](docs/config.md).
+
+<details>
+<summary>Install binaries, man pages, and a user service</summary>
+
+```sh
+make lsp
 make install-binary
-make install-man      # optional
-make install-service  # optional
+export PATH="$HOME/.local/bin:$PATH"
+make install-man
 ```
 
-Running without systemd (e.g., Hyprland autostart):
+Binary installation creates symlinks into the checkout, including `ginkgod` for
+the daemon and `ginkgo-lsp` for editor completion. Keep the checkout in place.
+Man-page installation requires `gzip`; `mandb` is optional. `make install` builds
+both binaries and installs them with the man pages.
 
-```bash
-exec-once = ginkgod
+To use systemd, set a loopback `http_addr` in your [configuration](docs/config.md),
+then stop the foreground daemon and run:
+
+```sh
+make install-service
+systemctl --user daemon-reload
+systemctl --user enable --now ginkgo.service
 ```
 
-## Why the Name GinkGo
+For other session managers, start `ginkgod` from session startup.
 
-The **Ginkgo tree** is a symbol of memory, resilience, and longevity — a natural metaphor for journaling. The capitalized “Go” highlights the language of implementation.
+</details>
 
-To avoid confusion with the Go testing framework of the same name, the binary/package is called **`ginkgo-cli`**, while the project identity remains **GinkGo**.
+## Guides
 
----
+| Task | Guide |
+| --- | --- |
+| Write, edit, search, export, and inspect original input | [Notes](docs/usage.md) |
+| Set paths, namespaces, environment overrides, and daemon listeners | [Configuration](docs/config.md) |
+| Connect devices, run a server, and configure encryption | [Sync](docs/sync.md) |
+| Configure a provider and generate or expand notes | [AI notes](docs/ai.md) |
+| Transcribe files, dictate, or record wake-selected notes | [Voice](docs/voice.md) |
 
-## Shell Completions
+The [documentation index](docs/README.md) includes the command reference and
+developer documentation. Use `ginkgo-cli COMMAND --help` for flags in your build.
 
-GinkGo supports dynamic shell completions for namespaces and tags, including fuzzy matching for tag lists (e.g., typing `proj` suggests `project`). It works for comma-separated lists too (e.g. `work,proj` -> `work,project`).
+## Architecture
 
-```bash
-ginkgo-cli completion generate bash
-ginkgo-cli completion generate zsh fish
+```mermaid
+flowchart TD
+    CLI["CLI and editor"] -->|"Unix socket: protobuf"| Daemon["Local daemon"]
+    Daemon --> DB["SQLite: notes, provenance, replication events"]
+    Daemon -->|"Separate socket: read-only NDJSON"| Watch["Voice watcher"]
+    Capture["Optional voice capture: microphone or WAV"] --> Speech["Speech engine: Whisper or Parakeet"]
+    Capture -->|"Sherpa acoustic KWS"| Trigger["Wake-word / trigger logic"]
+    Speech -->|"Final transcript validation"| Trigger
+    Speech -->|"Captions or requested file / dictation saves"| Daemon
+    Trigger -->|"Selected stream notes with --save"| Daemon
+    Daemon -.->|"Text and selected note context"| AI["Optional AI provider"]
+    AI -.->|"Proposed note changes"| Daemon
+    Daemon -.->|"Replication payloads"| Server["Optional sync server"]
+    Server -.-> Other["Other device"]
 ```
 
-## Neovim LSP
+Provider and sync requests may leave the machine. Local storage and export
+handling are covered in [Notes](docs/usage.md); replication encryption is covered
+in [Sync](docs/sync.md).
 
-You can use the `ginkgo-lsp` binary for tag completion in Neovim. The LSP expects `*.ginkgo.md` temp files and uses the namespace encoded in the filename.
+## Development
 
-```lua
-vim.api.nvim_create_autocmd({ 'BufRead', 'BufNewFile' }, {
-  pattern = '*.ginkgo.md',
-  callback = function()
-    vim.bo.filetype = 'markdown'
-    vim.lsp.start {
-      name = 'ginkgo-lsp',
-      cmd = { vim.fn.exepath('ginkgo-lsp') },
-      root_dir = vim.fn.getcwd(),
-    }
-  end,
-})
-```
-
-## Other Editors
-
-For VSCode or other editors, use a generic LSP client extension/plugin and point it at `ginkgo-lsp` on your PATH (or the result of `exepath('ginkgo-lsp')`) for the `*.ginkgo.md` file extension. If your editor lacks a generic LSP client, you can write a minimal client wrapper to launch the binary over stdio.
-
-## Make Targets
-
-- `make build`: build `ginkgo-cli` into `./build/`
-- `make install`: build + install binary + install man pages
-- `make install-binary`: build output symlinked to `~/.local/bin/ginkgo-cli`, `~/.local/bin/ginkgod`, and `~/.local/bin/ginkgo-lsp`
-- `make install-service`: install the systemd user service file
-- `make reload-service`: reload systemd user daemon and restart ginkgo service
-- `make run`: build, install, and restart the service (one-shot)
-- `make dev`: alias for `make run`
-- `make docs`: generate Markdown + man pages
-- `make install-man`: install man pages
-- `make uninstall-man`: remove man pages
-
-## Roadmap
-
-Active roadmap is tracked in GitHub Issues:
-
-- https://github.com/iMithrellas/GinkGo/issues/1
-
-## Contributing
-
-Contributions are welcome! Roadmap and open tasks are tracked in GitHub issues. Please run pre-commit locally to keep builds green and diffs clean <3.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for build and test commands,
+[internals](docs/internals.md) for data and lifecycle contracts, and
+[issue #1](https://github.com/iMithrellas/GinkGo/issues/1) for the roadmap.

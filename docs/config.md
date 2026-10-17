@@ -1,48 +1,75 @@
 # Configuration
 
-GinkGo reads configuration via Viper, supporting YAML/TOML files and `GINKGO_*` environment variables.
+## File, paths, and precedence
 
-## Search Paths
-- `$XDG_CONFIG_HOME/ginkgo/config.yaml`
-- `~/.config/ginkgo/config.yaml`
-- `./config.yaml`
+Configuration resolves in this order: built-in defaults, file, then `GINKGO_*`
+environment variables. Supported command flags override settings. The automatic
+search order is `$XDG_CONFIG_HOME/ginkgo`, `~/.config/ginkgo`, then the current
+directory, looking for `config` with a supported extension. `--config` selects a
+specific file. Generated configuration uses TOML; YAML can be loaded with
+`--config`.
 
-Override with `--config /path/to/config.yaml`.
-
-## Example (YAML)
-```yaml
-data_dir: ~/.local/share/ginkgo
-db_url: sqlite://~/.local/share/ginkgo/ginkgo.db
-namespace: default
-remotes:
-  origin: https://ginkgo.example.com
-notifications:
-  enabled: true
-  every_days: 3
+```sh
+ginkgo-cli config generate
+ginkgo-cli --config /absolute/path/config.toml config check
 ```
 
-## Namespace Configuration
-Namespace settings live under `namespaces.<name>`. They control E2EE, key storage, and signing.
+Generation writes `$XDG_CONFIG_HOME/ginkgo/config.toml` or
+`~/.config/ginkgo/config.toml`. It will not replace an existing file without
+`--update` (merge missing defaults) or `--overwrite` (replace); either makes a
+backup when changing a file. `config check` validates configuration fields,
+including required keys and base64 encoding. Connectivity and OS-keyring
+availability need separate checks. The loader ignores file-read errors and can report `Config OK`
+after loading defaults. CLI startup can create/open the database,
+including for config commands.
+
+SQLite is stored at `data_dir/ginkgo.db`, defaulting to `$XDG_DATA_HOME/ginkgo` or
+`~/.local/share/ginkgo`. Use an absolute path for a custom `data_dir`.
+Environment names replace dots with underscores:
+
+```sh
+GINKGO_DATA_DIR="$HOME/.local/share/ginkgo-scratch" ginkgo-cli config check
+GINKGO_NAMESPACE=work ginkgo-cli note list
+```
+
+Note commands use the daemon's socket and storage. Set the daemon's paths and
+namespace where it starts; changing a client environment variable does not
+reconfigure a running daemon. Use the same config and runtime paths for the CLI
+and daemon.
+
+## Namespace and general settings
 
 ```toml
-[namespaces.work]
-e2ee = true
-key_provider = "system"   # or "config"
-key_id = "ginkgo/ns/work" # used when key_provider = "system"
-read_key = "..."          # base64 when key_provider = "config"
-write_key = "..."         # base64 when key_provider = "config"
+namespace = "default"
+default_tags = ["journal"]
+http_addr = "127.0.0.1:7465"
 
-signer_key_provider = "system" # or "config"
-signer_key_id = "ginkgo/signer/laptop"
-signer_pub = "..."             # base64 when signer_key_provider = "config"
-signer_priv = "..."            # base64 when signer_key_provider = "config"
-origin_label = "mithrel-laptop"
-
-# Replication server trust list (base64 Ed25519 public keys).
-trusted_signers = ["..."]
+[export]
+page_size = 200
 ```
 
-Notes:
-- `e2ee = true` encrypts replication payloads; local storage remains plaintext.
-- `key_provider = "system"` uses the OS keyring; `config` stores keys in config files.
-- `trusted_signers` is used by replication servers to validate incoming signatures.
+The namespace defaults to `default`; initialize additional namespaces with
+`ginkgo-cli config namespace init -n work`. Set `default_tags` for new notes. The
+`export.page_size` controls [list and search paging](usage.md#list-and-search).
+Reminder settings are reserved; scheduling is unimplemented.
+
+Namespace initialization asks about encryption and key storage. Before sharing
+a namespace, follow [sync key setup](sync.md#encryption-keys). Configure optional
+providers and audio backends in the [AI](ai.md) and [voice](voice.md) guides.
+
+## Local daemon listener
+
+Besides its Unix IPC socket, the daemon starts an unauthenticated, health-only
+`/healthz` HTTP listener. `http_addr` defaults to `:8080`, which binds all
+interfaces. Use a free loopback address, as in the example above, at the top level
+of TOML before any table.
+
+For a foreground daemon, `GINKGO_HTTP_ADDR=127.0.0.1:7465 ginkgo-cli daemon` is an
+alternative. Services need the value in their loaded config and a restart; a
+foreground environment override does not affect an existing service. An occupied
+port prevents normal startup. The separate server process also uses `http_addr`;
+give it a separate config and data directory, and see [server setup](sync.md#server-setup).
+
+If a note command cannot connect, check that the daemon is running and that both
+processes use the same config and runtime directory. Restart the daemon after
+configuration changes; already running processes keep their loaded settings.

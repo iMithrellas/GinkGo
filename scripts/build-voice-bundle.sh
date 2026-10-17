@@ -131,7 +131,7 @@ fi
 cp -- "$source_dir/LICENSE" "$stage/licenses/sherpa-onnx-LICENSE"
 cp -- "$ort_prefix/LICENSE" "$stage/licenses/onnxruntime-LICENSE"
 cp -- "$ort_prefix/ThirdPartyNotices.txt" "$stage/licenses/onnxruntime-ThirdPartyNotices.txt"
-cp -- "$root/docs/voice-sherpa.md" "$stage/README.md"
+cp -- "$root/docs/voice.md" "$stage/README.md"
 toml_string() {
     local value=$1
     value=${value//\\/\\\\}
