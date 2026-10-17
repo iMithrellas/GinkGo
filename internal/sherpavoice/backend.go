@@ -13,16 +13,8 @@ const SampleRate = 16000
 // ErrUnsupported identifies a build without the optional native backend.
 var ErrUnsupported = errors.New("sherpa-onnx backend not built; requires sherpa_onnx and cgo")
 
-// ErrUnsafeKWSClock retains the recording-gate identity. The owned integer
-// emission clock is resolved; physical wake/command boundaries remain unvalidated.
-var ErrUnsafeKWSClock = errors.New("native recording boundaries unvalidated; integer emission clock is not a phonetic boundary")
-
-func nativeRecordingSupport(enabled bool) error {
-	if enabled {
-		return ErrUnsafeKWSClock
-	}
-	return nil
-}
+// ErrUnverifiedNativeProfile rejects models/mappings outside the audited path.
+var ErrUnverifiedNativeProfile = errors.New("native keyword profile not verified")
 
 // Span is a half-open interval on the capture sample clock.
 type Span struct{ Start, End int64 }

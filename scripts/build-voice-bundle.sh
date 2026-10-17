@@ -147,6 +147,15 @@ keywords=${VOICE_KEYWORDS_FILE:-/absolute/path/to/keywords.txt}
     cat <<'EOF'
 # Merge manually into your existing config. Capture remains disabled here.
 # Update paths after relocating the binary bundle or external models.
+# To opt in, enable BOTH voice.enabled and voice.stream.enabled yourself.
+# Stop any old daemon first; explicitly start THIS bundle's bin/ginkgod --config
+# /absolute/path/to/your/config.toml. In another terminal use the matching CLI:
+# bin/ginkgo-cli --config /absolute/path/to/your/config.toml voice stream --save --trigger GINKGO
+# voice enable is the separate legacy Whisper workflow, not Sherpa.
+# Say the full "Hey Ginkgo" phrase, then dictate immediately or after a short pause.
+# Cooldown suppresses duplicate wakes; it does not require waiting to dictate.
+# Explicitly stop/restart before eight hours or 4096 utterances/sessions.
+# Daemon restart returns idle; rerun voice stream --save to resume note capture.
 [voice]
 enabled = false
 [voice.events]
@@ -156,10 +165,15 @@ enabled = false
 backend = "sherpa"
 [voice.capture]
 executable = "pw-record"
+silence = "1.5s"
 [voice.sherpa]
 provider = "cpu"
 cpu_fallback = true
 keyword = "GINKGO"
+trigger_timeout = "3s"
+max_recording = "60s"
+cooldown = "1s"
+pre_roll = "500ms"
 EOF
     printf 'executable = %s\n' "$(toml_string "$output/bin/ginkgo-voice")"
     printf 'keywords_file = %s\n' "$(toml_string "$keywords")"

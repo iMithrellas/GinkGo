@@ -77,9 +77,6 @@ func ProbeProvider(requested string) (ProviderStatus, error) {
 // OpenNative creates independent frontend and resident offline ASR instances.
 // Call only in the isolated helper process; malformed native models may abort.
 func OpenNative(c NativeConfig) (Frontend, Recognizer, error) {
-	if err := nativeRecordingSupport(c.RecordingEnabled); err != nil {
-		return nil, nil, err
-	}
 	if err := c.validate(); err != nil {
 		return nil, nil, err
 	}

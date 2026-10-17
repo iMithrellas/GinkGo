@@ -27,8 +27,8 @@ func main() {
 	if err := sherpavoice.Serve(ctx, os.Stdin, os.Stdout, sherpavoice.NativeRuntime()); err != nil {
 		if errors.Is(err, sherpavoice.ErrUnsupported) {
 			fmt.Fprintln(os.Stderr, "ginkgo-voice: native backend not built (requires sherpa_onnx and cgo)")
-		} else if errors.Is(err, sherpavoice.ErrUnsafeKWSClock) {
-			fmt.Fprintln(os.Stderr, "ginkgo-voice: native recording boundaries unvalidated; note recording unavailable")
+		} else if errors.Is(err, sherpavoice.ErrUnverifiedNativeProfile) {
+			fmt.Fprintln(os.Stderr, "ginkgo-voice: native keyword profile not verified")
 		} else {
 			fmt.Fprintln(os.Stderr, "ginkgo-voice: voice helper failed")
 		}

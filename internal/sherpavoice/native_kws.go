@@ -10,6 +10,7 @@ import "C"
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"unsafe"
 )
@@ -19,7 +20,12 @@ type nativeKWS struct {
 	label string
 }
 
-func openNativeKWS(c NativeConfig) (*nativeKWS, error) {
+func openNativeKWS(c NativeConfig) (result *nativeKWS, err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("%w: %v", ErrUnverifiedNativeProfile, err)
+		}
+	}()
 	label, err := readWakeLabel(c.KeywordFile)
 	if err != nil {
 		return nil, err

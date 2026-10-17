@@ -17,9 +17,13 @@ import (
 type nativeFixture struct {
 	Config NativeConfig
 	Cases  []struct {
-		WAV, SHA256 string
-		KeywordFile string
-		Events      []struct {
+		WAV, SHA256   string
+		KeywordFile   string
+		ExpectedNotes []struct {
+			Start, End int64
+			TextSHA256 string
+		}
+		Events []struct {
 			Frames       [7]int64
 			Notification int64
 		}

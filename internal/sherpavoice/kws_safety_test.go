@@ -1,7 +1,6 @@
 package sherpavoice
 
 import (
-	"errors"
 	"testing"
 )
 
@@ -27,13 +26,7 @@ func TestPinnedKWSResetClockIsNotAnEpochClock(t *testing.T) {
 			if reportedEpoch >= actualEpoch {
 				t.Fatal("source regression no longer demonstrates unsafe attribution")
 			}
-			if !errors.Is(nativeRecordingSupport(true), ErrUnsafeKWSClock) {
-				t.Fatal("unsafe native recording was enabled")
-			}
 		})
-	}
-	if err := nativeRecordingSupport(false); err != nil {
-		t.Fatal(err)
 	}
 }
 

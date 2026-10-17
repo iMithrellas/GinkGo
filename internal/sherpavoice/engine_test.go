@@ -111,7 +111,7 @@ func TestAcousticWakeSelectsSameBreathBoundary(t *testing.T) {
 	}
 	for _, v := range *events {
 		if v.Type == "note_candidate" {
-			if v.Start != 9000 || v.End != 24000 || v.Original != "hey ginkgo, Keep Exact CAPITALS." || v.Body != "Keep Exact CAPITALS." || v.SessionID == "" {
+			if v.Start != 1000 || v.End != 24000 || v.Original != "hey ginkgo, Keep Exact CAPITALS." || v.Body != "Keep Exact CAPITALS." || v.SessionID == "" {
 				t.Fatalf("candidate: %+v", v)
 			}
 		}

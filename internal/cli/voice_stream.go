@@ -67,7 +67,11 @@ func newVoiceStreamCmd() *cobra.Command {
 			if output == "json" {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(r)
 			}
-			_, err = fmt.Fprintln(cmd.OutOrStdout(), "Live captions started; subscribe with voice watch --output json; stop with voice stop or discard with voice cancel.")
+			message := "Live captions requested (no notes will be saved)"
+			if save {
+				message = "Wake-gated raw note capture requested"
+			}
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), message+"; inspect readiness with voice status or voice watch --output json; finalize with voice stop or discard pending work with voice cancel.")
 			return err
 		}}
 	cmd.Flags().BoolVar(&save, "save", false, "save selected raw notes (sherpa: acoustic KWS; whisper: final-confirmed literal prefix)")

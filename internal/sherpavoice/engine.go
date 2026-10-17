@@ -39,7 +39,7 @@ type EngineConfig struct {
 // DefaultEngineConfig permits 30-second finals and 5-second preview tails at
 // 500 ms cadence. Preview revisions are simulated streaming offline snapshots.
 func DefaultEngineConfig() EngineConfig {
-	return EngineConfig{RingSamples: 35 * SampleRate, PreviewSamples: 5 * SampleRate, PreviewEvery: SampleRate / 2, MinSpeech: SampleRate / 4, WakeTimeout: 5 * SampleRate, Cooldown: 2 * SampleRate, FinalQueue: 8, PreRollSamples: SampleRate / 2, RecordingEnabled: true, MaxRecordingSamples: 30 * SampleRate}
+	return EngineConfig{RingSamples: 35 * SampleRate, PreviewSamples: 5 * SampleRate, PreviewEvery: SampleRate / 2, MinSpeech: SampleRate / 4, WakeTimeout: 3 * SampleRate, Cooldown: 2 * SampleRate, FinalQueue: 8, PreRollSamples: SampleRate / 2, RecordingEnabled: true, MaxRecordingSamples: 30 * SampleRate}
 }
 
 type selection struct {
@@ -51,6 +51,10 @@ type selection struct {
 	decided          bool
 	recording        bool
 	pending          int
+	active           bool
+	label            string
+	closingEnd       int64
+	endedCode        string
 }
 
 // Engine processes one capture clock. Process, Poll, Stop and Cancel must be
@@ -71,6 +75,7 @@ type Engine struct {
 	revisions                              map[string]uint64
 	finals                                 map[string]bool
 	gate                                   *selection
+	deferred                               *selection // one bounded unpublished retrigger
 	authority                              context.Context
 	stopCommit                             <-chan struct{}
 	stopping                               <-chan struct{}
@@ -152,51 +157,54 @@ func (e *Engine) Process(p []float32) error {
 		if w.Phrase == "" || strings.TrimSpace(w.SpokenForm) == "" || w.Start < e.ring.start() || w.Start < 0 || w.End > e.ring.end || w.Start >= w.End || w.End-w.Start > int64(e.config.MaxRecordingSamples) {
 			continue
 		}
-		if !e.config.RecordingEnabled || e.config.SelectedKeyword != "" && !strings.EqualFold(w.Phrase, e.config.SelectedKeyword) || e.gate != nil || e.ring.end < e.cooldownUntil {
+		if !e.config.RecordingEnabled || e.config.SelectedKeyword != "" && !strings.EqualFold(w.Phrase, e.config.SelectedKeyword) || e.ring.end < e.cooldownUntil {
+			continue
+		}
+		// The grid is evidence, not a physical phonetic onset. Keep configured
+		// source context intact and reject eviction rather than silently clipping.
+		start := max(int64(0), w.Start-int64(e.config.PreRollSamples))
+		if start < e.ring.start() {
 			continue
 		}
 		noteID := e.id("note")
-		e.gate = &selection{id: noteID, utterance: noteID + "-audio", phrase: w.SpokenForm, start: w.Start, wakeEnd: w.End, deadline: e.ring.end + int64(e.config.WakeTimeout), recording: true}
+		s := &selection{id: noteID, utterance: noteID + "-audio", phrase: w.SpokenForm, label: w.Phrase, start: start, wakeEnd: w.End, deadline: w.End + int64(e.config.WakeTimeout), recording: true}
 		e.cooldownUntil = e.ring.end + int64(e.config.Cooldown)
-		if err := e.emit(Event{Type: "wake", ID: e.gate.utterance, SessionID: e.gate.id, Phrase: w.Phrase, Span: w.Span, RecordingNote: true}); err != nil {
+		if err := e.retrigger(s); err != nil {
 			return err
 		}
-		if err := e.recording(true, e.gate.id); err != nil {
+	}
+	// Idle arming is an AUDIO-clock bound, never extended by ASR latency or
+	// Silero hangover. Continuous speech that began in time may finish later.
+	if s := e.capturing(); s != nil && s.recording && !s.active && e.ring.end-int64(len(p)) >= s.deadline {
+		if err := e.endSelection(s, "timeout"); err != nil {
 			return err
 		}
+	}
+	if s := e.capturing(); s != nil && s.recording && a.Speaking {
+		s.active = true
+		s.hasSpeech = true
 	}
 	if err := e.activity(a); err != nil {
 		return err
 	}
-	if e.gate != nil && e.gate.recording && a.Speaking {
-		e.gate.hasSpeech = true
-		e.gate.deadline = e.ring.end + int64(e.config.WakeTimeout)
+	if s := e.capturing(); s != nil && !a.Speaking {
+		// A VAD pulse can disappear without a qualifying completed segment.
+		// It must not leave the session active indefinitely.
+		s.active = false
 	}
-	if e.gate != nil && e.gate.recording && e.ring.end-e.gate.start >= int64(e.config.MaxRecordingSamples) {
-		if e.gate.hasSpeech {
-			if err := e.selectFinal(e.gate.start + int64(e.config.MaxRecordingSamples)); err != nil {
+	if s := e.capturing(); s != nil && s.recording && e.ring.end-s.start >= int64(e.config.MaxRecordingSamples) {
+		if s.hasSpeech {
+			if err := e.selectFinal(s, s.start+int64(e.config.MaxRecordingSamples)); err != nil {
 				return err
 			}
 		}
-		e.gate.recording = false
-		if err := e.recording(false, e.gate.id); err != nil {
+		if err := e.endSelection(s, "empty"); err != nil {
 			return err
 		}
-		if e.gate.pending == 0 {
-			if err := e.cancelSelection("empty"); err != nil {
-				return err
-			}
-		}
 	}
-	if e.gate != nil && e.gate.recording && e.ring.end >= e.gate.deadline {
-		e.gate.recording = false
-		if err := e.recording(false, e.gate.id); err != nil {
+	if s := e.capturing(); s != nil && s.recording && !s.active && e.ring.end >= s.deadline {
+		if err := e.endSelection(s, "timeout"); err != nil {
 			return err
-		}
-		if e.gate.pending == 0 {
-			if err := e.cancelSelection("timeout"); err != nil {
-				return err
-			}
 		}
 	}
 	if a.Speaking && e.captionID != "" && e.ring.end-e.previewAt >= int64(e.config.PreviewEvery) {
@@ -221,6 +229,82 @@ func (e *Engine) Process(p []float32) error {
 func (e *Engine) recording(on bool, id string) error {
 	return e.emit(Event{Type: "recording", SessionID: id, RecordingNote: on, Span: Span{e.ring.end, e.ring.end}})
 }
+
+// capturing can be an unpublished selection while the public singleton finishes
+// ASR. PCM, endpoints and its idle deadline continue on the same source clock.
+func (e *Engine) capturing() *selection {
+	if e.deferred != nil {
+		return e.deferred
+	}
+	return e.gate
+}
+
+func (e *Engine) announce(s *selection) error {
+	e.gate = s
+	if err := e.emit(Event{Type: "wake", ID: s.utterance, SessionID: s.id, Phrase: s.label, Span: Span{s.start, s.wakeEnd}, RecordingNote: true}); err != nil {
+		return err
+	}
+	if err := e.recording(true, s.id); err != nil {
+		return err
+	}
+	if !s.recording {
+		if err := e.recording(false, s.id); err != nil {
+			return err
+		}
+		if s.pending == 0 {
+			code := s.endedCode
+			if code == "" {
+				code = "empty"
+			}
+			return e.cancelSelection(code)
+		}
+	}
+	return nil
+}
+
+func (e *Engine) promote() error {
+	if e.gate != nil || e.deferred == nil {
+		return nil
+	}
+	s := e.deferred
+	e.deferred = nil
+	return e.announce(s)
+}
+
+func (e *Engine) retrigger(next *selection) error {
+	if e.deferred != nil {
+		return errors.New("deferred acoustic wake overflow")
+	}
+	old := e.gate
+	if old == nil {
+		return e.announce(next)
+	}
+	e.deferred = next
+	// Do not wait for a VAD endpoint: its hangover may merge both wakes.
+	// Exclude ALL new retained context, not a guessed phonetic word end.
+	end := min(next.start, old.start+int64(e.config.MaxRecordingSamples))
+	if !old.recording && old.lastEnd > 0 {
+		end = min(end, old.lastEnd)
+	}
+	if !old.hasSpeech || end < old.wakeEnd || end-old.start < int64(e.config.MinSpeech) {
+		return e.cancelSelection("rearmed")
+	}
+	old.closingEnd = end
+	if old.lastEnd != end || old.pending == 0 {
+		if err := e.submit(e.id("selected"), Span{old.start, end}, true, old); err != nil {
+			return err
+		}
+		old.pending++
+		old.lastEnd = end
+	}
+	wasRecording := old.recording
+	old.recording = false
+	if wasRecording {
+		return e.recording(false, old.id)
+	}
+	return nil
+}
+
 func (e *Engine) activity(a Activity) error {
 	for _, span := range a.Segments {
 		if span.Start < 0 || span.Start >= span.End || span.End > e.ring.end {
@@ -237,10 +321,18 @@ func (e *Engine) activity(a Activity) error {
 			return err
 		}
 		e.captionID = ""
-		if e.gate != nil && e.gate.recording && !e.gate.decided && span.End >= e.gate.wakeEnd {
-			e.gate.hasSpeech = true
-			if err := e.selectFinal(min(span.End, e.gate.start+int64(e.config.MaxRecordingSamples))); err != nil {
+		if s := e.capturing(); s != nil && s.recording && !s.decided && span.End >= s.wakeEnd {
+			if !s.active && span.Start >= s.deadline {
+				continue
+			}
+			s.hasSpeech = true
+			firstEndpoint := s.lastEnd == 0
+			if err := e.selectFinal(s, min(span.End, s.start+int64(e.config.MaxRecordingSamples))); err != nil {
 				return err
+			}
+			s.active = false
+			if firstEndpoint {
+				s.deadline = span.End + int64(e.config.WakeTimeout)
 			}
 		}
 	}
@@ -251,13 +343,11 @@ func (e *Engine) activity(a Activity) error {
 	}
 	return nil
 }
-func (e *Engine) selectFinal(end int64) error {
-	s := e.gate
+func (e *Engine) selectFinal(s *selection, end int64) error {
 	if end < s.wakeEnd || end <= s.lastEnd || end-s.start < int64(e.config.MinSpeech) {
 		return nil
 	}
-	// The selected clock always begins at the original acoustic wake, including
-	// a phrase-alone pause. It never switches to a future ambient utterance.
+	// Keep the source-exact conservative wake context and a permitted pause.
 	if err := e.submit(e.id("selected"), Span{s.start, end}, true, s); err != nil {
 		return err
 	}
@@ -319,8 +409,24 @@ func (e *Engine) result(r decodeResult) error {
 		if s.decided {
 			return nil
 		}
-		body := StripLeadingPhrase(r.text, s.phrase)
-		if strings.TrimSpace(body) == "" {
+		if s != e.gate {
+			return errors.New("selected result before wake authority")
+		}
+		// A retrigger supersedes any earlier endpoint snapshot, particularly a
+		// merged endpoint that included the NEXT wake. Only the bounded close
+		// snapshot is authoritative for this old session.
+		if s.closingEnd != 0 && j.span.End != s.closingEnd {
+			return nil
+		}
+		body, leading := selectedBody(r.text, s.phrase)
+		if !leading {
+			if e.gate == s {
+				return e.cancelSelection("prefix_mismatch")
+			}
+			s.decided = true
+			return nil
+		}
+		if body == "" {
 			if !s.recording && s.pending == 0 && e.gate == s {
 				return e.cancelSelection("control_only")
 			}
@@ -334,9 +440,29 @@ func (e *Engine) result(r decodeResult) error {
 				return err
 			}
 		}
-		return e.emit(Event{Type: "note_candidate", ID: s.utterance, SessionID: s.id, Revision: j.revision, Final: true, Span: j.span, Original: r.text, Body: body, Phrase: s.phrase})
+		if err := e.emit(Event{Type: "note_candidate", ID: s.utterance, SessionID: s.id, Revision: j.revision, Final: true, Span: j.span, Original: r.text, Body: body, Phrase: s.phrase}); err != nil {
+			return err
+		}
+		return e.promote()
 	}
 	return e.emit(Event{Type: "caption", ID: j.id, Revision: j.revision, Final: j.final, Span: j.span, Original: r.text})
+}
+
+func (e *Engine) endSelection(s *selection, code string) error {
+	if s == nil {
+		return nil
+	}
+	s.recording = false
+	s.endedCode = code
+	if s == e.gate {
+		if err := e.recording(false, s.id); err != nil {
+			return err
+		}
+		if s.pending == 0 {
+			return e.cancelSelection(code)
+		}
+	}
+	return nil
 }
 
 func (e *Engine) cancelSelection(code string) error {
@@ -347,7 +473,10 @@ func (e *Engine) cancelSelection(code string) error {
 	e.gate = nil
 	s.decided = true
 	s.recording = false
-	return e.emit(Event{Type: "note_canceled", SessionID: s.id, Body: code})
+	if err := e.emit(Event{Type: "note_canceled", SessionID: s.id, Body: code}); err != nil {
+		return err
+	}
+	return e.promote()
 }
 
 // Stop flushes endpoints and drains eligible final results before joining ASR.
@@ -370,10 +499,8 @@ func (e *Engine) Stop() error {
 		e.cancelWorker()
 		return err
 	}
-	if e.gate != nil {
-		id := e.gate.id
-		e.gate.recording = false
-		if err = e.recording(false, id); err != nil {
+	if s := e.capturing(); s != nil {
+		if err = e.endSelection(s, "shutdown"); err != nil {
 			e.cancelWorker()
 			return err
 		}
@@ -392,7 +519,12 @@ func (e *Engine) Stop() error {
 	if err = e.commitAuthority(); err != nil {
 		return err
 	}
-	return e.cancelSelection("shutdown")
+	for e.gate != nil {
+		if err := e.cancelSelection("shutdown"); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (e *Engine) commitAuthority() error {
@@ -420,6 +552,7 @@ func (e *Engine) Cancel() {
 	e.closed = true
 	e.front.Close()
 	e.gate = nil
+	e.deferred = nil
 	e.cancelWorker()
 }
 

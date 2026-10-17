@@ -1,11 +1,30 @@
 # Optional native ginkgo-voice helper
 
-**Native captions and acoustic wakes work; note recording remains blocked.**
+**Native captions, acoustic wakes and selected note candidates are supported.**
 The owned `nativebridge` resolves integer emission clocks using the same stock
 C++ stream's raw snapshot, not C API timestamps or a modulo/reset guess.
-`RecordingEnabled=true` still fails before native calls with `ErrUnsafeKWSClock`:
-physical wake onset, control-only rejection and complete-command retention are
-not validated. Accepting trigger recall does not waive these gates.
+Recording requires that hash-bound profile and a separate selected-audio gate.
+The emission grid is not a physical wake onset/end: selection retains configured
+pre-roll, never clips evicted context, and keeps the whole wake plus dictation.
+Selected ASR must positively begin with the full trusted `Hey Ginkgo` phrase
+(or pinned Parakeet's observed spelling `Hey Ginko`). A prefix miss, unknown
+alias or repeated/punctuation-only control text cannot produce a candidate.
+ASR is a veto, not wake authority. Wire `Original` and `Body` remain identical;
+there is no guessed word-end audio cut or fabricated `Control` span.
+
+Standalone wake arming expires after three audio seconds by default, anchored
+to the actual completed VAD endpoint (initially the native wake grid end), not
+ASR return time or notification latency. Continuous eligible speech may finish
+within the configured maximum. A retrigger snapshots the previous selection
+before the next wake's retained context, so long VAD hangover cannot merge a
+completed command into the new control. One bounded deferred selection keeps
+receiving PCM/endpoints while the old final runs on the ASR worker. The old
+candidate/cancellation precedes the next public wake; superseded snapshots cannot
+publish. Deferred idle deadlines still advance, overflow faults, stop drains
+eligible finals exactly once and cancellation discards both selections.
+A canceled/expired selection cannot borrow later ambient speech. Parent workflow
+alone persists validated candidates; this package does
+not create a database or save notes itself.
 
 `cmd/ginkgo-voice` is a separate optional process. Neither the normal CLI nor
 `ginkgod` imports native code. Ordinary builds include an explicit unsupported
@@ -157,14 +176,17 @@ pause, not just dictation.
 **Conservative protocol v1 limitation:** KWS does not provide a safe phrase-end
 audio boundary. The helper therefore emits exact `Original` and `Body=Original`,
 without an invented `control` span. The leading phrase can remain in the note.
-Internally a separately verified `Wake.SpokenForm` is recognized only to reject
+Internally a separately verified `Wake.SpokenForm` vetoes prefix misses and
 trigger-only content; this is never used to authorize wake. Precise body-prefix
 removal needs proven alignment or a separately reviewed protocol extension.
 `Wake.Phrase` is a selection label and may be an `@alias`; it is never assumed to
-be spoken text. Unknown canonical forms cannot open selected captures. A future
-recording implementation still needs physical boundary/control-only validation.
-The current adapter supplies a hash-bound explicit English mapping and integer
-clock; caption-mode engine policy ignores wake selection and cannot emit notes.
+be spoken text. Unknown canonical forms cannot open selected captures. The
+recording implementation preserves conservative context rather than claiming
+physical phonetic alignment. The current adapter supplies a hash-bound explicit
+English mapping and integer clock; caption-mode policy ignores wake selection
+and cannot emit notes. Recording-mode finalization additionally requires the
+full-leading-phrase gate above; unknown leading text never falls back to saving
+the original transcript.
 
 ASR previews are repeated **offline** snapshots, not token streaming. Defaults
 are 500 ms cadence over a five-second tail. A single pending preview is coalesced;

@@ -99,3 +99,27 @@ func TestVoiceStreamSherpaEmptyTriggerHelpAndRequest(t *testing.T) {
 	require.Contains(t, help, "empty uses configuration; empty configured label selects all")
 	require.NotContains(t, help, "empty=all")
 }
+
+func TestVoiceStreamTextDistinguishesNoteCaptureFromCaptions(t *testing.T) {
+	for _, save := range []bool{false, true} {
+		ctx, messages := startAICommandFake(t, ipc.Response{OK: true, VoiceStatus: &ipc.VoiceStatus{Active: true}})
+		cmd := newVoiceCmd()
+		cmd.SetContext(ctx)
+		getApp(cmd).Cfg.Set("voice.stream.backend", "sherpa")
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		args := []string{"stream"}
+		if save {
+			args = append(args, "--save")
+		}
+		cmd.SetArgs(args)
+		require.NoError(t, cmd.Execute())
+		require.Equal(t, save, (<-messages).Save)
+		if save {
+			require.Contains(t, out.String(), "Wake-gated raw note capture requested")
+		} else {
+			require.Contains(t, out.String(), "no notes will be saved")
+		}
+		require.Contains(t, out.String(), "inspect readiness")
+	}
+}

@@ -181,6 +181,11 @@ func (w *eventWriter) domain(e Event) error {
 	case "note_canceled":
 		v.SessionID = e.SessionID
 		v.Code = e.Body
+		if v.Code == "prefix_mismatch" || v.Code == "rearmed" {
+			// These selections contain no accepted dictation. Keep protocol v1
+			// cancellation codes unchanged; the internal cause is not a new ABI.
+			v.Code = "empty"
+		}
 	default:
 		return errors.New("invalid domain event")
 	}

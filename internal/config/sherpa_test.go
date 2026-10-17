@@ -36,6 +36,10 @@ func TestSherpaConfigBoundsAndLegacyIsolation(t *testing.T) {
 	require.True(t, c.RecordingEnabled)
 	require.Equal(t, "GINKGO", c.SelectedKeyword)
 	require.Equal(t, 60000, c.MaxRecordingMS)
+	require.Equal(t, 3000, c.TriggerTimeoutMS, "short Sherpa-only wait must not retain stale wakes")
+	require.Equal(t, 500, c.PreRollMS, "retain the verified native selection context")
+	require.Equal(t, "30s", v.GetString("voice.capture.start_timeout"), "leave legacy capture waiting unchanged")
+	require.Equal(t, "2m", v.GetString("voice.capture.max_duration"), "leave legacy capture duration unchanged")
 	for key, value := range map[string]string{"voice.sherpa.max_recording": "2m", "voice.sherpa.trigger_timeout": "1h", "voice.sherpa.pre_roll": "31s", "voice.sherpa.cooldown": "61s", "voice.stream.window": "31s", "voice.sherpa.provider": "gpu"} {
 		t.Run(key, func(t *testing.T) {
 			v := sherpaTestConfig()
