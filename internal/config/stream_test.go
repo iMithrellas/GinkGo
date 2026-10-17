@@ -20,6 +20,7 @@ func TestStreamDefaultsAndValidation(t *testing.T) {
 	v.Set("voice.stream.window", "broken")
 	require.NoError(t, CheckConfigValidity(v)) // disabled voice remains isolated
 	v.Set("voice.enabled", true)
+	v.Set("voice.stream.backend", "whisper")
 	require.ErrorContains(t, CheckConfigValidity(v), "consent")
 	v.Set("voice.events.enabled", true)
 	v.Set("voice.stream.allow_local_http", true)

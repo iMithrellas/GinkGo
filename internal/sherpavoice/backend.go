@@ -60,6 +60,7 @@ type NativeConfig struct {
 	RecordingEnabled       bool
 	ASR, KWS               ModelFiles
 	Silero, KeywordFile    string
+	SelectedKeyword        string
 	Provider               string
 	Threads                int
 	SilenceMS, MaxSpeechMS int

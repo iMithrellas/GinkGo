@@ -57,6 +57,13 @@ Namespace initialization asks about encryption and key storage. Before sharing
 a namespace, follow [sync key setup](sync.md#encryption-keys). Configure optional
 providers and audio backends in the [AI](ai.md) and [voice](voice.md) guides.
 
+For standard voice setup, run `ginkgo-cli voice setup`, then set `[voice]`
+`enabled = true` and `mode = "raw"` (or `"ai"`). Generated configuration keeps
+these common controls prominent. Advanced voice settings use built-in defaults
+and automatic discovery; all existing keys and environment overrides remain
+supported. `config generate --update` preserves advanced values already present
+without adding the advanced settings to a basic config.
+
 ## Local daemon listener
 
 Besides its Unix IPC socket, the daemon starts an unauthenticated, health-only

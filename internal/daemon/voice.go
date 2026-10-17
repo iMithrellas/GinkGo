@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/mithrel/ginkgo/internal/ai"
+	"github.com/mithrel/ginkgo/internal/config"
 	"github.com/mithrel/ginkgo/internal/ipc"
 	"github.com/mithrel/ginkgo/internal/notes"
 	"github.com/mithrel/ginkgo/internal/voice"
@@ -83,8 +84,8 @@ func newVoiceRuntime(app *wire.App, aiNotes *ai.Service) *voiceRuntime {
 	runtime.captureConfig, runtime.captureErr = captureSettings(v, runtime.enabled)
 	runtime.capturer = voice.NewCapturer(runtime.captureConfig)
 	runtime.liveCapturer = voice.NewCapturer(runtime.captureConfig)
-	runtime.streamEnabled = v.GetBool("voice.stream.enabled")
-	runtime.streamBackend = v.GetString("voice.stream.backend")
+	runtime.streamEnabled = config.VoiceFeatureEnabled(v, "voice.stream.enabled")
+	runtime.streamBackend = config.VoiceStreamBackend(v)
 	runtime.sherpaSettings = v
 	runtime.triggerPhrase = v.GetString("voice.trigger.phrase")
 	if v.IsSet("voice.stream.update_interval") {

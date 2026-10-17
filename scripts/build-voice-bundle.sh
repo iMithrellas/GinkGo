@@ -132,63 +132,17 @@ cp -- "$source_dir/LICENSE" "$stage/licenses/sherpa-onnx-LICENSE"
 cp -- "$ort_prefix/LICENSE" "$stage/licenses/onnxruntime-LICENSE"
 cp -- "$ort_prefix/ThirdPartyNotices.txt" "$stage/licenses/onnxruntime-ThirdPartyNotices.txt"
 cp -- "$root/docs/voice.md" "$stage/README.md"
-toml_string() {
-    local value=$1
-    value=${value//\\/\\\\}
-    value=${value//\"/\\\"}
-    printf '"%s"' "$value"
-}
-# This is an example, never an automatically installed/enabled configuration.
-# Optional environment values describe external models without copying them.
-models=${VOICE_MODELS_DIR:-/absolute/path/to/models}
-kws=${VOICE_KWS_DIR:-/absolute/path/to/kws}
-keywords=${VOICE_KEYWORDS_FILE:-/absolute/path/to/keywords.txt}
-{
-    cat <<'EOF'
+cat > "$stage/voice-sherpa.example.toml" <<'EOF'
 # Merge manually into your existing config. Capture remains disabled here.
-# Update paths after relocating the binary bundle or external models.
-# To opt in, enable BOTH voice.enabled and voice.stream.enabled yourself.
-# Stop any old daemon first; explicitly start THIS bundle's bin/ginkgod --config
-# /absolute/path/to/your/config.toml. In another terminal use the matching CLI:
-# bin/ginkgo-cli --config /absolute/path/to/your/config.toml voice stream --save --trigger GINKGO
-# voice enable is the separate legacy Whisper workflow, not Sherpa.
-# Say the full "Hey Ginkgo" phrase, then dictate immediately or after a short pause.
-# Cooldown suppresses duplicate wakes; it does not require waiting to dictate.
-# Explicitly stop/restart before eight hours or 4096 utterances/sessions.
-# Daemon restart returns idle; rerun voice stream --save to resume note capture.
+# Run bin/ginkgo-cli voice setup to provision and verify the pinned models.
+# The helper is discovered beside the CLI; keep bin/ and lib/ together.
+# Then enable voice below, choose raw or ai, and restart the bundled daemon.
+# Start capture with: bin/ginkgo-cli voice stream --save
+# Say "Hey Ginkgo", then dictate. See README.md for advanced overrides.
 [voice]
 enabled = false
-[voice.events]
-enabled = true
-[voice.stream]
-enabled = false
-backend = "sherpa"
-[voice.capture]
-executable = "pw-record"
-silence = "1.5s"
-[voice.sherpa]
-provider = "cpu"
-cpu_fallback = true
-keyword = "GINKGO"
-trigger_timeout = "3s"
-max_recording = "60s"
-cooldown = "1s"
-pre_roll = "500ms"
+mode = "raw"
 EOF
-    printf 'executable = %s\n' "$(toml_string "$output/bin/ginkgo-voice")"
-    printf 'keywords_file = %s\n' "$(toml_string "$keywords")"
-    printf 'silero_model = %s\n' "$(toml_string "$models/silero/silero_vad.onnx")"
-    printf '[voice.sherpa.parakeet]\n'
-    for part in encoder decoder joiner; do
-        printf '%s = %s\n' "$part" "$(toml_string "$models/parakeet-v2-fp32/$part.onnx")"
-    done
-    printf 'tokens = %s\n' "$(toml_string "$models/parakeet-v2-fp32/tokens.txt")"
-    printf '# Keep encoder.weights beside encoder.onnx.\n[voice.sherpa.kws]\n'
-    for part in encoder decoder joiner; do
-        printf '%s = %s\n' "$part" "$(toml_string "$kws/$part-epoch-13-avg-2-chunk-16-left-64.onnx")"
-    done
-    printf 'tokens = %s\n' "$(toml_string "$kws/tokens.txt")"
-} > "$stage/voice-sherpa.example.toml"
 {
     printf 'ginkgo_revision=%s\n' "$(git rev-parse HEAD)"
     printf 'ginkgo_worktree_dirty=%s\n' "$(test -z "$(git status --porcelain)" && echo false || echo true)"

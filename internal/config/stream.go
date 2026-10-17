@@ -10,21 +10,42 @@ import (
 	"github.com/spf13/viper"
 )
 
+// VoiceFeatureEnabled preserves explicit switches; omitted switches follow voice.enabled.
+func VoiceFeatureEnabled(v *viper.Viper, key string) bool {
+	if v.IsSet(key) {
+		return v.GetBool(key)
+	}
+	return v.GetBool("voice.enabled")
+}
+
+// VoiceStreamBackend selects the native profile by default, retaining implicit
+// Whisper configurations that already opted into its local HTTP server.
+func VoiceStreamBackend(v *viper.Viper) string {
+	backend := v.GetString("voice.stream.backend")
+	if backend == "" || backend == "auto" {
+		if v.GetBool("voice.stream.allow_local_http") {
+			return "whisper"
+		}
+		return "sherpa"
+	}
+	return backend
+}
+
 func validateStreamEnabled(v *viper.Viper, key string) error {
-	if !v.GetBool("voice.enabled") || !v.GetBool(key) {
+	if !v.GetBool("voice.enabled") || !VoiceFeatureEnabled(v, key) {
 		return nil
 	}
-	backend := v.GetString("voice.stream.backend")
+	backend := VoiceStreamBackend(v)
 	if backend == "sherpa" {
-		if !v.GetBool("voice.events.enabled") {
+		if !VoiceFeatureEnabled(v, "voice.events.enabled") {
 			return fmt.Errorf("%s requires voice.events.enabled", key)
 		}
 		return nil // Installed models/executables are checked only on an enabled request.
 	}
 	if backend != "" && backend != "whisper" {
-		return fmt.Errorf("voice.stream.backend must be whisper or sherpa")
+		return fmt.Errorf("voice.stream.backend must be auto, whisper or sherpa")
 	}
-	if !v.GetBool("voice.events.enabled") || !v.GetBool("voice.stream.allow_local_http") {
+	if !VoiceFeatureEnabled(v, "voice.events.enabled") || !v.GetBool("voice.stream.allow_local_http") {
 		return fmt.Errorf("%s requires voice.events.enabled and explicit voice.stream.allow_local_http consent", key)
 	}
 	if strings.TrimSpace(v.GetString("voice.stream.executable")) == "" {
@@ -35,7 +56,7 @@ func validateStreamEnabled(v *viper.Viper, key string) error {
 
 func streamDuration(min, max time.Duration) func(*viper.Viper, string) error {
 	return func(v *viper.Viper, key string) error {
-		if !v.GetBool("voice.enabled") || !v.GetBool("voice.stream.enabled") {
+		if !v.GetBool("voice.enabled") || !VoiceFeatureEnabled(v, "voice.stream.enabled") {
 			return nil
 		}
 		d, err := time.ParseDuration(v.GetString(key))

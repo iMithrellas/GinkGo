@@ -53,6 +53,19 @@ type readResult struct {
 // arbitrary caller Go code, but still kills and reaps the helper independently.
 // No subscriber connection or public IPC lifetime belongs in stop or ctx.
 func (c *Client) Run(ctx context.Context, config Config, stop <-chan struct{}, emit func(Event) error) error {
+	return c.run(ctx, config, stop, emit, false)
+}
+
+// Verify initializes the real native models and waits for a verified ready,
+// then stops the helper without ever sending start or opening the microphone.
+func (c *Client) Verify(ctx context.Context, config Config) error {
+	if !config.Enabled {
+		return errors.New("voiceworker: verification requires an enabled init")
+	}
+	return c.run(ctx, config, nil, func(Event) error { return nil }, true)
+}
+
+func (c *Client) run(ctx context.Context, config Config, stop <-chan struct{}, emit func(Event) error, verifyOnly bool) error {
 	if !config.Enabled {
 		return nil
 	}
@@ -60,7 +73,7 @@ func (c *Client) Run(ctx context.Context, config Config, stop <-chan struct{}, e
 		return errors.New("voiceworker: fallback attempt is supervisor owned")
 	}
 	ready := false
-	err := c.runAttempt(ctx, config, stop, emit, &ready)
+	err := c.runAttempt(ctx, config, stop, emit, &ready, verifyOnly)
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -77,14 +90,14 @@ func (c *Client) Run(ctx context.Context, config Config, stop <-chan struct{}, e
 	}
 	config.AttemptProvider = CPU
 	config.FallbackReason = "cuda_init_failed"
-	err = c.runAttempt(ctx, config, stop, emit, &ready)
+	err = c.runAttempt(ctx, config, stop, emit, &ready, verifyOnly)
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
 	return err
 }
 
-func (c *Client) runAttempt(ctx context.Context, config Config, stop <-chan struct{}, emit func(Event) error, acceptedReady *bool) error {
+func (c *Client) runAttempt(ctx context.Context, config Config, stop <-chan struct{}, emit func(Event) error, acceptedReady *bool, verifyOnly bool) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -357,11 +370,15 @@ func (c *Client) runAttempt(ctx context.Context, config Config, stop <-chan stru
 					return ctx.Err()
 				}
 				if !stopping {
-					select {
-					case <-stop:
+					if verifyOnly {
 						requestStop()
-					default:
-						close(startWrite)
+					} else {
+						select {
+						case <-stop:
+							requestStop()
+						default:
+							close(startWrite)
+						}
 					}
 				}
 			}

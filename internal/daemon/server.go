@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/mithrel/ginkgo/internal/ai"
+	"github.com/mithrel/ginkgo/internal/config"
 	"github.com/mithrel/ginkgo/internal/db"
 	"github.com/mithrel/ginkgo/internal/ipc"
 	"github.com/mithrel/ginkgo/internal/ipc/transport"
@@ -46,7 +47,7 @@ func Run(ctx context.Context, app *wire.App) (runErr error) {
 	voiceNotes := newVoiceRuntime(app, aiNotes)
 	voiceNotes.root = daemonCtx
 	voiceNotes.syncNote = func(ctx context.Context) { _ = app.Syncer.SyncNow(ctx) }
-	if app.Cfg.GetBool("voice.events.enabled") {
+	if config.VoiceFeatureEnabled(app.Cfg, "voice.events.enabled") {
 		hub, err := voiceevents.NewHub(voiceevents.Options{})
 		if err != nil {
 			return fmt.Errorf("create voice events: %w", err)

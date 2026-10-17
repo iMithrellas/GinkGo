@@ -19,6 +19,9 @@ func RenderDefaultTOML() string {
 	sectionOrder := make([]string, 0)
 
 	for _, o := range opts {
+		if o.Advanced {
+			continue
+		}
 		if !strings.Contains(o.Key, ".") {
 			topLevel = append(topLevel, o)
 			continue
@@ -130,6 +133,9 @@ func UpdateTOML(existing string) (string, bool) {
 	missingSections := make(map[string][]ConfigOption)
 	sectionOrder := make([]string, 0)
 	for _, o := range opts {
+		if o.Advanced {
+			continue // Recognize existing overrides, but do not add them to basic config.
+		}
 		if _, ok := o.Default.(map[string]any); ok {
 			// Dynamic tables need no literal empty inline table: writing one
 			// seals the table and prevents adding [ai.providers.<name>] later.

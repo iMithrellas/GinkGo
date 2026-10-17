@@ -255,7 +255,7 @@ func Serve(ctx context.Context, in io.ReadCloser, out io.Writer, runtime Runtime
 	if c.AttemptProvider == voiceworker.CPU {
 		status.FallbackReason = c.FallbackReason
 	}
-	nc := NativeConfig{RecordingEnabled: c.RecordingEnabled, ASR: modelFiles(c.Parakeet), KWS: modelFiles(c.KWS), Silero: c.SileroModel, KeywordFile: c.KeywordsFile, Provider: provider.Actual, Threads: 2, SilenceMS: c.SilenceMS, MaxSpeechMS: c.MaxRecordingMS}
+	nc := NativeConfig{RecordingEnabled: c.RecordingEnabled, ASR: modelFiles(c.Parakeet), KWS: modelFiles(c.KWS), Silero: c.SileroModel, KeywordFile: c.KeywordsFile, SelectedKeyword: c.SelectedKeyword, Provider: provider.Actual, Threads: 2, SilenceMS: c.SilenceMS, MaxSpeechMS: c.MaxRecordingMS}
 	f, r, err := runtime.Open(nc)
 	if err != nil {
 		return err

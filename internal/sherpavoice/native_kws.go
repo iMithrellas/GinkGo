@@ -55,6 +55,9 @@ func openNativeKWS(c NativeConfig) (result *nativeKWS, err error) {
 		// Stock's nonalias selection key, not its English spoken form.
 		k.label = "HEY1GIH1NGKOW1"
 	}
+	if c.SelectedKeyword != "" && c.SelectedKeyword != k.label {
+		return nil, errors.New("selected keyword label is not in the compiled wake file")
+	}
 	var message [256]C.char
 	if C.ginkgo_kws_v1_abi() != 1 {
 		return nil, errors.New("owned KWS ABI mismatch")

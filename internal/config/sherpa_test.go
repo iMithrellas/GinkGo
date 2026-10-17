@@ -22,7 +22,7 @@ func sherpaTestConfig() *viper.Viper {
 
 func TestSherpaConfigBoundsAndLegacyIsolation(t *testing.T) {
 	v := sherpaTestConfig()
-	require.Equal(t, "whisper", v.GetString("voice.stream.backend"))
+	require.Equal(t, "sherpa", VoiceStreamBackend(v))
 	v.Set("voice.enabled", true)
 	v.Set("voice.events.enabled", true)
 	v.Set("voice.stream.enabled", true)

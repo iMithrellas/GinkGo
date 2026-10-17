@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/mithrel/ginkgo/internal/voiceassets"
 )
 
 // CaptureConfig selects a trusted installed pw-record. Construction does no I/O.
@@ -163,7 +165,11 @@ func (c *Capturer) runCapture(ctx context.Context, s CaptureConfig, stop <-chan 
 		args = append(args, "--target", s.Target)
 	}
 	args = append(args, "-")
-	cmd := exec.CommandContext(childCtx, s.Executable, args...)
+	executable, err := voiceassets.Executable(s.Executable)
+	if err != nil {
+		return fmt.Errorf("find installed recorder: %w", err)
+	}
+	cmd := exec.CommandContext(childCtx, executable, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	kill := func() {
 		if cmd.Process != nil {

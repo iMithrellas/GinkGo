@@ -24,7 +24,12 @@ func main() {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	if err := sherpavoice.Serve(ctx, os.Stdin, os.Stdout, sherpavoice.NativeRuntime()); err != nil {
+	in, err := commandInput()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ginkgo-voice: open command pipe failed")
+		os.Exit(1)
+	}
+	if err := sherpavoice.Serve(ctx, in, os.Stdout, sherpavoice.NativeRuntime()); err != nil {
 		if errors.Is(err, sherpavoice.ErrUnsupported) {
 			fmt.Fprintln(os.Stderr, "ginkgo-voice: native backend not built (requires sherpa_onnx and cgo)")
 		} else if errors.Is(err, sherpavoice.ErrUnverifiedNativeProfile) {
@@ -34,4 +39,20 @@ func main() {
 		}
 		os.Exit(1)
 	}
+}
+
+// Serve closes its input to join the reader after failed initialization. Inherited
+// os.Stdin is a blocking descriptor: register a nonblocking duplicate with Go's
+// poller so Close actually interrupts a pending Read while the parent awaits ready.
+func commandInput() (*os.File, error) {
+	fd, err := syscall.Dup(int(os.Stdin.Fd()))
+	if err != nil {
+		return nil, err
+	}
+	syscall.CloseOnExec(fd)
+	if err := syscall.SetNonblock(fd, true); err != nil {
+		_ = syscall.Close(fd)
+		return nil, err
+	}
+	return os.NewFile(uintptr(fd), "voiceworker-stdin"), nil
 }

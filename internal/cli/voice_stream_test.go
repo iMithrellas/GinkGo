@@ -15,6 +15,7 @@ func TestVoiceStreamCLIExplicitAndConfiguredTrigger(t *testing.T) {
 			cmd := newVoiceCmd()
 			cmd.SetContext(ctx)
 			getApp(cmd).Cfg.Set("voice.trigger.phrase", "configured phrase")
+			getApp(cmd).Cfg.Set("voice.stream.backend", "whisper")
 			getApp(cmd).Cfg.Set("voice.mode", "ai")
 			var out bytes.Buffer
 			cmd.SetOut(&out)
@@ -45,6 +46,7 @@ func TestVoiceStreamRejectsMissingTriggerAndUnsupportedOptions(t *testing.T) {
 		ctx, messages := startAICommandFake(t, ipc.Response{})
 		cmd := newVoiceCmd()
 		cmd.SetContext(ctx)
+		getApp(cmd).Cfg.Set("voice.stream.backend", "whisper")
 		cmd.SetArgs(append([]string{"stream"}, args...))
 		require.Error(t, cmd.Execute())
 		select {

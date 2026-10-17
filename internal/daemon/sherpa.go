@@ -3,8 +3,6 @@ package daemon
 import (
 	"context"
 	"errors"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -13,6 +11,7 @@ import (
 	"github.com/mithrel/ginkgo/internal/config"
 	"github.com/mithrel/ginkgo/internal/ipc"
 	"github.com/mithrel/ginkgo/internal/voice"
+	"github.com/mithrel/ginkgo/internal/voiceassets"
 	"github.com/mithrel/ginkgo/internal/voiceevents"
 	"github.com/mithrel/ginkgo/internal/voiceworker"
 	"github.com/mithrel/ginkgo/pkg/api"
@@ -23,13 +22,9 @@ type workerRunner interface {
 }
 
 func installedExecutable(name string) (string, error) {
-	path, err := exec.LookPath(name)
+	path, err := voiceassets.Executable(name)
 	if err != nil {
-		return "", errors.New("installed voice executable not found; check helper and recorder configuration")
-	}
-	path, err = filepath.Abs(path)
-	if err != nil {
-		return "", errors.New("resolve installed voice executable failed")
+		return "", errors.New("installed voice executable not found; run voice setup or check executable overrides")
 	}
 	return path, nil
 }

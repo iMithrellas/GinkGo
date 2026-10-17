@@ -68,6 +68,7 @@ func streamTestRuntime(t *testing.T) (*voiceRuntime, *eventLog, <-chan struct{},
 	t.Helper()
 	v := listenerRuntime(t)
 	v.streamEnabled = true
+	v.streamBackend = "whisper"
 	v.residentConfig = voice.ResidentConfig{Config: voice.Config{Enabled: true, Executable: "fake-installed-server"}, AllowLocalHTTP: true}
 	hub, err := voiceevents.NewHub(voiceevents.Options{QueueSize: 128})
 	require.NoError(t, err)

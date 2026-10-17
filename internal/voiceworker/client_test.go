@@ -206,6 +206,31 @@ func TestStopBeforeReady(t *testing.T) {
 	}
 }
 
+func TestVerifyNeverAuthorizesCapture(t *testing.T) {
+	for _, mode := range []string{"normal", "retry", "delayed-ready"} {
+		t.Run(mode, func(t *testing.T) {
+			client, path := fakeClient(t, mode)
+			if err := client.Verify(context.Background(), testConfig()); err != nil {
+				t.Fatal(err)
+			}
+			commands := lines(t, path)
+			for _, command := range commands {
+				if command == "start" {
+					t.Fatal("verification authorized microphone capture")
+				}
+			}
+			if commands[len(commands)-1] != "stop" {
+				t.Fatal(commands)
+			}
+		})
+	}
+	client, _ := fakeClient(t, "no-ready")
+	client.config.StartupTimeout = 50 * time.Millisecond
+	if err := client.Verify(context.Background(), testConfig()); !errors.Is(err, ErrStartupTimeout) {
+		t.Fatalf("verification accepted a helper without readiness: %v", err)
+	}
+}
+
 func TestCPUFallback(t *testing.T) {
 	c, path := fakeClient(t, "retry")
 	stop := make(chan struct{})

@@ -2,11 +2,13 @@ package config
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/spf13/viper"
 
+	"github.com/mithrel/ginkgo/internal/voiceassets"
 	"github.com/mithrel/ginkgo/internal/voiceworker"
 )
 
@@ -37,14 +39,32 @@ func SherpaClientConfig(v *viper.Viper, helper string) (voiceworker.ClientConfig
 	return c, nil
 }
 
-// SherpaConfig resolves trusted settings without filesystem or native probes.
-// Call only for an enabled stream request; recorder must already be absolute.
+// SherpaAssets resolves installed profile assets and preserves every nonempty
+// override. Call only for explicit setup or an enabled stream request.
+func SherpaAssets(v *viper.Viper, helper string) []voiceassets.Location {
+	overrides := make(map[string]string)
+	for _, asset := range voiceassets.Assets() {
+		if asset.Key != "" {
+			overrides[asset.Key] = v.GetString(asset.Key)
+		}
+	}
+	dataDir, _ := filepath.Abs(filepath.Dir(ResolveDBPath(v)))
+	return voiceassets.Resolve(voiceassets.Roots(dataDir, helper), overrides)
+}
+
+// SherpaConfig discovers missing paths without launching native code.
+// Call only for setup or an enabled stream request; recorder must be absolute.
 func SherpaConfig(v *viper.Viper, recorder, target, keyword string, save bool) (voiceworker.Config, error) {
+	helper, _ := voiceassets.Executable(v.GetString("voice.sherpa.executable"))
+	paths := make(map[string]string)
+	for _, location := range SherpaAssets(v, helper) {
+		paths[location.Key] = location.Filename
+	}
 	graph := func(key string) voiceworker.Graph {
-		return voiceworker.Graph{Encoder: v.GetString(key + ".encoder"), Decoder: v.GetString(key + ".decoder"), Joiner: v.GetString(key + ".joiner"), Tokens: v.GetString(key + ".tokens")}
+		return voiceworker.Graph{Encoder: paths[key+".encoder"], Decoder: paths[key+".decoder"], Joiner: paths[key+".joiner"], Tokens: paths[key+".tokens"]}
 	}
 	c := voiceworker.Config{Enabled: true, RecorderExecutable: recorder, RecorderTarget: target,
-		Parakeet: graph("voice.sherpa.parakeet"), KWS: graph("voice.sherpa.kws"), KeywordsFile: v.GetString("voice.sherpa.keywords_file"), SileroModel: v.GetString("voice.sherpa.silero_model"),
+		Parakeet: graph("voice.sherpa.parakeet"), KWS: graph("voice.sherpa.kws"), KeywordsFile: paths["voice.sherpa.keywords_file"], SileroModel: paths["voice.sherpa.silero_model"],
 		Provider: voiceworker.Provider(v.GetString("voice.sherpa.provider")), AllowCPUFallback: v.GetBool("voice.sherpa.cpu_fallback"), RecordingEnabled: save, SelectedKeyword: keyword}
 	if err := ValidateKeywordLabel(keyword); err != nil {
 		return c, err

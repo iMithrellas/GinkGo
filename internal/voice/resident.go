@@ -19,6 +19,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/mithrel/ginkgo/internal/voiceassets"
 )
 
 // ResidentConfig selects a trusted installed whisper-server and GGML model.
@@ -259,7 +261,7 @@ func (r *Resident) start(ctx context.Context, c Config) error {
 		return errors.New("resident model requires whisper.cpp GGML magic")
 	}
 	_, _ = model.Seek(0, io.SeekStart)
-	path, err := exec.LookPath(c.Executable)
+	path, err := voiceassets.Executable(c.Executable)
 	if err != nil {
 		return errors.New("find installed whisper-server failed")
 	}

@@ -22,7 +22,7 @@ func newVoiceStreamCmd() *cobra.Command {
 			if output != "text" && output != "json" {
 				return errors.New("--output must be text or json")
 			}
-			sherpa := getApp(cmd).Cfg.GetString("voice.stream.backend") == "sherpa"
+			sherpa := config.VoiceStreamBackend(getApp(cmd).Cfg) == "sherpa"
 			if !cmd.Flags().Changed("mode") {
 				mode = "raw"
 				if sherpa && save {

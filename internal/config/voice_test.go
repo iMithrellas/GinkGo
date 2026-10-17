@@ -16,8 +16,14 @@ model = "/models/ggml-base.bin"
 `} {
 		updated, _ := UpdateTOML(text)
 		v := viper.New()
+		applyDefaults(v)
 		v.SetConfigType("toml")
 		require.NoError(t, v.ReadConfig(strings.NewReader(updated)))
+		require.NotContains(t, updated, "[voice.capture]")
+		require.NotContains(t, updated, "residency =")
+		if strings.Contains(text, "/models/ggml-base.bin") {
+			require.Equal(t, "/models/ggml-base.bin", v.GetString("voice.stt.model"))
+		}
 		require.Equal(t, "raw", v.GetString("voice.mode"))
 		require.Equal(t, "on_demand", v.GetString("voice.stt.residency"))
 		require.Equal(t, "whisper-cli", v.GetString("voice.stt.executable"))

@@ -15,6 +15,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/mithrel/ginkgo/internal/voiceassets"
 )
 
 // ErrDisabled indicates that transcription was not enabled. No paths are probed.
@@ -168,7 +170,7 @@ func (t *Transcriber) Transcribe(ctx context.Context, audioPath string, options 
 	if _, err := model.Seek(0, io.SeekStart); err != nil {
 		return Transcript{}, fmt.Errorf("rewind model: %w", err)
 	}
-	executable, err := exec.LookPath(c.Executable)
+	executable, err := voiceassets.Executable(c.Executable)
 	if err != nil {
 		return Transcript{}, fmt.Errorf("find installed whisper-cli: %w", err)
 	}
