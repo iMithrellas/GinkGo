@@ -3,7 +3,7 @@
 
 .SH NAME
 .PP
-ginkgo-cli-voice-stream - Start live captions with optional backend-specific wake-gated raw notes
+ginkgo-cli-voice-stream - Start live captions with optional wake-gated notes (Sherpa: raw or AI; Whisper: raw)
 
 
 .SH SYNOPSIS
@@ -13,7 +13,7 @@ ginkgo-cli-voice-stream - Start live captions with optional backend-specific wak
 
 .SH DESCRIPTION
 .PP
-Start live captions with optional backend-specific wake-gated raw notes
+Start live captions with optional wake-gated notes (Sherpa: raw or AI; Whisper: raw)
 
 
 .SH OPTIONS
@@ -22,12 +22,20 @@ Start live captions with optional backend-specific wake-gated raw notes
 	help for stream
 
 .PP
+\fB--mode\fP="raw"
+	saved note mode: raw|ai (Sherpa defaults to voice.mode; Whisper stays raw; captions never use AI)
+
+.PP
 \fB--output\fP="text"
 	output: text|json
 
 .PP
+\fB--provider\fP=""
+	configured AI provider name (requires saving in AI mode; empty uses ai.provider)
+
+.PP
 \fB--save\fP[=false]
-	save selected raw notes (sherpa: acoustic KWS; whisper: final-confirmed literal prefix)
+	save selected notes (sherpa: acoustic KWS; whisper: final-confirmed literal prefix)
 
 .PP
 \fB--trigger\fP=""

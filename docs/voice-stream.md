@@ -1,9 +1,8 @@
 # Legacy Whisper resident live captions
 
 The optional [Sherpa helper](voice-sherpa.md) implements Silero VAD, resident
-English Parakeet captions and explicit CUDA/CPU status. Its native acoustic-wake
-note recording is currently blocked and fails closed; use legacy Whisper for
-working note-saving workflows. This page describes `voice.stream.backend = "whisper"`, the unchanged
+English Parakeet captions, acoustic-wake notes, optional configured AI processing,
+and explicit CUDA/CPU status. This page describes `voice.stream.backend = "whisper"`, the unchanged
 default for old configurations. The two backends have different trigger semantics.
 
 `voice stream` is separate from legacy `enable`/`listen`/file transcription. Their
@@ -51,8 +50,14 @@ phrase = "ginkgo take a note"               # optional default for --trigger
 
 Existing [capture settings](voice-listening.md#setup) select the recorder, target,
 silence endpoint, threshold and maximum duration. The stream command's flags are
-`--save`, `--trigger`, `--namespace`, and `--output`; it does not accept AI or note
-expansion options. It always creates raw new notes without calling AI/providers.
+`--save`, `--trigger`, `--namespace`, `--output`, `--mode`, and `--provider`.
+For Whisper, only `--mode raw` is supported; explicit `--mode ai` is rejected and
+`--provider` requires saved AI-mode notes on Sherpa. Whisper streams always create
+raw new notes without calling AI/providers, even when `voice.mode = "ai"` and
+`ai.enabled = true`. Note expansion options remain unsupported. For Sherpa,
+omitting `--mode` with `--save` honors `voice.mode`; `ai.enabled` remains the
+master gate, and existing provider/model/prompt settings remain authoritative.
+See [optional AI postprocessing](voice-sherpa.md#optional-ai-postprocessing).
 
 ```sh
 ginkgo-cli voice watch --output json  # observer only; can connect while idle
@@ -155,5 +160,5 @@ subscription independence, cancellation and joined cleanup. Adapter tests use
 fake installed processes. Existing black-box smoke scripts cover legacy behavior.
 **No actual microphone, installed Whisper server/model, GPU, hardware inference or
 provider was exercised for this live-streaming change.** Hardware quality/latency,
-acoustic activation, word alignment, decoder streaming, idle eviction, AI-gated
-stream notes and automatic device recovery remain unimplemented/unverified.
+acoustic activation for Whisper, word alignment, decoder streaming, idle eviction,
+AI-gated Whisper stream notes and automatic device recovery remain unimplemented/unverified.

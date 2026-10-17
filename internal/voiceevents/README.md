@@ -88,6 +88,13 @@ are rejected before reaching the client consumer.
 - Optional `audio_start_ms` and `audio_end_ms` are nonnegative offsets from the
   beginning of the utterance; when both are supplied end must be >= start.
 - `note.saved`: required `note_session_id` and saved `note_id`.
+  Sherpa AI-mode saves optionally include `processing:"ai"` for a validated AI
+  draft or `processing:"raw_fallback"` with a nonempty `fallback_reason` for a
+  raw save. Reasons are bounded application-owned diagnostics, never raw provider
+  errors. AI disabled, provider failure/timeout, and invalid drafts follow the
+  existing AI service's single-write raw fallback policy. Raw/legacy saves omit
+  both fields; absence does not imply AI success. These additive v1 fields may be
+  ignored by older clients. Captions remain ASR text, not the cleaned note body.
 - `note.canceled`: required `note_session_id`.
 - `note.error`: required `note_session_id` and bounded `error` string.
 - `error`: required `error` string; optional attribution for capture/STT failures.

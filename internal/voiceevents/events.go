@@ -45,6 +45,10 @@ type Event struct {
 	Speech        *bool    `json:"speech,omitempty"`
 	NoteID        string   `json:"note_id,omitempty"`
 	Error         string   `json:"error,omitempty"`
+	// Processing is optional on note.saved: ai or raw_fallback. Empty preserves
+	// the original raw/legacy wire shape. FallbackReason is application-owned.
+	Processing     string `json:"processing,omitempty"`
+	FallbackReason string `json:"fallback_reason,omitempty"`
 }
 
 // Options sets fixed bounds. Zero values select defaults.
@@ -92,6 +96,11 @@ func validateState(s State) error {
 }
 
 func validateEvent(e Event) error {
+	if e.Processing != "" || e.FallbackReason != "" {
+		if e.Type != "note.saved" || (e.Processing != "ai" && e.Processing != "raw_fallback") || (e.Processing == "raw_fallback") != (e.FallbackReason != "") || len(e.FallbackReason) > 1024 || !utf8.ValidString(e.FallbackReason) {
+			return errors.New("invalid note processing metadata")
+		}
+	}
 	for _, s := range []string{e.NoteSessionID, e.UtteranceID, e.NoteID} {
 		if len(s) > 256 || !utf8.ValidString(s) {
 			return errors.New("invalid event identifier")

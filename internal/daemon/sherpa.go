@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mithrel/ginkgo/internal/ai"
 	"github.com/mithrel/ginkgo/internal/config"
 	"github.com/mithrel/ginkgo/internal/ipc"
 	"github.com/mithrel/ginkgo/internal/voice"
@@ -34,8 +35,8 @@ func installedExecutable(name string) (string, error) {
 }
 
 func (v *voiceRuntime) startSherpa(ctx context.Context, m ipc.Message) ipc.Response {
-	if m.Mode != "" && m.Mode != "raw" || m.Provider != "" || m.NoteID != "" || m.Action != "" || m.AudioPath != "" || m.Model != "" || m.Language != "" && m.Language != "en" || m.Capture != nil {
-		return ipc.Response{Msg: "sherpa stream supports configured English raw new notes only; no legacy STT or capture overrides"}
+	if m.NoteID != "" || m.Action != "" || m.AudioPath != "" || m.Model != "" || m.Language != "" && m.Language != "en" || m.Capture != nil {
+		return ipc.Response{Msg: "sherpa stream supports configured English new notes only; no legacy STT or capture overrides"}
 	}
 	if len(m.Namespace) > 256 || strings.ContainsRune(m.Namespace, 0) {
 		return ipc.Response{Msg: "invalid voice namespace"}
@@ -43,6 +44,18 @@ func (v *voiceRuntime) startSherpa(ctx context.Context, m ipc.Message) ipc.Respo
 	s := v.sherpaSettings
 	if s == nil {
 		return ipc.Response{Msg: "missing sherpa configuration"}
+	}
+	if m.Mode == "" {
+		m.Mode = s.GetString("voice.mode")
+	}
+	if m.Mode == "" {
+		m.Mode = "raw"
+	}
+	if m.Mode != "raw" && m.Mode != "ai" {
+		return ipc.Response{Msg: "voice mode must be raw or ai"}
+	}
+	if m.Provider != "" && (!m.Save || m.Mode != "ai") {
+		return ipc.Response{Msg: "AI provider override requires save and AI mode"}
 	}
 	if m.Trigger == "" {
 		m.Trigger = s.GetString("voice.sherpa.keyword")
@@ -252,13 +265,11 @@ func (v *voiceRuntime) runSherpa(ctx context.Context, j *listenJob, m ipc.Messag
 				// Rebind provenance from the sole supported trusted local model
 				// contract; no worker-provided metadata or ambient text is saved.
 				tr := voice.Transcript{Engine: "sherpa-onnx", Model: "parakeet-tdt-0.6b-v2", Language: "en"}
-				persist := v.persistSherpa
-				if persist == nil {
-					persist = v.saveStreamNote
-				}
-				entry, err := persist(ctx, m, tr, candidate.Body, candidate.Original)
+				result, err := v.saveSherpaNote(ctx, m, tr, candidate.Body, candidate.Original)
 				if err == nil {
+					entry := result.Entry
 					outcome.Type, outcome.NoteID = "note.saved", entry.ID
+					outcome.Processing, outcome.FallbackReason = result.processing, result.FallbackReason
 					v.mu.Lock()
 					v.status.LastNoteID, v.status.Segments = entry.ID, v.status.Segments+1
 					v.mu.Unlock()
@@ -304,4 +315,38 @@ func (v *voiceRuntime) runSherpa(ctx context.Context, j *listenJob, m ipc.Messag
 	j.result, v.job = result, nil
 	close(j.done)
 	v.mu.Unlock()
+}
+
+type sherpaNoteResult struct {
+	ai.NoteResult
+	processing string
+}
+
+// saveSherpaNote runs only in the joined persistence worker, never the capture
+// callback. AI owns the sole write (including raw fallback); its Text must be the
+// exact full ASR original because Source.OriginalText is not used by ai.Service.
+// The shared Whisper/raw saver deliberately retains its existing behavior.
+func (v *voiceRuntime) saveSherpaNote(ctx context.Context, m ipc.Message, tr voice.Transcript, body, original string) (sherpaNoteResult, error) {
+	if v.persistSherpa != nil {
+		entry, err := v.persistSherpa(ctx, m, tr, body, original)
+		return sherpaNoteResult{NoteResult: ai.NoteResult{Entry: entry}}, err
+	}
+	if m.Mode != "ai" {
+		entry, err := v.saveStreamNote(ctx, m, tr, body, original)
+		return sherpaNoteResult{NoteResult: ai.NoteResult{Entry: entry}}, err
+	}
+	if v.ai == nil {
+		return sherpaNoteResult{}, errors.New("missing AI note service")
+	}
+	result, err := v.ai.Note(ctx, ai.NoteRequest{
+		Text: original, Namespace: m.Namespace, Title: m.Title, Tags: m.Tags, Action: "create",
+		Source: &api.Source{Kind: "voice", Language: tr.Language, STTEngine: tr.Engine, STTModel: tr.Model},
+	}, m.Provider)
+	processing := "ai"
+	if result.FallbackReason != "" {
+		// Service reasons are application-owned diagnostics, never provider error
+		// strings, credentials, capture paths, or model-generated content.
+		processing = "raw_fallback"
+	}
+	return sherpaNoteResult{NoteResult: result, processing: processing}, err
 }

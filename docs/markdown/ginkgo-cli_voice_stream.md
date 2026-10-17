@@ -1,6 +1,6 @@
 ## ginkgo-cli voice stream
 
-Start live captions with optional backend-specific wake-gated raw notes
+Start live captions with optional wake-gated notes (Sherpa: raw or AI; Whisper: raw)
 
 ```
 ginkgo-cli voice stream [flags]
@@ -9,10 +9,12 @@ ginkgo-cli voice stream [flags]
 ### Options
 
 ```
-  -h, --help             help for stream
-      --output string    output: text|json (default "text")
-      --save             save selected raw notes (sherpa: acoustic KWS; whisper: final-confirmed literal prefix)
-      --trigger string   sherpa: compiled keyword label (empty uses configuration; empty configured label selects all); whisper: literal transcript prefix, not acoustic wake
+  -h, --help              help for stream
+      --mode string       saved note mode: raw|ai (Sherpa defaults to voice.mode; Whisper stays raw; captions never use AI) (default "raw")
+      --output string     output: text|json (default "text")
+      --provider string   configured AI provider name (requires saving in AI mode; empty uses ai.provider)
+      --save              save selected notes (sherpa: acoustic KWS; whisper: final-confirmed literal prefix)
+      --trigger string    sherpa: compiled keyword label (empty uses configuration; empty configured label selects all); whisper: literal transcript prefix, not acoustic wake
 ```
 
 ### Options inherited from parent commands

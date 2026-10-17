@@ -1,7 +1,8 @@
 # Hey Ginkgo: continuous wake-gated voice notes
 
 The optional Linux Sherpa backend supports **"Hey Ginkgo" → dictation → saved
-raw note** with the attested native profile below. After explicitly enabling both
+note** with the attested native profile below. Notes default to raw; optional AI
+postprocessing follows the existing configuration. After explicitly enabling both
 voice and streaming, start it with:
 
 ```sh
@@ -179,6 +180,7 @@ daemon resolves them to absolute paths **only on an enabled stream request**.
 ```toml
 [voice]
 enabled = true
+mode = "raw"                      # default; optional "ai" for saved notes (also requires ai.enabled)
 
 [voice.events]
 enabled = true
@@ -268,8 +270,10 @@ it suppresses duplicate wakes, not dictation. The default three-second
 audio rather than ASR return or VAD hangover. Once dictation begins, recording
 continues until the default **1.5s silence** or configured maximum (default 60s,
 including wake/pause). Standalone/repeated wake-only speech creates no note.
-`note.saved` confirms persistence; the current raw body retains the spoken control
-phrase exactly as transcribed. No AI rewriting or guessed prefix trimming occurs.
+`note.saved` confirms persistence, not successful AI processing. In raw mode the
+body retains the spoken control phrase exactly as transcribed. The original
+transcript is preserved even when optional AI rewrites the note; no guessed
+acoustic prefix trimming occurs.
 
 The listener stays available for subsequent wakes until explicitly stopped or a
 session bound/fault is reached. Stop/restart before **eight hours or 4096
@@ -283,8 +287,48 @@ label; it does not override a nonempty configuration to select all. Only an
 empty **configured** label selects all installed keywords.
 Whisper's literal transcript-prefix mode and `voice.trigger.phrase` are unrelated.
 `--save=false` cannot save notes, even if a malfunctioning helper attempts it.
-Only raw new notes are supported; AI, append/expand and per-request legacy model,
+Only new notes are supported; append/expand and per-request legacy model,
 language or capture overrides are rejected. English is the fixed model language.
+
+### Optional AI postprocessing
+
+The ordinary command respects `voice.mode` without changing configuration:
+
+```sh
+ginkgo-cli voice stream --save --trigger GINKGO
+# Per-run overrides, without changing the configured default:
+ginkgo-cli voice stream --save --trigger GINKGO --mode raw
+ginkgo-cli voice stream --save --trigger GINKGO --mode ai
+# Optional named provider override (otherwise uses ai.provider):
+ginkgo-cli voice stream --save --trigger GINKGO --mode ai --provider opencode
+```
+
+- Omitted `--mode` uses `voice.mode` for Sherpa saved notes, defaulting to `raw`.
+  Explicit `--mode raw|ai` takes precedence. `--save` alone never enables AI or
+  edits the config. Whisper streams remain raw regardless of `voice.mode`.
+- `ai.enabled` is the master gate: `false` never launches an LLM, even when
+  `voice.mode = "ai"` or `--mode ai` requests processing. Such saves use raw
+  fallback. To opt in deliberately, merge `mode = "ai"` into your existing
+  `[voice]` table and `enabled = true` into your existing `[ai]` table.
+- Keep your existing `ai.provider`, named provider model/settings, timeout, and
+  `ai.notes.system_prompt`. No separate Sherpa AI switch or replacement prompt is
+  required. `--provider` selects a configured AI provider only for saved AI-mode
+  notes; empty uses `ai.provider`. It is unrelated to the CPU/CUDA
+  `voice.sherpa.provider` inference setting.
+- Successful processing can rewrite the body, title and tags using that configured
+  prompt. Sherpa always creates a new note; it does not inherit legacy AI
+  append/expand selection. The exact full selected transcript, including the
+  spoken control phrase, is supplied to AI and retained as original provenance.
+- Disabled, unavailable or failed AI processing saves raw fallback rather than
+  promising a rewritten note. Request acknowledgement and `note.saved` alone do
+  not prove provider success; inspect processing/fallback metadata when available
+  and the saved note. CLI transport tests are not actual-provider verification.
+- Without `--save`, captions never save notes or call AI, even with global AI
+  configuration or `--mode ai`. `--provider` requires saving in AI mode.
+
+AI providers may receive the selected transcript and configured note context;
+remote provider privacy is separate from sync encryption. Preserve your existing
+provider/prompt deliberately rather than replacing the config with an example.
 
 Status adds `backend`, `helper_engine`, `requested_provider`, `effective_provider`,
 and `provider_fallback_reason` to JSON/protobuf. Effective provider starts
@@ -317,9 +361,10 @@ final selected candidate tied to its wake session/utterance/sample origin can
 create one note. Its exact selected-audio transcript becomes `OriginalText` in
 provenance, with trusted `sherpa-onnx` / `parakeet-tdt-0.6b-v2` / `en` metadata
 rebound by the parent. **The current helper retains the control phrase in the
-body (`Body=Original`)**: KWS detection timestamps cannot safely identify its
+pre-AI body (`Body=Original`)**: KWS detection timestamps cannot safely identify its
 exact acoustic end. The bridge supports a proven exact prefix/control span, but
-this helper does not invent one. Empty/control-only/trigger-only input must
+this helper does not invent one. Optional AI may rewrite the saved body, but must
+not replace the original transcript provenance. Empty/control-only/trigger-only input must
 cancel, not create a note.
 Selected ASR must also begin with the full trusted phrase (or pinned Parakeet's
 observed spelling "Hey Ginko"); prefix misses and unknown spoken forms cancel.

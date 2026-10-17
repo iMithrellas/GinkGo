@@ -123,3 +123,107 @@ func TestVoiceStreamTextDistinguishesNoteCaptureFromCaptions(t *testing.T) {
 		require.Contains(t, out.String(), "inspect readiness")
 	}
 }
+
+func TestVoiceStreamModePrecedence(t *testing.T) {
+	for _, tc := range []struct {
+		name, backend, configuredMode, flagMode, provider, wantMode string
+		save, aiEnabled                                             bool
+	}{
+		{name: "sherpa raw default", save: true, wantMode: "raw"},
+		{name: "configured raw", configuredMode: "raw", save: true, aiEnabled: true, wantMode: "raw"},
+		{name: "configured ai", configuredMode: "ai", save: true, aiEnabled: true, wantMode: "ai"},
+		{name: "disabled ai delegated to daemon fallback", configuredMode: "ai", save: true, wantMode: "ai"},
+		{name: "explicit raw overrides ai", configuredMode: "ai", flagMode: "raw", save: true, wantMode: "raw"},
+		{name: "explicit ai overrides raw", configuredMode: "raw", flagMode: "ai", save: true, wantMode: "ai"},
+		{name: "provider override", flagMode: "ai", provider: "alternate", save: true, wantMode: "ai"},
+		{name: "configured ai captions", configuredMode: "ai", aiEnabled: true, wantMode: "raw"},
+		{name: "explicit ai captions", flagMode: "ai", aiEnabled: true, wantMode: "raw"},
+		{name: "invalid global mode cannot block captions", configuredMode: "invalid", wantMode: "raw"},
+		{name: "whisper ignores configured ai", backend: "whisper", configuredMode: "ai", save: true, aiEnabled: true, wantMode: "raw"},
+		{name: "whisper explicit raw", backend: "whisper", configuredMode: "ai", flagMode: "raw", save: true, wantMode: "raw"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, messages := startAICommandFake(t, ipc.Response{OK: true, VoiceStatus: &ipc.VoiceStatus{Active: true}})
+			cmd := newVoiceCmd()
+			cmd.SetContext(ctx)
+			backend := tc.backend
+			if backend == "" {
+				backend = "sherpa"
+			}
+			cfg := getApp(cmd).Cfg
+			cfg.Set("voice.stream.backend", backend)
+			cfg.Set("voice.mode", tc.configuredMode)
+			cfg.Set("ai.enabled", tc.aiEnabled)
+			cfg.Set("ai.provider", "configured-provider")
+			args := []string{"stream", "--output", "json", "--trigger", "GINKGO"}
+			if tc.save {
+				args = append(args, "--save")
+			}
+			if tc.flagMode != "" {
+				args = append(args, "--mode", tc.flagMode)
+			}
+			if tc.provider != "" {
+				args = append(args, "--provider", tc.provider)
+			}
+			cmd.SetArgs(args)
+			require.NoError(t, cmd.Execute())
+			m := <-messages
+			require.Equal(t, tc.wantMode, m.Mode)
+			require.Equal(t, tc.provider, m.Provider, "empty provider is resolved from daemon config")
+			require.Equal(t, tc.save, m.Save)
+			require.Empty(t, m.Action, "Sherpa new-note policy belongs to the daemon")
+			require.Empty(t, m.Model)
+			require.Empty(t, m.Language)
+			require.Equal(t, tc.configuredMode, cfg.GetString("voice.mode"), "stream must not mutate configuration")
+		})
+	}
+}
+
+func TestVoiceStreamRejectsInvalidProcessingOptions(t *testing.T) {
+	for _, tc := range []struct {
+		name, backend, configuredMode, wantError string
+		args                                     []string
+	}{
+		{name: "malformed mode", args: []string{"--mode", "automatic"}, wantError: "--mode must be raw or ai"},
+		{name: "empty explicit mode", args: []string{"--mode", ""}, wantError: "--mode must be raw or ai"},
+		{name: "invalid configured save mode", configuredMode: "invalid", args: []string{"--save"}, wantError: "--mode must be raw or ai"},
+		{name: "raw provider", args: []string{"--save", "--mode", "raw", "--provider", "test"}, wantError: "--provider requires --save and AI mode"},
+		{name: "caption provider", configuredMode: "ai", args: []string{"--provider", "test"}, wantError: "--provider requires --save and AI mode"},
+		{name: "ai caption provider", args: []string{"--mode", "ai", "--provider", "test"}, wantError: "--provider requires --save and AI mode"},
+		{name: "whisper ai", backend: "whisper", args: []string{"--save", "--mode", "ai"}, wantError: "Whisper streams support raw notes only"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, messages := startAICommandFake(t, ipc.Response{})
+			cmd := newVoiceCmd()
+			cmd.SetContext(ctx)
+			backend := tc.backend
+			if backend == "" {
+				backend = "sherpa"
+			}
+			getApp(cmd).Cfg.Set("voice.stream.backend", backend)
+			getApp(cmd).Cfg.Set("voice.mode", tc.configuredMode)
+			cmd.SetArgs(append([]string{"stream", "--trigger", "GINKGO"}, tc.args...))
+			require.ErrorContains(t, cmd.Execute(), tc.wantError)
+			select {
+			case <-messages:
+				t.Fatal("invalid processing options reached daemon")
+			default:
+			}
+		})
+	}
+}
+
+func TestVoiceStreamAITextDoesNotPromiseProviderSuccess(t *testing.T) {
+	ctx, messages := startAICommandFake(t, ipc.Response{OK: true, VoiceStatus: &ipc.VoiceStatus{Active: true}})
+	cmd := newVoiceCmd()
+	cmd.SetContext(ctx)
+	getApp(cmd).Cfg.Set("voice.stream.backend", "sherpa")
+	getApp(cmd).Cfg.Set("voice.mode", "ai")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"stream", "--save"})
+	require.NoError(t, cmd.Execute())
+	require.Equal(t, "ai", (<-messages).Mode)
+	require.Contains(t, out.String(), "AI note capture requested")
+	require.Contains(t, out.String(), "raw fallback if AI is disabled or unavailable")
+}
