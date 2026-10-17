@@ -1,6 +1,6 @@
 ## ginkgo-cli voice stream
 
-Start resident live captions (optional final-confirmed prefix-gated raw notes)
+Start live captions with optional backend-specific wake-gated raw notes
 
 ```
 ginkgo-cli voice stream [flags]
@@ -11,8 +11,8 @@ ginkgo-cli voice stream [flags]
 ```
   -h, --help             help for stream
       --output string    output: text|json (default "text")
-      --save             save raw notes only after a final-confirmed leading trigger phrase
-      --trigger string   literal transcript-prefix activation phrase (not an acoustic wake model)
+      --save             save selected raw notes (sherpa: acoustic KWS; whisper: final-confirmed literal prefix)
+      --trigger string   sherpa: compiled keyword label (empty uses configuration; empty configured label selects all); whisper: literal transcript prefix, not acoustic wake
 ```
 
 ### Options inherited from parent commands

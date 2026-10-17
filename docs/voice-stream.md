@@ -1,4 +1,10 @@
-# Optional resident live captions
+# Legacy Whisper resident live captions
+
+The optional [Sherpa helper](voice-sherpa.md) implements Silero VAD, resident
+English Parakeet captions and explicit CUDA/CPU status. Its native acoustic-wake
+note recording is currently blocked and fails closed; use legacy Whisper for
+working note-saving workflows. This page describes `voice.stream.backend = "whisper"`, the unchanged
+default for old configurations. The two backends have different trigger semantics.
 
 `voice stream` is separate from legacy `enable`/`listen`/file transcription. Their
 whisper-cli settings and all-utterance saving semantics are unchanged. The new
@@ -33,6 +39,7 @@ enabled = true                             # default false
 
 [voice.stream]
 enabled = true                             # default false
+backend = "whisper"                         # legacy default, optional explicit choice
 executable = "/absolute/path/to/whisper-server"
 allow_local_http = true                     # explicit security consent, default false
 update_interval = "500ms"                   # audio cadence, not a latency guarantee

@@ -17,19 +17,30 @@ import (
 func newVoiceStreamCmd() *cobra.Command {
 	var save bool
 	var trigger, output string
-	cmd := &cobra.Command{Use: "stream", Short: "Start resident live captions (optional final-confirmed prefix-gated raw notes)", Args: cobra.NoArgs,
+	cmd := &cobra.Command{Use: "stream", Short: "Start live captions with optional backend-specific wake-gated raw notes", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if output != "text" && output != "json" {
 				return errors.New("--output must be text or json")
 			}
+			sherpa := getApp(cmd).Cfg.GetString("voice.stream.backend") == "sherpa"
 			if !cmd.Flags().Changed("trigger") {
-				trigger = getApp(cmd).Cfg.GetString("voice.trigger.phrase")
+				key := "voice.trigger.phrase"
+				if sherpa {
+					key = "voice.sherpa.keyword"
+				}
+				trigger = getApp(cmd).Cfg.GetString(key)
 			}
-			if err := config.ValidateTriggerPhrase(trigger); err != nil {
-				return err
-			}
-			if save && strings.TrimSpace(trigger) == "" {
-				return errors.New("--save requires --trigger or voice.trigger.phrase; use voice enable for all-utterance saving")
+			if sherpa {
+				if err := config.ValidateKeywordLabel(trigger); err != nil {
+					return err
+				}
+			} else {
+				if err := config.ValidateTriggerPhrase(trigger); err != nil {
+					return err
+				}
+				if save && strings.TrimSpace(trigger) == "" {
+					return errors.New("--save requires --trigger or voice.trigger.phrase; use voice enable for all-utterance saving")
+				}
 			}
 			ns := resolveNamespace(cmd)
 			if save {
@@ -59,8 +70,8 @@ func newVoiceStreamCmd() *cobra.Command {
 			_, err = fmt.Fprintln(cmd.OutOrStdout(), "Live captions started; subscribe with voice watch --output json; stop with voice stop or discard with voice cancel.")
 			return err
 		}}
-	cmd.Flags().BoolVar(&save, "save", false, "save raw notes only after a final-confirmed leading trigger phrase")
-	cmd.Flags().StringVar(&trigger, "trigger", "", "literal transcript-prefix activation phrase (not an acoustic wake model)")
+	cmd.Flags().BoolVar(&save, "save", false, "save selected raw notes (sherpa: acoustic KWS; whisper: final-confirmed literal prefix)")
+	cmd.Flags().StringVar(&trigger, "trigger", "", "sherpa: compiled keyword label (empty uses configuration; empty configured label selects all); whisper: literal transcript prefix, not acoustic wake")
 	cmd.Flags().StringVar(&output, "output", "text", "output: text|json")
 	return cmd
 }

@@ -77,7 +77,10 @@ func TestVoiceListenDeadlineRoundTripAndEnableIgnoresJobDeadline(t *testing.T) {
 	got := make(chan Message, 2)
 	done := make(chan error, 1)
 	go func() {
-		done <- transport.NewUnixServer(voiceListener{l}).Serve(ctx, PBHandler(func(m Message) Response { got <- m; return Response{OK: true} }))
+		done <- transport.NewUnixServer(voiceListener{l}).Serve(ctx, PBHandler(func(m Message) Response {
+			got <- m
+			return Response{OK: true, VoiceStatus: &VoiceStatus{Backend: "sherpa", HelperEngine: "sherpa-onnx", RequestedProvider: "auto", EffectiveProvider: "cpu", ProviderFallbackReason: "cuda_init_failed"}}
+		}))
 	}()
 	deadline := time.Now().Add(time.Minute).UTC()
 	reqCtx, stop := context.WithDeadline(context.Background(), deadline.Add(time.Minute))
@@ -99,6 +102,14 @@ func TestVoiceListenDeadlineRoundTripAndEnableIgnoresJobDeadline(t *testing.T) {
 	require.Equal(t, "raw", m.Mode)
 	require.Equal(t, "work", m.Namespace)
 	require.True(t, m.Deadline.IsZero(), "stream must not inherit a connection deadline")
+	response, err := Request(reqCtx, path, Message{Name: "voice.status"})
+	require.NoError(t, err)
+	<-got
+	require.Equal(t, "sherpa", response.VoiceStatus.Backend)
+	require.Equal(t, "sherpa-onnx", response.VoiceStatus.HelperEngine)
+	require.Equal(t, "auto", response.VoiceStatus.RequestedProvider)
+	require.Equal(t, "cpu", response.VoiceStatus.EffectiveProvider)
+	require.Equal(t, "cuda_init_failed", response.VoiceStatus.ProviderFallbackReason)
 	cancel()
 	require.NoError(t, <-done)
 }

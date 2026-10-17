@@ -136,6 +136,7 @@ func (h pbHandler) Handle(ctx context.Context, req any) (any, error) {
 	}
 	if s := r.VoiceStatus; s != nil {
 		ps := &pb.VoiceStatus{Enabled: s.Enabled, Active: s.Active, Continuous: s.Continuous, State: s.State, Namespace: s.Namespace, SilenceTimeout: int64(s.SilenceTimeout), Segments: s.Segments, LastNoteId: s.LastNoteID, LastError: s.LastError}
+		ps.Backend, ps.HelperEngine, ps.RequestedProvider, ps.EffectiveProvider, ps.ProviderFallbackReason = s.Backend, s.HelperEngine, s.RequestedProvider, s.EffectiveProvider, s.ProviderFallbackReason
 		if !s.StartedAt.IsZero() {
 			ps.StartedAt = timestamppb.New(s.StartedAt)
 		}

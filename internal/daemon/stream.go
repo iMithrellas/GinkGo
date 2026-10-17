@@ -32,6 +32,12 @@ func (v *voiceRuntime) stream(ctx context.Context, m ipc.Message) ipc.Response {
 	if !v.streamEnabled || v.events == nil {
 		return ipc.Response{Msg: "voice stream requires voice.stream.enabled and voice.events.enabled"}
 	}
+	if v.streamBackend == "sherpa" {
+		return v.startSherpa(ctx, m)
+	}
+	if v.streamBackend != "" && v.streamBackend != "whisper" {
+		return ipc.Response{Msg: "voice.stream.backend must be whisper or sherpa"}
+	}
 	if v.streamErr != nil {
 		return ipc.Response{Msg: v.streamErr.Error()}
 	}
@@ -84,7 +90,7 @@ func (v *voiceRuntime) stream(ctx context.Context, m ipc.Message) ipc.Response {
 	m.Deadline = time.Time{}
 	m.Tags = append([]string(nil), m.Tags...)
 	v.job = j
-	v.status = ipc.VoiceStatus{Enabled: true, Active: true, Continuous: true, State: "streaming", Namespace: m.Namespace, SilenceTimeout: o.SilenceTimeout, StartedAt: time.Now().UTC()}
+	v.status = ipc.VoiceStatus{Enabled: true, Active: true, Continuous: true, State: "streaming", Namespace: m.Namespace, SilenceTimeout: o.SilenceTimeout, StartedAt: time.Now().UTC(), Backend: "whisper"}
 	go v.runStream(jobCtx, j, m, voice.LiveCaptureOptions{CaptureOptions: o, UpdateInterval: v.streamUpdate, WindowDuration: v.streamWindow})
 	s := v.status
 	return ipc.Response{OK: true, VoiceStatus: &s}

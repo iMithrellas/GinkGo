@@ -19,6 +19,12 @@ MANOUT := $(DOCDIR)/man
 
 GO_TAGS ?=
 
+# Optional native helper only. Provision pinned v1.13.8 C API and the matching
+# ONNX Runtime yourself; this target never downloads, installs or starts anything.
+SHERPA_PREFIX ?=
+ORT_PREFIX ?=
+VOICE_OUTPUT := $(BUILD_DIR)/ginkgo-voice
+
 .PHONY: build lsp install-binary install-service reload-service run dev setup-precommit \
         docs install-man uninstall-man install uninstall
 
@@ -46,6 +52,15 @@ lsp:
 	else \
 		go build -o $(LSP_OUTPUT) ./cmd/ginkgo-lsp; \
 	fi
+
+.PHONY: voice
+voice:
+	@test -n "$(SHERPA_PREFIX)" -a -n "$(ORT_PREFIX)" || { echo "Set SHERPA_PREFIX and ORT_PREFIX to trusted installed prefixes; see internal/sherpavoice/README.md"; exit 1; }
+	mkdir -p "$(BUILD_DIR)"
+	CGO_ENABLED=1 \
+	CGO_CFLAGS="$(CGO_CFLAGS) -I$(SHERPA_PREFIX)/include -I$(ORT_PREFIX)/include" \
+	CGO_LDFLAGS="$(CGO_LDFLAGS) -L$(SHERPA_PREFIX)/lib -L$(ORT_PREFIX)/lib -Wl,-rpath,$(SHERPA_PREFIX)/lib -Wl,-rpath,$(ORT_PREFIX)/lib" \
+	go build -tags sherpa_onnx -o "$(VOICE_OUTPUT)" ./cmd/ginkgo-voice
 
 install-man: docs
 	mkdir -p "$(MANDIR)"

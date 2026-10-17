@@ -54,3 +54,48 @@ func TestVoiceStreamRejectsMissingTriggerAndUnsupportedOptions(t *testing.T) {
 		}
 	}
 }
+
+func TestVoiceStreamSherpaCompiledLabels(t *testing.T) {
+	for _, label := range []string{"", "GINKGO", "OTHER_LABEL"} {
+		t.Run("label="+label, func(t *testing.T) {
+			ctx, messages := startAICommandFake(t, ipc.Response{OK: true, VoiceStatus: &ipc.VoiceStatus{Active: true}})
+			cmd := newVoiceCmd()
+			cmd.SetContext(ctx)
+			getApp(cmd).Cfg.Set("voice.stream.backend", "sherpa")
+			getApp(cmd).Cfg.Set("voice.sherpa.keyword", label)
+			getApp(cmd).Cfg.Set("voice.trigger.phrase", "legacy arbitrary phrase")
+			cmd.SetArgs([]string{"stream", "--save", "--output", "json"})
+			require.NoError(t, cmd.Execute())
+			m := <-messages
+			require.True(t, m.Save)
+			require.Equal(t, label, m.Trigger)
+			require.Equal(t, "raw", m.Mode)
+		})
+	}
+	ctx, messages := startAICommandFake(t, ipc.Response{})
+	cmd := newVoiceCmd()
+	cmd.SetContext(ctx)
+	getApp(cmd).Cfg.Set("voice.stream.backend", "sherpa")
+	cmd.SetArgs([]string{"stream", "--save", "--trigger", "take arbitrary note"})
+	require.ErrorContains(t, cmd.Execute(), "compiled keyword label")
+	select {
+	case <-messages:
+		t.Fatal("invalid phrase sent to daemon")
+	default:
+	}
+}
+
+func TestVoiceStreamSherpaEmptyTriggerHelpAndRequest(t *testing.T) {
+	ctx, messages := startAICommandFake(t, ipc.Response{OK: true, VoiceStatus: &ipc.VoiceStatus{Active: true}})
+	cmd := newVoiceCmd()
+	cmd.SetContext(ctx)
+	getApp(cmd).Cfg.Set("voice.stream.backend", "sherpa")
+	getApp(cmd).Cfg.Set("voice.sherpa.keyword", "GINKGO")
+	cmd.SetArgs([]string{"stream", "--trigger", "", "--output", "json"})
+	require.NoError(t, cmd.Execute())
+	m := <-messages
+	require.Empty(t, m.Trigger, "the daemon resolves an explicit empty selector from its trusted configuration")
+	help := newVoiceStreamCmd().Flags().Lookup("trigger").Usage
+	require.Contains(t, help, "empty uses configuration; empty configured label selects all")
+	require.NotContains(t, help, "empty=all")
+}

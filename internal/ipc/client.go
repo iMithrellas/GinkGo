@@ -101,6 +101,7 @@ func Request(ctx context.Context, path string, m Message) (Response, error) {
 	}
 	if s := presp.VoiceStatus; s != nil {
 		r.VoiceStatus = &VoiceStatus{Enabled: s.Enabled, Active: s.Active, Continuous: s.Continuous, State: s.State, Namespace: s.Namespace, SilenceTimeout: time.Duration(s.SilenceTimeout), Segments: s.Segments, LastNoteID: s.LastNoteId, LastError: s.LastError}
+		r.VoiceStatus.Backend, r.VoiceStatus.HelperEngine, r.VoiceStatus.RequestedProvider, r.VoiceStatus.EffectiveProvider, r.VoiceStatus.ProviderFallbackReason = s.Backend, s.HelperEngine, s.RequestedProvider, s.EffectiveProvider, s.ProviderFallbackReason
 		if s.StartedAt != nil {
 			r.VoiceStatus.StartedAt = s.StartedAt.AsTime()
 		}

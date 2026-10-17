@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/spf13/viper"
+
 	"github.com/mithrel/ginkgo/internal/ai"
 	"github.com/mithrel/ginkgo/internal/ipc"
 	"github.com/mithrel/ginkgo/internal/notes"
@@ -52,6 +54,10 @@ type voiceRuntime struct {
 	streamUpdate, streamWindow time.Duration
 	triggerPhrase              string
 	residentFactory            func(voice.ResidentConfig) residentSTT
+	streamBackend              string
+	sherpaSettings             *viper.Viper
+	sherpaRunner               workerRunner
+	persistSherpa              func(context.Context, ipc.Message, voice.Transcript, string, string) (api.Entry, error)
 }
 
 func newVoiceRuntime(app *wire.App, aiNotes *ai.Service) *voiceRuntime {
@@ -78,6 +84,8 @@ func newVoiceRuntime(app *wire.App, aiNotes *ai.Service) *voiceRuntime {
 	runtime.capturer = voice.NewCapturer(runtime.captureConfig)
 	runtime.liveCapturer = voice.NewCapturer(runtime.captureConfig)
 	runtime.streamEnabled = v.GetBool("voice.stream.enabled")
+	runtime.streamBackend = v.GetString("voice.stream.backend")
+	runtime.sherpaSettings = v
 	runtime.triggerPhrase = v.GetString("voice.trigger.phrase")
 	if v.IsSet("voice.stream.update_interval") {
 		update, err := time.ParseDuration(v.GetString("voice.stream.update_interval"))
@@ -100,6 +108,9 @@ func newVoiceRuntime(app *wire.App, aiNotes *ai.Service) *voiceRuntime {
 	runtime.residentConfig.Executable = v.GetString("voice.stream.executable")
 	runtime.residentConfig.Timeout = timeout
 	runtime.status = ipc.VoiceStatus{Enabled: runtime.enabled, State: "idle", SilenceTimeout: runtime.captureConfig.SilenceTimeout}
+	if runtime.streamBackend == "sherpa" {
+		runtime.status.Backend, runtime.status.RequestedProvider, runtime.status.EffectiveProvider = "sherpa", v.GetString("voice.sherpa.provider"), "unknown"
+	}
 	return runtime
 }
 

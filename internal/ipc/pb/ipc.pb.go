@@ -943,19 +943,24 @@ func (x *VoiceControl) GetTrigger() string {
 }
 
 type VoiceStatus struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	Enabled        bool                   `protobuf:"varint,1,opt,name=enabled,proto3" json:"enabled,omitempty"`
-	Active         bool                   `protobuf:"varint,2,opt,name=active,proto3" json:"active,omitempty"`
-	Continuous     bool                   `protobuf:"varint,3,opt,name=continuous,proto3" json:"continuous,omitempty"`
-	State          string                 `protobuf:"bytes,4,opt,name=state,proto3" json:"state,omitempty"`
-	Namespace      string                 `protobuf:"bytes,5,opt,name=namespace,proto3" json:"namespace,omitempty"`
-	SilenceTimeout int64                  `protobuf:"varint,6,opt,name=silence_timeout,json=silenceTimeout,proto3" json:"silence_timeout,omitempty"`
-	StartedAt      *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
-	Segments       int64                  `protobuf:"varint,8,opt,name=segments,proto3" json:"segments,omitempty"`
-	LastNoteId     string                 `protobuf:"bytes,9,opt,name=last_note_id,json=lastNoteId,proto3" json:"last_note_id,omitempty"`
-	LastError      string                 `protobuf:"bytes,10,opt,name=last_error,json=lastError,proto3" json:"last_error,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	Enabled                bool                   `protobuf:"varint,1,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	Active                 bool                   `protobuf:"varint,2,opt,name=active,proto3" json:"active,omitempty"`
+	Continuous             bool                   `protobuf:"varint,3,opt,name=continuous,proto3" json:"continuous,omitempty"`
+	State                  string                 `protobuf:"bytes,4,opt,name=state,proto3" json:"state,omitempty"`
+	Namespace              string                 `protobuf:"bytes,5,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	SilenceTimeout         int64                  `protobuf:"varint,6,opt,name=silence_timeout,json=silenceTimeout,proto3" json:"silence_timeout,omitempty"`
+	StartedAt              *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
+	Segments               int64                  `protobuf:"varint,8,opt,name=segments,proto3" json:"segments,omitempty"`
+	LastNoteId             string                 `protobuf:"bytes,9,opt,name=last_note_id,json=lastNoteId,proto3" json:"last_note_id,omitempty"`
+	LastError              string                 `protobuf:"bytes,10,opt,name=last_error,json=lastError,proto3" json:"last_error,omitempty"`
+	Backend                string                 `protobuf:"bytes,11,opt,name=backend,proto3" json:"backend,omitempty"`
+	HelperEngine           string                 `protobuf:"bytes,12,opt,name=helper_engine,json=helperEngine,proto3" json:"helper_engine,omitempty"`
+	RequestedProvider      string                 `protobuf:"bytes,13,opt,name=requested_provider,json=requestedProvider,proto3" json:"requested_provider,omitempty"`
+	EffectiveProvider      string                 `protobuf:"bytes,14,opt,name=effective_provider,json=effectiveProvider,proto3" json:"effective_provider,omitempty"`
+	ProviderFallbackReason string                 `protobuf:"bytes,15,opt,name=provider_fallback_reason,json=providerFallbackReason,proto3" json:"provider_fallback_reason,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *VoiceStatus) Reset() {
@@ -1054,6 +1059,41 @@ func (x *VoiceStatus) GetLastNoteId() string {
 func (x *VoiceStatus) GetLastError() string {
 	if x != nil {
 		return x.LastError
+	}
+	return ""
+}
+
+func (x *VoiceStatus) GetBackend() string {
+	if x != nil {
+		return x.Backend
+	}
+	return ""
+}
+
+func (x *VoiceStatus) GetHelperEngine() string {
+	if x != nil {
+		return x.HelperEngine
+	}
+	return ""
+}
+
+func (x *VoiceStatus) GetRequestedProvider() string {
+	if x != nil {
+		return x.RequestedProvider
+	}
+	return ""
+}
+
+func (x *VoiceStatus) GetEffectiveProvider() string {
+	if x != nil {
+		return x.EffectiveProvider
+	}
+	return ""
+}
+
+func (x *VoiceStatus) GetProviderFallbackReason() string {
+	if x != nil {
+		return x.ProviderFallbackReason
 	}
 	return ""
 }
@@ -2725,7 +2765,7 @@ const file_internal_ipc_pb_ipc_proto_rawDesc = "" +
 	"noteAction\x12-\n" +
 	"\acapture\x18\f \x01(\v2\x13.ipc.CaptureOptionsR\acapture\x126\n" +
 	"\bdeadline\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\bdeadline\x12\x18\n" +
-	"\atrigger\x18\x0e \x01(\tR\atrigger\"\xd4\x02\n" +
+	"\atrigger\x18\x0e \x01(\tR\atrigger\"\xab\x04\n" +
 	"\vVoiceStatus\x12\x18\n" +
 	"\aenabled\x18\x01 \x01(\bR\aenabled\x12\x16\n" +
 	"\x06active\x18\x02 \x01(\bR\x06active\x12\x1e\n" +
@@ -2742,7 +2782,12 @@ const file_internal_ipc_pb_ipc_proto_rawDesc = "" +
 	"lastNoteId\x12\x1d\n" +
 	"\n" +
 	"last_error\x18\n" +
-	" \x01(\tR\tlastError\"j\n" +
+	" \x01(\tR\tlastError\x12\x18\n" +
+	"\abackend\x18\v \x01(\tR\abackend\x12#\n" +
+	"\rhelper_engine\x18\f \x01(\tR\fhelperEngine\x12-\n" +
+	"\x12requested_provider\x18\r \x01(\tR\x11requestedProvider\x12-\n" +
+	"\x12effective_provider\x18\x0e \x01(\tR\x11effectiveProvider\x128\n" +
+	"\x18provider_fallback_reason\x18\x0f \x01(\tR\x16providerFallbackReason\"j\n" +
 	"\n" +
 	"Transcript\x12\x12\n" +
 	"\x04text\x18\x01 \x01(\tR\x04text\x12\x1a\n" +

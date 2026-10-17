@@ -14,6 +14,16 @@ func validateStreamEnabled(v *viper.Viper, key string) error {
 	if !v.GetBool("voice.enabled") || !v.GetBool(key) {
 		return nil
 	}
+	backend := v.GetString("voice.stream.backend")
+	if backend == "sherpa" {
+		if !v.GetBool("voice.events.enabled") {
+			return fmt.Errorf("%s requires voice.events.enabled", key)
+		}
+		return nil // Installed models/executables are checked only on an enabled request.
+	}
+	if backend != "" && backend != "whisper" {
+		return fmt.Errorf("voice.stream.backend must be whisper or sherpa")
+	}
 	if !v.GetBool("voice.events.enabled") || !v.GetBool("voice.stream.allow_local_http") {
 		return fmt.Errorf("%s requires voice.events.enabled and explicit voice.stream.allow_local_http consent", key)
 	}
