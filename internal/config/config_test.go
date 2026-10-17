@@ -3,9 +3,32 @@ package config
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spf13/viper"
 )
+
+func TestRenderedNamedTablesAreDocumentationOnly(t *testing.T) {
+	text := RenderDefaultTOML()
+	v := viper.New()
+	v.SetConfigType("toml")
+	if err := v.ReadConfig(strings.NewReader(text)); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"remotes", "namespaces", "ai.providers"} {
+		if v.IsSet(key) {
+			t.Fatalf("example created a real table: %s", key)
+		}
+	}
+	if v.GetDuration("sync.interval") != time.Minute || v.GetDuration("sync.max_backoff") != 10*time.Minute {
+		t.Fatal("rendered sync defaults differ from runtime defaults")
+	}
+	for _, field := range []string{"signer_priv", "signer_pub", "adapter"} {
+		if !strings.Contains(text, "# "+field+" =") {
+			t.Fatalf("missing named-table field documentation: %s", field)
+		}
+	}
+}
 
 func TestCheckConfigValidityValid(t *testing.T) {
 	v := viper.New()

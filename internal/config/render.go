@@ -13,6 +13,7 @@ func RenderDefaultTOML() string {
 	b.WriteString("# GinkGo configuration (TOML)\n")
 
 	opts := GetConfigOptions()
+	writeNamedTableExamples(&b, opts)
 	topLevel := make([]ConfigOption, 0, len(opts))
 	sections := make(map[string][]ConfigOption)
 	sectionOrder := make([]string, 0)
@@ -55,6 +56,24 @@ func RenderDefaultTOML() string {
 	}
 
 	return b.String()
+}
+
+func writeNamedTableExamples(b *strings.Builder, opts []ConfigOption) {
+	for _, option := range opts {
+		if len(option.Fields) == 0 {
+			continue
+		}
+		b.WriteString("\n# " + option.Comment + "\n")
+		b.WriteString("# [" + option.Key + ".<name>]\n")
+		for _, field := range option.Fields {
+			var example strings.Builder
+			writeTOMLOption(&example, field.Key, field.Default, field.Comment)
+			for _, line := range strings.Split(strings.TrimSuffix(example.String(), "\n"), "\n") {
+				b.WriteString("# " + strings.TrimPrefix(line, "# ") + "\n")
+			}
+		}
+	}
+	b.WriteString("\n")
 }
 
 // UpdateTOML merges defaults into an existing TOML string and comments out unknown keys.

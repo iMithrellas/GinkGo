@@ -88,10 +88,16 @@ func DefaultConfigPath() string {
 	return filepath.Join(xdg, "ginkgo", "config.toml")
 }
 
+// ConfigOption describes a supported setting and its default.
 type ConfigOption struct {
 	Key     string
 	Default any
 	Comment string
+	// Fields describes relative keys in each named table. These defaults are
+	// documentation only: dependent defaults are resolved by the consumer.
+	Fields []ConfigOption
+	// Validate checks a setting after defaults and overrides have been applied.
+	Validate func(*viper.Viper, string) error
 }
 
 // DefaultDBPath builds the default sqlite DB path from data_dir rules.
@@ -103,20 +109,27 @@ func DefaultDBPath() string {
 // GetConfigOptions returns the default configuration options and their meanings.
 func GetConfigOptions() []ConfigOption {
 	return []ConfigOption{
-		{Key: "data_dir", Default: defaultDataDir(), Comment: "Directory for local state; DB is data_dir/ginkgo.db"},
-		{Key: "namespace", Default: "default", Comment: "Default namespace used when none is specified"},
+		{Key: "data_dir", Default: defaultDataDir(), Comment: "Directory for local state; DB is data_dir/ginkgo.db", Validate: requiredString},
+		{Key: "namespace", Default: "default", Comment: "Default namespace used when none is specified", Validate: requiredString},
 		{Key: "default_tags", Default: []string{}, Comment: "Tags applied when creating a note without explicit tags"},
 
 		{Key: "http_addr", Default: ":8080", Comment: "HTTP listen address for daemon/replication server"},
 		{Key: "auth.token", Default: "", Comment: "Shared token required by replication server"},
-		{Key: "sync.batch_size", Default: 256, Comment: "Batch size for remote sync operations"},
-		{Key: "remotes", Default: map[string]any{}, Comment: "Named remotes: [remotes.<name>] url/token/enabled"},
-		{Key: "namespaces", Default: map[string]any{}, Comment: "Per-namespace settings: [namespaces.<name>] e2ee/key_provider/key_id/read_key/write_key/signer_key_provider/signer_key_id/origin_label/trusted_signers"},
-		{Key: "export.page_size", Default: 200, Comment: "Batch size for list/search export paging"},
+		{Key: "sync.batch_size", Default: 256, Comment: "Batch size for remote sync operations", Validate: positiveInt},
+		{Key: "sync.interval", Default: "60s", Comment: "Interval between background sync operations"},
+		{Key: "sync.max_backoff", Default: "10m", Comment: "Maximum background sync retry backoff"},
+		{Key: "remotes", Default: map[string]any{}, Comment: "Named remotes", Fields: remoteFields()},
+		{Key: "namespaces", Default: map[string]any{}, Comment: "Per-namespace settings", Fields: namespaceFields()},
+		{Key: "export.page_size", Default: 200, Comment: "Batch size for list/search export paging", Validate: positiveInt},
 		{Key: "tui.buffer_ratio", Default: 2.0, Comment: "TUI paging buffer ratio; increases the safe window before refetch (0.4-4)"},
 
 		{Key: "notifications.enabled", Default: false, Comment: "Enable reminder notifications"},
-		{Key: "notifications.every_days", Default: 3, Comment: "Reminder cadence in days"},
+		{Key: "notifications.every_days", Default: 3, Comment: "Reminder cadence in days", Validate: func(v *viper.Viper, key string) error {
+			if v.GetBool("notifications.enabled") {
+				return positiveInt(v, key)
+			}
+			return nil
+		}},
 		{Key: "editor.delete_empty", Default: true, Comment: "Delete note if editor exits with no content"},
 		{Key: "ai.enabled", Default: false, Comment: "Opt in to AI notes; disabled requests save raw fallback notes without launching providers"},
 		{Key: "voice.enabled", Default: false, Comment: "Opt in to local transcription and microphone capture; no device/engine/model probes while disabled"},
@@ -138,7 +151,7 @@ func GetConfigOptions() []ConfigOption {
 		{Key: "ai.timeout", Default: "120s", Comment: "Provider execution timeout; invalid provider settings fall back to raw notes"},
 		{Key: "ai.notes.context_limit", Default: 8, Comment: "Maximum recent/relevant notes supplied as context"},
 		{Key: "ai.notes.system_prompt", Default: ai.DefaultNoteSystemPrompt, Comment: "System prompt controlling AI note cleanup, terminology correction and formatting"},
-		{Key: "ai.providers", Default: map[string]any{}, Comment: "Named [ai.providers.<name>] tables: type=opencode|opencode-session|cli|openai-compatible; executable/model/args/base_url/api_key_env/ephemeral_auth. OpenCode saved auth and session mode need >=2.0.25; stateless ephemeral_auth=true supports API-key mode on 2.0.19"},
+		{Key: "ai.providers", Default: map[string]any{}, Comment: "Named AI providers. OpenCode saved auth and session mode need >=2.0.25; stateless ephemeral_auth=true supports API-key mode on 2.0.19", Fields: providerFields()},
 	}
 }
 
@@ -160,20 +173,12 @@ func ResolveDBPath(v *viper.Viper) string {
 func CheckConfigValidity(v *viper.Viper) error {
 	issues := make([]string, 0)
 
-	if strings.TrimSpace(v.GetString("namespace")) == "" {
-		issues = append(issues, "namespace is required")
-	}
-	if strings.TrimSpace(v.GetString("data_dir")) == "" {
-		issues = append(issues, "data_dir is required")
-	}
-	if v.GetInt("export.page_size") <= 0 {
-		issues = append(issues, "export.page_size must be greater than 0")
-	}
-	if v.GetInt("sync.batch_size") <= 0 {
-		issues = append(issues, "sync.batch_size must be greater than 0")
-	}
-	if v.GetBool("notifications.enabled") && v.GetInt("notifications.every_days") <= 0 {
-		issues = append(issues, "notifications.every_days must be greater than 0")
+	for _, option := range GetConfigOptions() {
+		if option.Validate != nil {
+			if err := option.Validate(v, option.Key); err != nil {
+				issues = append(issues, err.Error())
+			}
+		}
 	}
 
 	remotes := v.GetStringMap("remotes")
