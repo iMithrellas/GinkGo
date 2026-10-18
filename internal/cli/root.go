@@ -59,6 +59,7 @@ func NewRootCmd() *cobra.Command {
 
 	cmd.AddCommand(newNoteCmd())
 	cmd.AddCommand(newAICmd())
+	cmd.AddCommand(newContextCmd())
 	cmd.AddCommand(newVoiceCmd())
 	cmd.AddCommand(newDaemonCmd())
 	cmd.AddCommand(newCompletionCmd())

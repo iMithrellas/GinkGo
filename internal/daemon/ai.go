@@ -37,7 +37,7 @@ func resolveAIProvider(v *viper.Viper, name string) (ai.Provider, error) {
 			return nil, fmt.Errorf("ai.timeout must be a positive duration")
 		}
 	}
-	options := ai.Options{Timeout: timeout}
+	options := ai.Options{Timeout: timeout, ImageInput: v.GetString(base + "image_input")}
 	if kind == "cli" && v.GetString(base+"adapter") == "opencode" {
 		kind = "opencode"
 	}

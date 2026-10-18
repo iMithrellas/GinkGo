@@ -87,6 +87,10 @@ Original input is retained separately from the generated body. See
 [originals and exports](usage.md#export-import-and-originals) to inspect it.
 [Voice commands](voice.md) can use the same providers when saving in AI mode.
 
+Use `--image FILE` for explicit image context, or stage originals with
+`context attach` / `context capture`. [Image context](image-context.md) describes
+model capability checks, prompt-controlled use, original storage, and sync.
+
 To customize cleanup and terminology, edit `ai.notes.system_prompt`. Start from
 the generated default and preserve its JSON response contract: `action`, `title`,
 `body`, `tags`, and `target_id` for expansion. The final merged tag set must be

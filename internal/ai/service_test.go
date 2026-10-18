@@ -408,7 +408,7 @@ func TestVoiceRawFallbackPreservesCaptureMetadata(t *testing.T) {
 				t.Fatal("AI-disabled voice resolved provider")
 			}
 			assertVoiceSource(t, result.Entry, 0, text, before)
-			if *metadata != original {
+			if !reflect.DeepEqual(*metadata, original) {
 				t.Fatal("caller metadata mutated")
 			}
 		})

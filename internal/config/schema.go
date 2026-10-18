@@ -50,6 +50,7 @@ func providerFields() []ConfigOption {
 		{Key: "type", Default: "", Comment: "opencode, opencode-session, cli or openai-compatible; defaults to opencode for the provider named opencode"},
 		{Key: "executable", Default: "", Comment: "Provider executable; OpenCode providers default to opencode"},
 		{Key: "model", Default: "", Comment: "Provider model identifier"},
+		{Key: "image_input", Default: "auto", Comment: "Selected model image support: auto (metadata, unknown skips), supported, unsupported; adapter must also accept images"},
 		{Key: "args", Default: []string{}, Comment: "Arguments for CLI providers"},
 		{Key: "adapter", Default: "", Comment: "Legacy CLI adapter: opencode selects the OpenCode provider"},
 		{Key: "base_url", Default: "", Comment: "OpenAI-compatible API base URL"},

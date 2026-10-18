@@ -11,6 +11,7 @@ import (
 
 	"github.com/mithrel/ginkgo/internal/ai"
 	"github.com/mithrel/ginkgo/internal/config"
+	"github.com/mithrel/ginkgo/internal/imagecontext"
 	"github.com/mithrel/ginkgo/internal/ipc"
 	"github.com/mithrel/ginkgo/internal/notes"
 	"github.com/mithrel/ginkgo/internal/voice"
@@ -59,6 +60,11 @@ type voiceRuntime struct {
 	sherpaSettings             *viper.Viper
 	sherpaRunner               workerRunner
 	persistSherpa              func(context.Context, ipc.Message, voice.Transcript, string, string) (api.Entry, error)
+	pendingImages              *imagecontext.Pending
+	autoScreenshot             bool
+	screenshotMode             imagecontext.Mode
+	screenshotBackend          string
+	screenshotResolver         imagecontext.Resolver
 }
 
 func newVoiceRuntime(app *wire.App, aiNotes *ai.Service) *voiceRuntime {
@@ -80,6 +86,14 @@ func newVoiceRuntime(app *wire.App, aiNotes *ai.Service) *voiceRuntime {
 		notes: notes.NewService(app.Store.Entries), ai: aiNotes, defaultTags: append([]string(nil), v.GetStringSlice("default_tags")...),
 	}
 	runtime.root = context.Background()
+	runtime.pendingImages = imagecontext.NewPending()
+	runtime.autoScreenshot = v.GetBool("voice.screenshot.automatic")
+	runtime.screenshotMode = imagecontext.Mode(v.GetString("voice.screenshot.mode"))
+	if runtime.screenshotMode == "" {
+		runtime.screenshotMode = imagecontext.Screen
+	}
+	runtime.screenshotBackend = v.GetString("voice.screenshot.backend")
+	runtime.screenshotResolver = imagecontext.DesktopResolver{}
 	runtime.sttConfig = voice.Config{Executable: v.GetString("voice.stt.executable"), Model: v.GetString("voice.stt.model"), Language: v.GetString("voice.stt.language"), Device: v.GetString("voice.stt.device"), Threads: v.GetInt("voice.stt.threads")}
 	runtime.captureConfig, runtime.captureErr = captureSettings(v, runtime.enabled)
 	runtime.capturer = voice.NewCapturer(runtime.captureConfig)
@@ -159,11 +173,15 @@ func (v *voiceRuntime) transcribe(ctx context.Context, m ipc.Message) ipc.Respon
 	}
 	source := &api.Source{Kind: "voice", OriginalText: tr.Text, Language: tr.Language, STTEngine: tr.Engine, STTModel: tr.Model}
 	if mode == "ai" {
-		result, err := v.ai.Note(ctx, ai.NoteRequest{Text: tr.Text, Namespace: m.Namespace, Title: m.Title, Action: m.Action, NoteID: m.NoteID, Tags: m.Tags, Source: source}, m.Provider)
+		if v.pendingImages != nil && len(m.Images) == 0 {
+			m.Images = v.pendingImages.Take(m.Namespace)
+		}
+		result, err := v.ai.Note(ctx, ai.NoteRequest{Text: tr.Text, Namespace: m.Namespace, Title: m.Title, Action: m.Action, NoteID: m.NoteID, Tags: m.Tags, Source: source, Images: m.Images}, m.Provider)
 		if err != nil {
 			return ipc.Response{OK: false, Msg: err.Error()}
 		}
 		response.Entry, response.Action, response.FallbackReason = &result.Entry, result.Action, result.FallbackReason
+		response.ImageStatus = result.ImageStatus
 		return response
 	}
 	title := m.Title

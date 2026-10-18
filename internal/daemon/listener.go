@@ -270,6 +270,9 @@ func (v *voiceRuntime) close() {
 	if syncDone != nil {
 		<-syncDone
 	}
+	if v.pendingImages != nil {
+		v.pendingImages.Close()
+	}
 }
 
 func (v *voiceRuntime) runListener(ctx context.Context, j *listenJob, m ipc.Message, o voice.CaptureOptions) {

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	"github.com/mithrel/ginkgo/pkg/api"
 )
@@ -61,13 +62,22 @@ func sourcePrefix(prefix, history *api.Provenance) bool {
 	}
 	for i, old := range prefix.Sources {
 		next := history.Sources[i]
-		sameTime := old.CapturedAt.Equal(next.CapturedAt)
-		old.CapturedAt = next.CapturedAt
-		if !sameTime || old != next {
+		if old.ID != next.ID || !old.CapturedAt.Equal(next.CapturedAt) ||
+			old.Kind != next.Kind || old.OriginalText != next.OriginalText ||
+			old.Language != next.Language || old.STTEngine != next.STTEngine ||
+			old.STTModel != next.STTModel || !slices.EqualFunc(old.Images, next.Images, sameImageReference) {
 			return false
 		}
 	}
 	return true
+}
+
+func sameImageReference(a, b api.ImageAttachment) bool {
+	if !a.CapturedAt.Equal(b.CapturedAt) {
+		return false
+	}
+	a.CapturedAt = b.CapturedAt
+	return a == b
 }
 
 // replicationSnapshotDone distinguishes replayed history from a conflicting

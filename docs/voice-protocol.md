@@ -34,7 +34,7 @@ for published events; gaps are allowed. `epoch_id` changes on daemon restart.
 | `state` | Live-state fields | Current listening and note-recording state. |
 | `level` | `level` and/or `speech` | Optional finite level from 0 to 1 and/or boolean activity. |
 | `transcript` | `utterance_id`, positive `revision`, `text`, `final` | Each revision replaces prior text; never append revisions or revise after final. |
-| `note.saved` | `note_session_id`, `note_id` | A saved result. Optional AI `processing` and bounded `fallback_reason` describe postprocessing. |
+| `note.saved` | `note_session_id`, `note_id` | A saved result. Optional AI `processing` and bounded `fallback_reason` describe postprocessing. Optional `image_status` (at most 256 bytes) describes retained/supplied/skipped image context. |
 | `note.canceled` | `note_session_id` | A selected note did not save. |
 | `note.error` | `note_session_id`, bounded `error` | A note workflow error. |
 | `error` | bounded `error` | Capture/STT or endpoint error; attribution may be present. |

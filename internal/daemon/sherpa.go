@@ -122,6 +122,7 @@ type sherpaIngest struct {
 	j        *listenJob
 	ctx      context.Context
 	save     bool
+	images   *sessionImages
 }
 
 const sherpaStreamError = "voice helper stream failed; check installed helper, models, and recorder"
@@ -170,6 +171,9 @@ func (s *sherpaIngest) emit(e voiceworker.Event) error {
 		}
 		s.selected = e.SessionID
 		s.pending[e.SessionID] = true
+		if s.images != nil {
+			s.images.start(e.SessionID)
+		}
 		err = s.state(true)
 	case "state":
 		if e.RecordingNote && (!s.save || s.selected == "" || e.SessionID != s.selected) {
@@ -208,6 +212,9 @@ func (s *sherpaIngest) emit(e voiceworker.Event) error {
 		if e.SessionID != s.selected || s.selected == "" {
 			return s.fail()
 		}
+		if s.images != nil {
+			s.images.cancel(e.SessionID)
+		}
 		s.selected = ""
 		delete(s.pending, e.SessionID)
 		err = s.state(false)
@@ -230,6 +237,7 @@ func (s *sherpaIngest) emit(e voiceworker.Event) error {
 func (v *voiceRuntime) runSherpa(ctx context.Context, j *listenJob, m ipc.Message, c voiceworker.Config, runner workerRunner) {
 	defer j.cancel()
 	s := &sherpaIngest{v: v, j: j, ctx: ctx, save: m.Save, pending: make(map[string]bool), wake: make(chan struct{}, 1)}
+	s.images = newSessionImages(ctx, v, m)
 	runDone := make(chan error, 1)
 	go func() {
 		err := runner.Run(ctx, c, j.stop, s.emit)
@@ -245,14 +253,27 @@ func (v *voiceRuntime) runSherpa(ctx context.Context, j *listenJob, m ipc.Messag
 	for {
 		s.mu.Lock()
 		var candidate *voiceworker.Candidate
+		var visual *imageJob
 		if !s.fault && ctx.Err() == nil && len(s.queue) > 0 {
 			next := s.queue[0]
 			s.queue[0] = voiceworker.Candidate{}
 			s.queue = s.queue[1:]
 			candidate = &next
+			visual = s.images.jobs[next.SessionID]
+			delete(s.images.jobs, next.SessionID)
 		}
 		s.mu.Unlock()
 		if candidate != nil {
+			noteMessage := m
+			if visual != nil {
+				<-visual.done
+				if visual.err == nil && ctx.Err() == nil {
+					noteMessage.Images = visual.images
+				}
+				if visual.err != nil && ctx.Err() == nil {
+					_ = v.events.Publish(voiceevents.Event{Type: "error", NoteSessionID: s.id(candidate.SessionID), Error: "Screenshot capture failed; saving note without visual context"})
+				}
+			}
 			// This goroutine is the explicitly owned persistence worker. It is
 			// joined before done closes, including an uncooperative storage call.
 			outcome := voiceevents.Event{Type: "note.canceled", NoteSessionID: s.id(candidate.SessionID)}
@@ -260,11 +281,12 @@ func (v *voiceRuntime) runSherpa(ctx context.Context, j *listenJob, m ipc.Messag
 				// Rebind provenance from the sole supported trusted local model
 				// contract; no worker-provided metadata or ambient text is saved.
 				tr := voice.Transcript{Engine: "sherpa-onnx", Model: "parakeet-tdt-0.6b-v2", Language: "en"}
-				result, err := v.saveSherpaNote(ctx, m, tr, candidate.Body, candidate.Original)
+				result, err := v.saveSherpaNote(ctx, noteMessage, tr, candidate.Body, candidate.Original)
 				if err == nil {
 					entry := result.Entry
 					outcome.Type, outcome.NoteID = "note.saved", entry.ID
 					outcome.Processing, outcome.FallbackReason = result.processing, result.FallbackReason
+					outcome.ImageStatus = result.ImageStatus
 					v.mu.Lock()
 					v.status.LastNoteID, v.status.Segments = entry.ID, v.status.Segments+1
 					v.mu.Unlock()
@@ -288,6 +310,7 @@ func (v *voiceRuntime) runSherpa(ctx context.Context, j *listenJob, m ipc.Messag
 			finished = true
 		}
 	}
+	s.images.finish()
 	s.mu.Lock()
 	s.queue = nil
 	_ = v.events.UpdateState(voiceevents.State{})
@@ -336,6 +359,7 @@ func (v *voiceRuntime) saveSherpaNote(ctx context.Context, m ipc.Message, tr voi
 	result, err := v.ai.Note(ctx, ai.NoteRequest{
 		Text: original, Namespace: m.Namespace, Title: m.Title, Tags: m.Tags, Action: "create",
 		Source: &api.Source{Kind: "voice", Language: tr.Language, STTEngine: tr.Engine, STTModel: tr.Model},
+		Images: m.Images,
 	}, m.Provider)
 	processing := "ai"
 	if result.FallbackReason != "" {

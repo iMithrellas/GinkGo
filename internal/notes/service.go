@@ -21,8 +21,8 @@ func NewService(repo db.EntryRepo) *Service { return &Service{repo: repo} }
 type CreateRequest struct {
 	Namespace, Title, Body, OriginalText string
 	Tags                                 []string
-	// Source supplies application-captured kind and STT metadata only. IDs,
-	// timestamps and original text are always constructed by this service.
+	// Source supplies kind, STT metadata, and image references. The service
+	// assigns source IDs, timestamps, and original text.
 	Source *api.Source
 }
 
@@ -63,6 +63,7 @@ func source(text string, now time.Time, metadata *api.Source) api.Source {
 		result.Language = metadata.Language
 		result.STTEngine = metadata.STTEngine
 		result.STTModel = metadata.STTModel
+		result.Images = append([]api.ImageAttachment(nil), metadata.Images...)
 	}
 	return result
 }

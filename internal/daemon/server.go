@@ -91,6 +91,9 @@ func Run(ctx context.Context, app *wire.App) (runErr error) {
 			ns = app.Cfg.GetString("namespace")
 		}
 		switch m.Name {
+		case "context.stage", "context.clear", "context.status":
+			m.Namespace = ns
+			return voiceNotes.imageContext(ctx, m)
 		case "voice.status":
 			return voiceNotes.voiceStatus()
 		case "voice.disable", "voice.cancel":
@@ -116,12 +119,16 @@ func Run(ctx context.Context, app *wire.App) (runErr error) {
 				ctx, cancel = context.WithDeadline(ctx, m.Deadline)
 				defer cancel()
 			}
-			result, err := aiNotes.Note(ctx, ai.NoteRequest{Text: m.Text, Namespace: ns, Title: m.Title, Action: m.Action, NoteID: m.NoteID, Tags: m.Tags}, m.Provider)
+			pending := voiceNotes.pendingImages.Take(ns)
+			if len(m.Images) == 0 {
+				m.Images = pending
+			}
+			result, err := aiNotes.Note(ctx, ai.NoteRequest{Text: m.Text, Namespace: ns, Title: m.Title, Action: m.Action, NoteID: m.NoteID, Tags: m.Tags, Images: m.Images}, m.Provider)
 			if err != nil {
 				return ipc.Response{OK: false, Msg: err.Error()}
 			}
 			go app.Syncer.SyncNow(daemonCtx)
-			return ipc.Response{OK: true, Entry: &result.Entry, Action: result.Action, FallbackReason: result.FallbackReason}
+			return ipc.Response{OK: true, Entry: &result.Entry, Action: result.Action, FallbackReason: result.FallbackReason, ImageStatus: result.ImageStatus}
 		case "note.add", "note.edit":
 			// Create if no ID, otherwise CAS update.
 			now := time.Now().UTC()
@@ -406,6 +413,7 @@ func newAINoteService(app *wire.App) *ai.Service {
 		DefaultTags: app.Cfg.GetStringSlice("default_tags"), ContextLimit: limit,
 		MaxInputBytes: 256 * 1024, MaxContextBytes: 256 * 1024,
 		SystemPrompt: app.Cfg.GetString("ai.notes.system_prompt"),
+		Images:       app.Images,
 	})
 }
 

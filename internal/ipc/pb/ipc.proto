@@ -26,6 +26,33 @@ message Source {
   string language = 5;
   string stt_engine = 6;
   string stt_model = 7;
+  repeated ImageAttachment images = 8;
+}
+
+message ImageAttachment {
+  string id = 1;
+  string sha256 = 2;
+  string media_type = 3;
+  int64 size = 4;
+  int32 width = 5;
+  int32 height = 6;
+  google.protobuf.Timestamp captured_at = 7;
+  string label = 8;
+}
+
+message ContextImage {
+  bytes data = 1;
+  string media_type = 2;
+  int32 width = 3;
+  int32 height = 4;
+  google.protobuf.Timestamp captured_at = 5;
+  string label = 6;
+}
+
+message ImageContext {
+  string action = 1;
+  string namespace = 2;
+  repeated ContextImage images = 3;
 }
 
 message Provenance {
@@ -43,6 +70,7 @@ message AINote {
   repeated string tags = 6;
   string provider = 7;
   google.protobuf.Timestamp deadline = 8;
+  repeated ContextImage images = 9;
 }
 message NoteDelete { string id = 1; string namespace = 2; }
 message VoiceTranscribe {
@@ -106,6 +134,7 @@ message Request {
     AINote ai_note = 13;
     VoiceTranscribe voice_transcribe = 14;
     VoiceControl voice_control = 15;
+    ImageContext image_context = 16;
   }
 }
 
@@ -128,6 +157,7 @@ message Response {
   string fallback_reason = 10;
   Transcript transcript = 11;
   VoiceStatus voice_status = 12;
+  string image_status = 13;
 }
 
 message Page {

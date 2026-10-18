@@ -49,6 +49,7 @@ type Event struct {
 	// the original raw/legacy wire shape. FallbackReason is application-owned.
 	Processing     string `json:"processing,omitempty"`
 	FallbackReason string `json:"fallback_reason,omitempty"`
+	ImageStatus    string `json:"image_status,omitempty"`
 }
 
 // Options sets fixed bounds. Zero values select defaults.
@@ -96,6 +97,9 @@ func validateState(s State) error {
 }
 
 func validateEvent(e Event) error {
+	if e.ImageStatus != "" && (e.Type != "note.saved" || len(e.ImageStatus) > 256 || !utf8.ValidString(e.ImageStatus)) {
+		return errors.New("invalid note image status")
+	}
 	if e.Processing != "" || e.FallbackReason != "" {
 		if e.Type != "note.saved" || (e.Processing != "ai" && e.Processing != "raw_fallback") || (e.Processing == "raw_fallback") != (e.FallbackReason != "") || len(e.FallbackReason) > 1024 || !utf8.ValidString(e.FallbackReason) {
 			return errors.New("invalid note processing metadata")

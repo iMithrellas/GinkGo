@@ -25,6 +25,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/mithrel/ginkgo/internal/blobstore"
 	gcrypto "github.com/mithrel/ginkgo/internal/crypto"
 	"github.com/mithrel/ginkgo/internal/db"
 	pbmsg "github.com/mithrel/ginkgo/internal/ipc/pb"
@@ -36,6 +37,8 @@ type Service struct {
 	cfg        *viper.Viper
 	store      *db.Store
 	httpClient *http.Client
+	blobs      blobstore.Store
+	blobRemote func(remoteConfig) BlobRemote
 }
 
 const (
@@ -53,13 +56,18 @@ type remoteConfig struct {
 }
 
 func New(cfg *viper.Viper, store *db.Store) *Service {
-	return &Service{
+	s := &Service{
 		cfg:   cfg,
 		store: store,
+		blobs: blobstore.NewFileStore(filepath.Join(cfg.GetString("data_dir"), "attachments")),
 		httpClient: &http.Client{
 			Timeout: 20 * time.Second,
 		},
 	}
+	s.blobRemote = func(rc remoteConfig) BlobRemote {
+		return &httpBlobRemote{client: s.httpClient, url: rc.URL, token: rc.Token}
+	}
+	return s
 }
 
 func (s *Service) remoteEnabled(name string) bool {
@@ -171,6 +179,9 @@ func (s *Service) pushRemote(ctx context.Context, rc remoteConfig, pushAfter tim
 	if len(evs) == 0 {
 		return nil
 	}
+	if err := s.pushAttachments(ctx, rc, evs); err != nil {
+		return err
+	}
 
 	pbBatch, err := s.eventsToProto(evs)
 	if err != nil {
@@ -225,6 +236,19 @@ func (s *Service) pullRemote(ctx context.Context, rc remoteConfig, pullAfter tim
 		return nil
 	}
 	if err := s.applyPullBatch(ctx, pr.Events); err != nil {
+		return err
+	}
+	// Materialize note text first. A missing image leaves text usable and the
+	// cursor unchanged, so a later sync retries attachment transfer safely.
+	var pulled []api.Event
+	for _, pev := range pr.Events {
+		event, err := s.repEventToAPI(pev)
+		if err != nil {
+			return err
+		}
+		pulled = append(pulled, event)
+	}
+	if err := s.pullAttachments(ctx, rc, pulled); err != nil {
 		return err
 	}
 

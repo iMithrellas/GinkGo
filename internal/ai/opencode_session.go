@@ -46,6 +46,11 @@ type OpenCodeSessionOptions struct {
 // only the built-in agent loader plus model catalogs/providers.
 type OpenCodeSessionProvider struct{ options OpenCodeSessionOptions }
 
+// Capabilities reports the session generation endpoint's text-only transport contract.
+func (*OpenCodeSessionProvider) Capabilities(context.Context) (Capabilities, error) {
+	return Capabilities{ImageInput: Unsupported}, nil
+}
+
 // NewOpenCodeSession validates options without starting OpenCode or checking login.
 func NewOpenCodeSession(options OpenCodeSessionOptions) (*OpenCodeSessionProvider, error) {
 	limits, err := options.Options.normalized()

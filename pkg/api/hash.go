@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/binary"
 	"encoding/hex"
+	"fmt"
 	"sort"
 	"strings"
 
@@ -62,6 +63,22 @@ func (e Entry) Hash() string {
 			writeString(source.Language)
 			writeString(source.STTEngine)
 			writeString(source.STTModel)
+		}
+		// Keep hashes unchanged for notes without images.
+		for _, source := range e.Provenance.Sources {
+			if len(source.Images) == 0 {
+				continue
+			}
+			writeString("ginkgo:images:v1")
+			writeString(source.ID)
+			for _, image := range source.Images {
+				writeString(image.ID)
+				writeString(image.SHA256)
+				writeString(image.MediaType)
+				writeString(fmt.Sprintf("%d/%d/%d", image.Size, image.Width, image.Height))
+				writeString(image.CapturedAt.UTC().Format(timeRFC3339Nano))
+				writeString(image.Label)
+			}
 		}
 	}
 	sum := h.Sum(nil)

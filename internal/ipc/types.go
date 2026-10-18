@@ -3,42 +3,44 @@ package ipc
 import (
 	"time"
 
+	"github.com/mithrel/ginkgo/internal/imagecontext"
 	"github.com/mithrel/ginkgo/pkg/api"
 )
 
 // Message is a minimal command payload sent from CLI to daemon.
 type Message struct {
-	Name        string          `json:"name"`
-	Args        []string        `json:"args,omitempty"`
-	ID          string          `json:"id,omitempty"`
-	Title       string          `json:"title,omitempty"`
-	Body        string          `json:"body,omitempty"`
-	Tags        []string        `json:"tags,omitempty"`
-	IfVersion   int64           `json:"if_version,omitempty"`
-	Namespace   string          `json:"namespace,omitempty"`
-	Since       string          `json:"since,omitempty"`
-	Until       string          `json:"until,omitempty"`
-	TagsAny     []string        `json:"tags_any,omitempty"`
-	TagsAll     []string        `json:"tags_all,omitempty"`
-	Limit       int             `json:"limit,omitempty"`
-	Cursor      string          `json:"cursor,omitempty"`
-	Reverse     bool            `json:"reverse,omitempty"`
-	IncludeBody bool            `json:"include_body,omitempty"`
-	Remote      string          `json:"remote,omitempty"`
-	SortBy      string          `json:"sort_by,omitempty"`
-	Text        string          `json:"text,omitempty"`
-	Provider    string          `json:"provider,omitempty"`
-	Action      string          `json:"action,omitempty"`
-	NoteID      string          `json:"note_id,omitempty"`
-	Deadline    time.Time       `json:"deadline,omitempty"`
-	Provenance  *api.Provenance `json:"provenance,omitempty"`
-	AudioPath   string          `json:"audio_path,omitempty"`
-	Save        bool            `json:"save,omitempty"`
-	Mode        string          `json:"mode,omitempty"`
-	Model       string          `json:"model,omitempty"`
-	Language    string          `json:"language,omitempty"`
-	Trigger     string          `json:"trigger,omitempty"`
-	Capture     *CaptureOptions `json:"capture,omitempty"`
+	Name        string               `json:"name"`
+	Args        []string             `json:"args,omitempty"`
+	ID          string               `json:"id,omitempty"`
+	Title       string               `json:"title,omitempty"`
+	Body        string               `json:"body,omitempty"`
+	Tags        []string             `json:"tags,omitempty"`
+	IfVersion   int64                `json:"if_version,omitempty"`
+	Namespace   string               `json:"namespace,omitempty"`
+	Since       string               `json:"since,omitempty"`
+	Until       string               `json:"until,omitempty"`
+	TagsAny     []string             `json:"tags_any,omitempty"`
+	TagsAll     []string             `json:"tags_all,omitempty"`
+	Limit       int                  `json:"limit,omitempty"`
+	Cursor      string               `json:"cursor,omitempty"`
+	Reverse     bool                 `json:"reverse,omitempty"`
+	IncludeBody bool                 `json:"include_body,omitempty"`
+	Remote      string               `json:"remote,omitempty"`
+	SortBy      string               `json:"sort_by,omitempty"`
+	Text        string               `json:"text,omitempty"`
+	Provider    string               `json:"provider,omitempty"`
+	Action      string               `json:"action,omitempty"`
+	NoteID      string               `json:"note_id,omitempty"`
+	Deadline    time.Time            `json:"deadline,omitempty"`
+	Provenance  *api.Provenance      `json:"provenance,omitempty"`
+	AudioPath   string               `json:"audio_path,omitempty"`
+	Save        bool                 `json:"save,omitempty"`
+	Mode        string               `json:"mode,omitempty"`
+	Model       string               `json:"model,omitempty"`
+	Language    string               `json:"language,omitempty"`
+	Trigger     string               `json:"trigger,omitempty"`
+	Capture     *CaptureOptions      `json:"capture,omitempty"`
+	Images      []imagecontext.Image `json:"images,omitempty"`
 }
 
 // CaptureOptions overrides daemon capture defaults; zero values use config.
@@ -90,6 +92,7 @@ type Response struct {
 	Page           api.Page      `json:"page,omitempty"`
 	Action         string        `json:"action,omitempty"`
 	FallbackReason string        `json:"fallback_reason,omitempty"`
+	ImageStatus    string        `json:"image_status,omitempty"`
 	Transcript     *Transcript   `json:"transcript,omitempty"`
 	VoiceStatus    *VoiceStatus  `json:"voice_status,omitempty"`
 }

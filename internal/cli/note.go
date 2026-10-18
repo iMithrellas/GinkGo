@@ -32,6 +32,7 @@ func newNoteCmd() *cobra.Command {
 	cmd.AddCommand(newNoteAddCmd())
 	cmd.AddCommand(newNoteEditCmd())
 	cmd.AddCommand(newNoteShowCmd())
+	cmd.AddCommand(newNoteImagesCmd())
 	cmd.AddCommand(newNoteDeleteCmd())
 	cmd.AddCommand(newNoteListCmd())
 	cmd.AddCommand(newNoteSearchCmd())

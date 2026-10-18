@@ -211,6 +211,11 @@ ginkgo-cli voice stream --save --trigger GINKGO --mode ai --provider opencode
 AI processes each selected transcript as a new note request and preserves it as
 the original. See [AI fallbacks and privacy](ai.md#fallbacks-and-errors).
 
+Optional [screenshot context](image-context.md) captures a window, focused monitor,
+or all monitors on each accepted Sherpa AI wake. Automatic capture requires known
+model/adapter image support; explicit `context attach` and `context capture`
+commands also work with automatic capture disabled. Hyprland is the initial backend.
+
 <details>
 <summary>Advanced settings</summary>
 

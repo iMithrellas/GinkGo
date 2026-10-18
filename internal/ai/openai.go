@@ -3,12 +3,16 @@ package ai
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
+
+	"github.com/mithrel/ginkgo/internal/imagecontext"
 )
 
 // OpenAIOptions configures a local or remote OpenAI-compatible chat endpoint.
@@ -22,7 +26,11 @@ type OpenAIOptions struct {
 }
 
 // OpenAIProvider performs stateless, non-streaming, tool-free chat completion.
-type OpenAIProvider struct{ options OpenAIOptions }
+type OpenAIProvider struct {
+	options      OpenAIOptions
+	capMu        sync.Mutex
+	capabilities *Capabilities
+}
 
 // NewOpenAI validates options without contacting the endpoint.
 func NewOpenAI(options OpenAIOptions) (*OpenAIProvider, error) {
@@ -50,13 +58,35 @@ func (p *OpenAIProvider) Complete(parent context.Context, request Request) (Resp
 	}
 	type message struct {
 		Role    string `json:"role"`
-		Content string `json:"content"`
+		Content any    `json:"content"`
 	}
 	messages := []message{}
 	if request.System != "" {
 		messages = append(messages, message{Role: "system", Content: request.System})
 	}
-	messages = append(messages, message{Role: "user", Content: request.Prompt})
+	var content any = request.Prompt
+	if len(request.Images) != 0 {
+		caps, err := p.Capabilities(parent)
+		if err != nil || caps.ImageInput != Supported {
+			request.Images = nil
+		} else {
+			images, err := imagecontext.Validate(parent, request.Images)
+			if err != nil {
+				return Response{}, err
+			}
+			parts := []any{map[string]any{"type": "text", "text": request.Prompt}}
+			for _, image := range images {
+				parts = append(parts, map[string]any{
+					"type": "image_url",
+					"image_url": map[string]string{
+						"url": "data:" + image.MediaType + ";base64," + base64.StdEncoding.EncodeToString(image.Data),
+					},
+				})
+			}
+			content = parts
+		}
+	}
+	messages = append(messages, message{Role: "user", Content: content})
 	input, err := json.Marshal(struct {
 		Model    string    `json:"model"`
 		Messages []message `json:"messages"`
@@ -65,7 +95,7 @@ func (p *OpenAIProvider) Complete(parent context.Context, request Request) (Resp
 	if err != nil {
 		return Response{}, fmt.Errorf("encode openai request: %w", err)
 	}
-	if len(input) > p.options.MaxInputBytes {
+	if len(input) > encodedInputLimit(p.options.MaxInputBytes, request.Images) {
 		return Response{}, ErrInputLimit
 	}
 	ctx, cancel := context.WithTimeout(parent, p.options.Timeout)

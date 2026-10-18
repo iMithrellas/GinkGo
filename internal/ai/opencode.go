@@ -58,6 +58,11 @@ type OpenCodeOptions struct {
 // the global credential API or import external plugins before enforcing policy.
 type OpenCodeProvider struct{ options OpenCodeOptions }
 
+// Capabilities reports the generation endpoint's text-only transport contract.
+func (*OpenCodeProvider) Capabilities(context.Context) (Capabilities, error) {
+	return Capabilities{ImageInput: Unsupported}, nil
+}
+
 // NewOpenCode validates options without starting OpenCode or checking login.
 func NewOpenCode(options OpenCodeOptions) (*OpenCodeProvider, error) {
 	limits, err := options.Options.normalized()

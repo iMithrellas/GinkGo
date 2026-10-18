@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/mithrel/ginkgo/internal/db"
+	"github.com/mithrel/ginkgo/internal/imagecontext"
 	"github.com/mithrel/ginkgo/internal/notes"
 	"github.com/mithrel/ginkgo/pkg/api"
 )
@@ -23,6 +24,7 @@ type NoteRequest struct {
 	// Source contains trusted application capture metadata, never model output.
 	// The notes service generates source identity/time and uses Text as original.
 	Source *api.Source
+	Images []imagecontext.Image
 }
 
 // NoteResult describes a committed creation, expansion, or raw fallback.
@@ -30,6 +32,7 @@ type NoteResult struct {
 	Entry          api.Entry `json:"entry"`
 	Action         string    `json:"action"`
 	FallbackReason string    `json:"fallback_reason,omitempty"`
+	ImageStatus    string    `json:"image_status,omitempty"`
 }
 
 // ServiceOptions bounds inference input/context independently of provider limits.
@@ -41,6 +44,7 @@ type ServiceOptions struct {
 	MaxInputBytes    int
 	MaxContextBytes  int
 	SystemPrompt     string
+	Images           imagecontext.Store
 }
 
 // Service coordinates one bounded inference at a time with ordinary note writes.
@@ -134,7 +138,9 @@ func (s *Service) raw(ctx context.Context, request NoteRequest, reason string) (
 // Note validates model proposals and commits through the existing repository.
 // All non-cancellation AI/validation/CAS failures preserve input as a new raw
 // note. Empty input is an error. Expansion is append-only, not an AI rewrite.
-func (s *Service) Note(ctx context.Context, request NoteRequest, providerName string) (NoteResult, error) {
+func (s *Service) Note(ctx context.Context, request NoteRequest, providerName string) (result NoteResult, resultErr error) {
+	imageStatus := ""
+	defer func() { result.ImageStatus = imageStatus }()
 	if err := ctx.Err(); err != nil {
 		return NoteResult{}, err
 	}
@@ -144,20 +150,60 @@ func (s *Service) Note(ctx context.Context, request NoteRequest, providerName st
 	if request.Namespace == "" {
 		request.Namespace = s.options.DefaultNamespace
 	}
+	persisting := false
+	var newImages []api.ImageAttachment
+	defer func() {
+		if !persisting && len(newImages) != 0 {
+			cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			resultErr = errors.Join(resultErr, s.options.Images.Discard(cleanup, request.Namespace, newImages))
+		}
+	}()
+	raw := func(reason string) (NoteResult, error) {
+		if err := ctx.Err(); err != nil {
+			return NoteResult{}, err
+		}
+		persisting = true
+		return s.raw(ctx, request, reason)
+	}
+	if len(request.Images) != 0 {
+		if s.options.Images == nil {
+			imageStatus = "not retained; image storage unavailable"
+			return raw("image originals could not be retained; saved text only")
+		}
+		images, err := imagecontext.Validate(ctx, request.Images)
+		if err != nil {
+			return NoteResult{}, err
+		}
+		request.Images = images
+		refs, err := s.options.Images.Save(ctx, request.Namespace, images)
+		if err != nil {
+			imageStatus = "not retained; image storage failed"
+			return raw("image originals could not be retained; saved text only")
+		}
+		metadata := api.Source{}
+		newImages = refs
+		if request.Source != nil {
+			metadata = *request.Source
+		}
+		metadata.Images = refs
+		request.Source = &metadata
+		imageStatus = "retained; not sent to AI"
+	}
 	if request.Action == "" {
 		request.Action = "auto"
 	}
 	if !s.options.Enabled {
-		return s.raw(ctx, request, "AI is disabled")
+		return raw("AI is disabled")
 	}
 	if len(request.Text) > s.options.MaxInputBytes {
-		return s.raw(ctx, request, "input exceeds AI byte budget")
+		return raw("input exceeds AI byte budget")
 	}
 	if request.Action != "auto" && request.Action != "create" && request.Action != "expand" {
-		return s.raw(ctx, request, "invalid requested action")
+		return raw("invalid requested action")
 	}
 	if (request.Action == "expand" && request.NoteID == "") || (request.Action == "create" && request.NoteID != "") {
-		return s.raw(ctx, request, "invalid expansion target")
+		return raw("invalid expansion target")
 	}
 	select {
 	case s.slot <- struct{}{}:
@@ -173,10 +219,10 @@ func (s *Service) Note(ctx context.Context, request NoteRequest, providerName st
 		if cancel := ctx.Err(); cancel != nil {
 			return NoteResult{}, cancel
 		}
-		return s.raw(ctx, request, "note context unavailable or exceeds budget")
+		return raw("note context unavailable or exceeds budget")
 	}
 	if s.resolve == nil {
-		return s.raw(ctx, request, "AI provider unavailable; check configured provider name and settings")
+		return raw("AI provider unavailable; check configured provider name and settings")
 	}
 	hints := s.tagHints(ctx, request)
 	if err := ctx.Err(); err != nil {
@@ -187,7 +233,17 @@ func (s *Service) Note(ctx context.Context, request NoteRequest, providerName st
 		return NoteResult{}, cancel
 	}
 	if err != nil || provider == nil {
-		return s.raw(ctx, request, providerFallbackReason(err))
+		return raw(providerFallbackReason(err))
+	}
+	var images []imagecontext.Image
+	if len(request.Images) != 0 {
+		caps, err := ProviderCapabilities(ctx, provider)
+		if err == nil && caps.ImageInput == Supported {
+			images = request.Images
+			imageStatus = "retained; included in AI request"
+		} else {
+			imageStatus = "retained; skipped because model or adapter image support is unavailable"
+		}
 	}
 	// Share only the source kind, not capture metadata or earlier originals.
 	inputKind := "text"
@@ -195,14 +251,19 @@ func (s *Service) Note(ctx context.Context, request NoteRequest, providerName st
 		inputKind = "voice"
 	}
 	prompt, _ := json.Marshal(struct {
-		Input     string        `json:"input"`
-		InputKind string        `json:"input_kind"`
-		Action    string        `json:"action"`
-		TargetID  string        `json:"target_id,omitempty"`
-		Notes     []noteContext `json:"notes"`
-		Tags      tagHints      `json:"tag_context"`
-	}{request.Text, inputKind, request.Action, request.NoteID, candidates.views, hints})
-	response, err := provider.Complete(ctx, Request{System: s.options.SystemPrompt, Prompt: string(prompt)})
+		Input      string        `json:"input"`
+		InputKind  string        `json:"input_kind"`
+		Action     string        `json:"action"`
+		TargetID   string        `json:"target_id,omitempty"`
+		Notes      []noteContext `json:"notes"`
+		Tags       tagHints      `json:"tag_context"`
+		ImageCount int           `json:"image_count,omitempty"`
+	}{request.Text, inputKind, request.Action, request.NoteID, candidates.views, hints, len(images)})
+	system := s.options.SystemPrompt
+	if len(request.Images) != 0 && !strings.Contains(system, ImageContextSystemPrompt) {
+		system += "\n\n" + ImageContextSystemPrompt
+	}
+	response, err := provider.Complete(ctx, Request{System: system, Prompt: string(prompt), Images: images})
 	// Only the request's context controls whether saving is forbidden. An
 	// adapter's shorter local timeout is a provider failure, not cancellation
 	// of the incoming note, and must preserve its text through raw fallback.
@@ -210,11 +271,11 @@ func (s *Service) Note(ctx context.Context, request NoteRequest, providerName st
 		return NoteResult{}, cancel
 	}
 	if err != nil {
-		return s.raw(ctx, request, providerFallbackReason(err))
+		return raw(providerFallbackReason(err))
 	}
 	draft, err := s.validateDraft(response.Text, request, candidates.entries)
 	if err != nil {
-		return s.raw(ctx, request, "AI returned an invalid note draft; expected the requested strict JSON note format")
+		return raw("AI returned an invalid note draft; expected the requested strict JSON note format")
 	}
 	if err := ctx.Err(); err != nil {
 		return NoteResult{}, err
@@ -224,6 +285,7 @@ func (s *Service) Note(ctx context.Context, request NoteRequest, providerName st
 	if request.Title != "" {
 		title = request.Title
 	}
+	persisting = true
 	if draft.Action == "create_note" {
 		tags := append(append(append([]string(nil), s.options.DefaultTags...), request.Tags...), draft.Tags...)
 		entry, err = s.notes.Create(ctx, notes.CreateRequest{Namespace: request.Namespace, Title: title, Body: draft.Body, Tags: tags, OriginalText: request.Text, Source: request.Source})
@@ -233,7 +295,7 @@ func (s *Service) Note(ctx context.Context, request NoteRequest, providerName st
 			if cancel := ctx.Err(); cancel != nil {
 				return NoteResult{}, cancel
 			}
-			return s.raw(ctx, request, "note expansion failed or conflicted; target unchanged by AI")
+			return raw("note expansion failed or conflicted; target unchanged by AI")
 		}
 	}
 	if err != nil {

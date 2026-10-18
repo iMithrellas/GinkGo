@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/mithrel/ginkgo/internal/blobstore"
 	gcrypto "github.com/mithrel/ginkgo/internal/crypto"
 	"github.com/mithrel/ginkgo/internal/db"
 	pbmsg "github.com/mithrel/ginkgo/internal/ipc/pb"
@@ -25,10 +27,11 @@ import (
 type Server struct {
 	cfg   *viper.Viper
 	store *db.Store
+	blobs blobstore.Store
 }
 
 func New(cfg *viper.Viper, store *db.Store) *Server {
-	return &Server{cfg: cfg, store: store}
+	return &Server{cfg: cfg, store: store, blobs: blobstore.NewFileStore(filepath.Join(cfg.GetString("data_dir"), "replication-blobs"))}
 }
 
 // Router returns an http.Handler with registered routes.
@@ -39,6 +42,7 @@ func (s *Server) Router() http.Handler {
 	})
 	mux.HandleFunc("/v1/replicate/push", s.auth(s.handlePush))
 	mux.HandleFunc("/v1/replicate/pull", s.auth(s.handlePull))
+	mux.HandleFunc("/v1/attachments/", s.auth(s.handleAttachment))
 	return mux
 }
 

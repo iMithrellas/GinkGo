@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+
+	"github.com/mithrel/ginkgo/internal/imagecontext"
 )
 
 // CLIOptions configures an explicitly trusted, foreground generation wrapper.
@@ -28,6 +30,15 @@ type CLIOptions struct {
 // CLIProvider implements the opt-in JSON wrapper contract in CLIOptions.
 type CLIProvider struct{ options CLIOptions }
 
+// Capabilities requires an explicit declaration for the wrapper's selected model.
+func (p *CLIProvider) Capabilities(context.Context) (Capabilities, error) {
+	support := Support(p.options.ImageInput)
+	if support == "auto" {
+		support = Unknown
+	}
+	return Capabilities{ImageInput: support}, nil
+}
+
 // NewCLI validates options without launching the wrapper or probing auth.
 func NewCLI(options CLIOptions) (*CLIProvider, error) {
 	limits, err := options.Options.normalized()
@@ -44,6 +55,16 @@ func NewCLI(options CLIOptions) (*CLIProvider, error) {
 
 // Complete runs a fresh foreground wrapper with bounded stdin/stdout/stderr.
 func (p *CLIProvider) Complete(parent context.Context, request Request) (Response, error) {
+	if p.options.ImageInput != "supported" {
+		request.Images = nil
+	}
+	if len(request.Images) != 0 {
+		images, err := imagecontext.Validate(parent, request.Images)
+		if err != nil {
+			return Response{}, err
+		}
+		request.Images = images
+	}
 	if len(request.System) > p.options.MaxInputBytes || len(request.Prompt) > p.options.MaxInputBytes-len(request.System) {
 		return Response{}, ErrInputLimit
 	}
@@ -51,7 +72,7 @@ func (p *CLIProvider) Complete(parent context.Context, request Request) (Respons
 	if err != nil {
 		return Response{}, fmt.Errorf("encode ai request: %w", err)
 	}
-	if len(input) > p.options.MaxInputBytes {
+	if len(input) > encodedInputLimit(p.options.MaxInputBytes, request.Images) {
 		return Response{}, ErrInputLimit
 	}
 	ctx, cancel := context.WithTimeout(parent, p.options.Timeout)

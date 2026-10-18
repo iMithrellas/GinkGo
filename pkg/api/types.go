@@ -9,13 +9,37 @@ type Provenance struct {
 
 // Source is an application-captured original, never model-generated content.
 type Source struct {
-	ID           string    `json:"id"`
-	CapturedAt   time.Time `json:"captured_at"`
-	Kind         string    `json:"kind"` // "voice" or "text"
-	OriginalText string    `json:"original_text"`
-	Language     string    `json:"language,omitempty"`
-	STTEngine    string    `json:"stt_engine,omitempty"`
-	STTModel     string    `json:"stt_model,omitempty"`
+	ID           string            `json:"id"`
+	CapturedAt   time.Time         `json:"captured_at"`
+	Kind         string            `json:"kind"` // "voice" or "text"
+	OriginalText string            `json:"original_text"`
+	Language     string            `json:"language,omitempty"`
+	STTEngine    string            `json:"stt_engine,omitempty"`
+	STTModel     string            `json:"stt_model,omitempty"`
+	Images       []ImageAttachment `json:"images,omitempty"`
+}
+
+// ImageAttachment references immutable original image bytes stored outside the entry.
+type ImageAttachment struct {
+	ID         string    `json:"id"`
+	SHA256     string    `json:"sha256"`
+	MediaType  string    `json:"media_type"`
+	Size       int64     `json:"size"`
+	Width      int       `json:"width"`
+	Height     int       `json:"height"`
+	CapturedAt time.Time `json:"captured_at"`
+	Label      string    `json:"label,omitempty"`
+}
+
+// Images returns the image references in original-input order.
+func (e Entry) Images() []ImageAttachment {
+	var result []ImageAttachment
+	if e.Provenance != nil {
+		for _, source := range e.Provenance.Sources {
+			result = append(result, source.Images...)
+		}
+	}
+	return result
 }
 
 type Entry struct {

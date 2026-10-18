@@ -1,5 +1,4 @@
-// Package ai provides bounded text-generation adapters. Model text is untrusted;
-// callers, not providers, validate any structured actions before using them.
+// Package ai provides note generation with text and image inputs.
 package ai
 
 import (
@@ -10,12 +9,15 @@ import (
 	"fmt"
 	"io"
 	"time"
+
+	"github.com/mithrel/ginkgo/internal/imagecontext"
 )
 
-// Request contains application instructions and untrusted user/context text.
+// Request contains system instructions, user context, and optional images.
 type Request struct {
-	System string `json:"system"`
-	Prompt string `json:"prompt"`
+	System string               `json:"system"`
+	Prompt string               `json:"prompt"`
+	Images []imagecontext.Image `json:"images,omitempty"`
 }
 
 func decodeObject(input []byte, output any) error {
@@ -46,6 +48,9 @@ type Options struct {
 	Timeout        time.Duration
 	MaxInputBytes  int
 	MaxOutputBytes int
+	// ImageInput declares selected-model support when metadata is unavailable:
+	// auto (default), supported or unsupported. Adapters must also support images.
+	ImageInput string
 }
 
 var (
@@ -71,6 +76,12 @@ var (
 )
 
 func (o Options) normalized() (Options, error) {
+	if o.ImageInput == "" {
+		o.ImageInput = "auto"
+	}
+	if o.ImageInput != "auto" && o.ImageInput != "supported" && o.ImageInput != "unsupported" {
+		return o, fmt.Errorf("image_input must be auto, supported or unsupported")
+	}
 	if o.Timeout < 0 || o.MaxInputBytes < 0 || o.MaxOutputBytes < 0 {
 		return o, fmt.Errorf("ai limits must be nonnegative")
 	}
@@ -84,4 +95,12 @@ func (o Options) normalized() (Options, error) {
 		o.MaxOutputBytes = 1 << 20
 	}
 	return o, nil
+}
+
+// encodedInputLimit allows for base64 image data and message framing.
+func encodedInputLimit(textLimit int, images []imagecontext.Image) int {
+	if len(images) == 0 {
+		return textLimit
+	}
+	return textLimit + imagecontext.MaxTotalBytes*4/3 + (64 << 10)
 }

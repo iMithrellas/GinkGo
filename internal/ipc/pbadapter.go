@@ -25,6 +25,10 @@ func (h pbHandler) Handle(ctx context.Context, req any) (any, error) {
 	preq := req.(*pb.Request)
 	m := Message{}
 	switch x := preq.Cmd.(type) {
+	case *pb.Request_ImageContext:
+		if n := x.ImageContext; n != nil {
+			m.Name, m.Namespace, m.Images = "context."+n.Action, n.Namespace, fromPbImages(n.Images)
+		}
 	case *pb.Request_VoiceTranscribe:
 		if n := x.VoiceTranscribe; n != nil {
 			m.Name, m.AudioPath, m.Save, m.Mode = "voice.transcribe", n.AudioPath, n.Save, n.Mode
@@ -60,6 +64,7 @@ func (h pbHandler) Handle(ctx context.Context, req any) (any, error) {
 			m.Name, m.Text, m.Namespace, m.Title = "ai.note", n.Text, n.Namespace, n.Title
 			m.Action, m.NoteID, m.Provider = n.Action, n.NoteId, n.Provider
 			m.Tags = append([]string(nil), n.Tags...)
+			m.Images = fromPbImages(n.Images)
 			if n.Deadline != nil {
 				if err := n.Deadline.CheckValid(); err != nil {
 					return &pb.Response{Ok: false, Msg: "invalid deadline"}, nil
@@ -130,6 +135,7 @@ func (h pbHandler) Handle(ctx context.Context, req any) (any, error) {
 
 	r := h.fn(ctx, m)
 	presp := &pb.Response{Ok: r.OK, Msg: r.Msg, Action: r.Action, FallbackReason: r.FallbackReason}
+	presp.ImageStatus = r.ImageStatus
 	if r.Transcript != nil {
 		t := r.Transcript
 		presp.Transcript = &pb.Transcript{Text: t.Text, Language: t.Language, Engine: t.Engine, Model: t.Model}
@@ -202,6 +208,7 @@ func toPbEntry(e api.Entry) pb.Entry {
 				Id: source.ID, CapturedAt: timestamppb.New(source.CapturedAt),
 				Kind: source.Kind, OriginalText: source.OriginalText,
 				Language: source.Language, SttEngine: source.STTEngine, SttModel: source.STTModel,
+				Images: toPbImageRefs(source.Images),
 			})
 		}
 	}
