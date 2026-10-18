@@ -2,15 +2,21 @@ package cli
 
 import (
 	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"image"
 	"image/png"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/mithrel/ginkgo/internal/blobstore"
+	"github.com/mithrel/ginkgo/internal/imagecontext"
 	"github.com/mithrel/ginkgo/internal/ipc"
 	"github.com/mithrel/ginkgo/pkg/api"
 )
@@ -22,6 +28,33 @@ func contextImagePath(t *testing.T) string {
 	path := filepath.Join(t.TempDir(), "screen.png")
 	require.NoError(t, os.WriteFile(path, b.Bytes(), 0600))
 	return path
+}
+
+func TestNoteImageExportPreservesOversizedOriginal(t *testing.T) {
+	data, err := os.ReadFile(contextImagePath(t))
+	require.NoError(t, err)
+	data = append(data, make([]byte, (4<<20)+1-len(data))...)
+	original, err := imagecontext.Decode(data, time.Unix(123, 0), "synthetic original")
+	require.NoError(t, err)
+	store := imagecontext.NewStore(blobstore.NewFileStore(t.TempDir()))
+	refs, err := store.Save(context.Background(), "work", []imagecontext.Image{original})
+	require.NoError(t, err)
+	hash := sha256.Sum256(data)
+	require.Equal(t, hex.EncodeToString(hash[:]), refs[0].SHA256)
+	entry := api.Entry{ID: "synthetic-note", Namespace: "work", Body: "Generated note", Provenance: &api.Provenance{Sources: []api.Source{{Images: refs}}}}
+	ctx, messages := startAICommandFake(t, ipc.Response{OK: true, Entry: &entry, ImageStatus: "retained originals; included reduced-size copies in AI request"})
+	cmd := newNoteImagesCmd()
+	cmd.SetContext(ctx)
+	getApp(cmd).Images = store
+	directory := t.TempDir()
+	cmd.SetArgs([]string{entry.ID, "--directory", directory})
+	cmd.SetOut(&bytes.Buffer{})
+	require.NoError(t, cmd.Execute())
+	require.Equal(t, "note.show", (<-messages).Name)
+	exported, err := os.ReadFile(filepath.Join(directory, refs[0].ID+".png"))
+	require.NoError(t, err)
+	require.Equal(t, hash, sha256.Sum256(exported))
+	require.Equal(t, data, exported)
 }
 
 func TestExplicitContextCommandsWithoutAutomaticCapture(t *testing.T) {

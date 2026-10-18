@@ -14,7 +14,7 @@ import (
 
 // CLIOptions configures an explicitly trusted, foreground generation wrapper.
 // Executable and Args are fixed administrator input, never model output. The
-// wrapper reads one Request JSON object from stdin and writes exactly one
+// wrapper reads a historical system/prompt/images JSON object from stdin and writes exactly one
 // Response JSON object to stdout (no events or diagnostic text). Diagnostics go
 // to stderr and are intentionally not included in errors, to avoid leaking notes
 // or credentials. The wrapper MUST disable tools/hooks/integrations, start fresh
@@ -68,7 +68,13 @@ func (p *CLIProvider) Complete(parent context.Context, request Request) (Respons
 	if len(request.System) > p.options.MaxInputBytes || len(request.Prompt) > p.options.MaxInputBytes-len(request.System) {
 		return Response{}, ErrInputLimit
 	}
-	input, err := json.Marshal(request)
+	// Preserve strict existing wrapper contracts as shared Request grows. Native
+	// model/variant/schema fields are deliberately not part of this wire format.
+	input, err := json.Marshal(struct {
+		System string               `json:"system"`
+		Prompt string               `json:"prompt"`
+		Images []imagecontext.Image `json:"images,omitempty"`
+	}{request.System, request.Prompt, request.Images})
 	if err != nil {
 		return Response{}, fmt.Errorf("encode ai request: %w", err)
 	}

@@ -90,3 +90,33 @@ func TestAIDisabledConfigDoesNotValidateProviders(t *testing.T) {
 	require.NoError(t, Load(context.Background(), v))
 	require.NoError(t, CheckConfigValidity(v))
 }
+
+func TestNativeProviderFieldsSurviveConfigUpdate(t *testing.T) {
+	text := `[ai]
+enabled = true
+provider = "native"
+[ai.providers.native]
+type = "opencode-native"
+executable = "/custom/opencode"
+model = "provider/model"
+variant = "high"
+temp_dir = "/private/sessions"
+ephemeral_auth = true
+image_input = "auto"
+[ai.providers.code]
+type = "codex"
+variant = "medium"
+[ai.providers.claude]
+type = "claude-code"
+`
+	updated, _ := UpdateTOML(text)
+	v := viper.New()
+	v.SetConfigType("toml")
+	require.NoError(t, v.ReadConfig(strings.NewReader(updated)))
+	require.Equal(t, "opencode-native", v.GetString("ai.providers.native.type"))
+	require.Equal(t, "high", v.GetString("ai.providers.native.variant"))
+	require.Equal(t, "/private/sessions", v.GetString("ai.providers.native.temp_dir"))
+	require.True(t, v.GetBool("ai.providers.native.ephemeral_auth"))
+	require.Equal(t, "codex", v.GetString("ai.providers.code.type"))
+	require.Equal(t, "claude-code", v.GetString("ai.providers.claude.type"))
+}

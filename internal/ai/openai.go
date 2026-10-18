@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
+	"time"
 
 	"github.com/mithrel/ginkgo/internal/imagecontext"
 )
@@ -28,8 +28,9 @@ type OpenAIOptions struct {
 // OpenAIProvider performs stateless, non-streaming, tool-free chat completion.
 type OpenAIProvider struct {
 	options      OpenAIOptions
-	capMu        sync.Mutex
+	capMu        capabilityGate
 	capabilities *Capabilities
+	capExpires   time.Time
 }
 
 // NewOpenAI validates options without contacting the endpoint.
@@ -52,7 +53,15 @@ func NewOpenAI(options OpenAIOptions) (*OpenAIProvider, error) {
 
 // Complete sends only system/user messages; no tools or executable instructions
 // are supplied. Truncated completions and attempted tool calls fail closed.
-func (p *OpenAIProvider) Complete(parent context.Context, request Request) (Response, error) {
+func (p *OpenAIProvider) Complete(parent context.Context, request Request) (completion Response, completionErr error) {
+	wantedImages := len(request.Images) != 0
+	submittedImages := false
+	submissionKnown := true
+	defer func() {
+		if wantedImages && submissionKnown {
+			completion.ImagesSubmitted = &submittedImages
+		}
+	}()
 	if len(request.System) > p.options.MaxInputBytes || len(request.Prompt) > p.options.MaxInputBytes-len(request.System) {
 		return Response{}, ErrInputLimit
 	}
@@ -111,6 +120,7 @@ func (p *OpenAIProvider) Complete(parent context.Context, request Request) (Resp
 	transport := &http.Transport{Proxy: http.ProxyFromEnvironment}
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	submissionKnown = false
 	result, err := client.Do(httpRequest)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -120,6 +130,8 @@ func (p *OpenAIProvider) Complete(parent context.Context, request Request) (Resp
 		return Response{}, fmt.Errorf("openai request transport failed")
 	}
 	defer result.Body.Close()
+	submissionKnown = true
+	submittedImages = len(request.Images) != 0
 	output, err := io.ReadAll(io.LimitReader(result.Body, int64(p.options.MaxOutputBytes)+1))
 	if len(output) > p.options.MaxOutputBytes {
 		return Response{}, ErrOutputLimit

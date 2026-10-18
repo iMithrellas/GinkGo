@@ -95,16 +95,47 @@ image_input = "auto"            # auto | supported | unsupported
   selected model accept the extended request's `images` array. Each image carries
   base64 `data`, `media_type`, dimensions, capture time, and a short label. `auto`
   is unknown for generic wrappers.
-- **OpenCode / OpenCode session:** the generation-only endpoints currently accept
+- **OpenCode native:** `type = "opencode-native"` uses the V2 session prompt API
+  with inline image attachments and actual model `capabilities.input` metadata.
+  It is separate from the existing generation-only endpoint modes. Audited
+  releases require a conservative **4 MiB per-image wire bound** to avoid an
+  upstream Base64-validation failure. Original acceptance remains 8 MiB/image
+  and 12 MiB/batch. Larger inputs receive locally prepared smaller AI copies,
+  preferring full-resolution lossless recompression, then high-quality JPEG for
+  opaque inputs, then proportional downscaling. Transparency remains PNG, and
+  already-small inputs are unchanged. Full originals remain attached/exported
+  exactly as captured. `image_status` explicitly reports reduced-size copies and
+  whether their submission was confirmed. Copies can lose fine detail; they are
+  never written as replacements for originals or hosted externally. If preparing
+  a whole valid batch fails, it is skipped explicitly while text processing
+  continues.
+- **Codex / Claude Code:** native protocols carry images directly rather than
+  asking an agent to open local files with a tool. Native authentication and
+  isolation requirements are version/profile-specific; see the
+  [provider support matrix](ai-providers.md). Claude's model metadata has no
+  vision field, so documented image support needs an explicit declaration.
+- **OpenCode / OpenCode session:** the original generation-only endpoints accept
   only a text `prompt`. Images are skipped even when the underlying model supports
   vision or `image_input` is declared supported. The current contracts are listed
   in the [V2 API reference](https://opencode.ai/v2/docs/api/).
 
-Text-only requests do not probe image capabilities. Capability probing sends no
-note or screenshot content. Explicit attachments still persist locally when
+Ordinary non-AI note commands and AI-disabled flows do not start providers or
+probe them. Native AI text requests may still resolve the selected model as part
+of their protocol. Capability probing sends no note or screenshot content.
+The daemon reuses provider owners and bounded metadata caches; saved voice AI
+warms discovery before the wake listener, not inside a wake callback.
+Explicit attachments still persist locally when
 unsupported; `image_status` in AI results and `note.saved` voice events describes
 whether images were included in the request or skipped. Automatic capability
 skips and capture failures are reported through the voice events stream.
+
+An adapter may impose tighter image count, byte, dimension, or encoded-request
+limits. An adapter may prepare smaller AI-only copies within these limits and
+report that transformation explicitly. A batch that cannot be prepared within
+known preflight limits is skipped as a whole while text processing continues;
+GinkGo never silently drops a subset or changes stored originals. A transport
+failure may leave submission unconfirmed, which
+is distinct from confirmed submission or a confirmed preflight skip.
 
 ## Prompt-controlled use
 

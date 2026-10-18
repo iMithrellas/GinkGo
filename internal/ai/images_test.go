@@ -41,6 +41,7 @@ func TestOpenAIImageCapabilitiesAndTransport(t *testing.T) {
 		{"unknown", `{"id":"test"}`, "", Unknown},
 		{"different model", `{"id":"other","input_modalities":["image"]}`, "", Unknown},
 		{"declared image support", `{}`, "supported", Supported},
+		{"declaration cannot override text model", `{"id":"test","input_modalities":["text"]}`, "supported", Unsupported},
 		{"explicitly disabled", `{"id":"test","input_modalities":["image"]}`, "unsupported", Unsupported},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -84,7 +85,7 @@ func TestOpenAIImageCapabilitiesAndTransport(t *testing.T) {
 			require.Equal(t, tc.want, caps.ImageInput)
 			_, err = p.Complete(context.Background(), Request{Prompt: "note", Images: []imagecontext.Image{im}})
 			require.NoError(t, err)
-			if tc.override == "" {
+			if tc.override != "unsupported" {
 				require.Equal(t, 1, metadataCalls)
 			} else {
 				require.Zero(t, metadataCalls)

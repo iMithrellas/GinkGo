@@ -58,9 +58,15 @@ func newSessionImages(ctx context.Context, v *voiceRuntime, m ipc.Message) *sess
 		message: m,
 		ctx:     ctx,
 	}
-	if m.Save && m.Mode == "ai" && v.autoScreenshot && v.ai != nil {
-		s.automatic = v.ai.ImageSupport(ctx, m.Provider) == ai.Supported
-		if !s.automatic && ctx.Err() == nil && v.events != nil {
+	if m.Save && m.Mode == "ai" && v.ai != nil {
+		// Resolve/warm once before starting the wake worker, never on a wake
+		// callback or capture path. Raw/non-saving voice never touches AI.
+		if v.autoScreenshot {
+			s.automatic = v.ai.ImageSupport(ctx, m.Provider) == ai.Supported
+		} else {
+			v.ai.Warm(ctx, m.Provider)
+		}
+		if v.autoScreenshot && !s.automatic && ctx.Err() == nil && v.events != nil {
 			_ = v.events.Publish(voiceevents.Event{Type: "error", Error: "Automatic screenshots skipped: model or adapter image support is unsupported or unknown"})
 		}
 	}

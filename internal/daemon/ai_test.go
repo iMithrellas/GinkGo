@@ -46,3 +46,26 @@ func TestLazyAIProviderConstruction(t *testing.T) {
 	_, err = resolveAIProvider(v, "missing")
 	require.Error(t, err)
 }
+
+func TestLazyNativeAIProviderConstruction(t *testing.T) {
+	for _, tc := range []struct {
+		kind string
+		want ai.Provider
+	}{
+		{"opencode-native", &ai.OpenCodeNativeProvider{}},
+		{"codex", &ai.CodexProvider{}},
+		{"claude-code", &ai.ClaudeCodeProvider{}},
+	} {
+		t.Run(tc.kind, func(t *testing.T) {
+			v := viper.New()
+			v.Set("ai.enabled", true)
+			v.Set("ai.providers.native.type", tc.kind)
+			v.Set("ai.providers.native.executable", "/does/not/exist")
+			v.Set("ai.providers.native.auth_home", "/does/not/exist/profile")
+			p, err := resolveAIProvider(v, "native")
+			require.NoError(t, err, "construction must not inspect credentials, files, or executables")
+			require.IsType(t, tc.want, p)
+			require.NoError(t, p.(ai.ProviderCloser).Close())
+		})
+	}
+}

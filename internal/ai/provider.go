@@ -15,9 +15,12 @@ import (
 
 // Request contains system instructions, user context, and optional images.
 type Request struct {
-	System string               `json:"system"`
-	Prompt string               `json:"prompt"`
-	Images []imagecontext.Image `json:"images,omitempty"`
+	Model        string               `json:"model,omitempty"`
+	Variant      string               `json:"variant,omitempty"`
+	OutputSchema json.RawMessage      `json:"output_schema,omitempty"`
+	System       string               `json:"system"`
+	Prompt       string               `json:"prompt"`
+	Images       []imagecontext.Image `json:"images,omitempty"`
 }
 
 func decodeObject(input []byte, output any) error {
@@ -35,7 +38,28 @@ func decodeObject(input []byte, output any) error {
 // Response contains uninterpreted model output.
 type Response struct {
 	Text string `json:"text"`
+	// ImagesSubmitted, when present, reports transport submission, not image use.
+	ImagesSubmitted *bool `json:"images_submitted,omitempty"`
+	// ImagesTransformed reports application-prepared image copies, not a claim
+	// that the model used them. Meaningful only for included/ambiguous images.
+	ImagesTransformed bool `json:"images_transformed,omitempty"`
 }
+
+// nativePromptHTTPFailure preserves only a known admission stage and numeric
+// HTTP status for fixed diagnostics. The wrapped cause retains sentinel identity,
+// never upstream response bodies or messages in user-facing text.
+type nativePromptHTTPFailure struct {
+	status int
+	cause  error
+}
+
+func (e *nativePromptHTTPFailure) Error() string {
+	return fmt.Sprintf("native prompt admission returned HTTP %d", e.status)
+}
+func (e *nativePromptHTTPFailure) Unwrap() error { return e.cause }
+
+// ProviderCloser is optional; Close cancels and joins all owned operations.
+type ProviderCloser interface{ Close() error }
 
 // Provider generates text without performing application actions.
 type Provider interface {
@@ -56,6 +80,8 @@ type Options struct {
 var (
 	// ErrInputLimit indicates an oversized encoded request.
 	ErrInputLimit = errors.New("ai input exceeds byte limit")
+	// ErrImagePreparation means no complete, bounded image batch was prepared.
+	ErrImagePreparation = errors.New("ai image copies could not be prepared")
 	// ErrOutputLimit indicates oversized provider output (including framing).
 	ErrOutputLimit = errors.New("ai output exceeds byte limit")
 	// ErrProtocol indicates incompatible or malformed provider framing.
@@ -66,6 +92,9 @@ var (
 	ErrModelUnavailable = errors.New("ai provider model unavailable")
 	// ErrGenerationRestricted means the provider refuses generation-only use.
 	ErrGenerationRestricted = errors.New("ai provider rejects generation-only use")
+	// ErrIsolationUnavailable means this adapter/version cannot enforce the
+	// local generation-only isolation contract; it is not a model pricing policy.
+	ErrIsolationUnavailable = errors.New("ai provider generation isolation unavailable")
 	// ErrProviderUnavailable indicates an upstream availability failure.
 	ErrProviderUnavailable = errors.New("ai provider temporarily unavailable")
 	// ErrRateLimited indicates the provider rejected the request rate.

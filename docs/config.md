@@ -57,6 +57,14 @@ Namespace initialization asks about encryption and key storage. Before sharing
 a namespace, follow [sync key setup](sync.md#encryption-keys). Configure optional
 providers and audio backends in the [AI](ai.md) and [voice](voice.md) guides.
 
+AI provider tables are named (`[ai.providers.NAME]`); `ai.provider` chooses the
+default and an AI command's `--provider NAME` selects another configured table.
+Provider selection does not change namespace, tag, provenance, or attachment
+rules. Keep authentication in the native provider's supported login flow or the
+daemon's environment, not in TOML. Restart the daemon after provider changes so
+owned runtimes and cached model metadata use the new configuration. See the
+[provider support matrix](ai-providers.md) before choosing an executable version.
+
 For standard voice setup, run `ginkgo-cli voice setup`, then set `[voice]`
 `enabled = true` and `mode = "raw"` (or `"ai"`). Generated configuration keeps
 these common controls prominent. Advanced voice settings use built-in defaults

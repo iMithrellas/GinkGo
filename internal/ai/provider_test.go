@@ -71,6 +71,18 @@ func TestProviderHelper(t *testing.T) {
 	if strings.HasPrefix(mode, "cli-") {
 		input, _ := io.ReadAll(os.Stdin)
 		switch mode {
+		case "cli-strict-historical-note":
+			var request struct {
+				System string            `json:"system"`
+				Prompt string            `json:"prompt"`
+				Images []json.RawMessage `json:"images,omitempty"`
+			}
+			decoder := json.NewDecoder(strings.NewReader(string(input)))
+			decoder.DisallowUnknownFields()
+			if decoder.Decode(&request) != nil || request.System == "" || request.Prompt == "" || len(request.Images) != 1 {
+				os.Exit(2)
+			}
+			_ = json.NewEncoder(os.Stdout).Encode(Response{Text: `{"action":"create_note","title":"Strict wrapper","body":"Generated body","tags":["work"]}`})
 		case "cli-ok":
 			var request Request
 			if err := json.Unmarshal(input, &request); err != nil {

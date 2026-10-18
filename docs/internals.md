@@ -43,6 +43,37 @@ versioned migration plan. Full JSON/protobuf and replication carry source histor
 ordinary note display, search, and AI context omit it. See
 [storage and export handling](usage.md#export-import-and-originals).
 
+## AI provider boundary
+
+All backends implement `ai.Provider.Complete(context.Context, Request)`. The
+request keeps application instructions separate from user/context text and
+carries ordered, validated image inputs. Optional model/variant selection and a
+generic JSON schema belong to the provider contract, not to the voice or CLI
+protocol. Provider adapters own wire encoding, authentication, model resolution,
+execution controls, and extraction of the completed answer. Reasoning, tool
+events, progress, and partial responses are not note drafts.
+
+`CapabilityProvider` discovers metadata without submitting note content or
+performing inference. Effective image support is the intersection of model,
+transport, and configuration: `supported`, `unsupported`, or `unknown`. An
+explicit declaration may fill missing model metadata, but cannot make a
+text-only transport accept images. Unknown support skips visual submission,
+not text processing or original retention. See [image context](image-context.md).
+
+Providers are siblings: none invokes another coding agent. Runtime ownership is
+explicit and optional; an ordinary HTTP adapter does not need a session API.
+Persistent runtimes are daemon-owned, but each note gets a fresh generation
+context. Capability caches must expire, transient failures must be retryable,
+and an ambiguously accepted generation must not be replayed after a crash.
+
+Native subscription authentication stays with the native executable: GinkGo
+does not read/copy OAuth tokens, implement refresh, or silently change billing
+paths. Codex/Claude generation-only controls remove model-callable action tools;
+they are not a sandbox around native authentication or mandatory organization
+policy. Managed startup hooks, policy loading, metadata traffic, and disk writes
+can still occur. Reject actual incompatible tool/MCP requirements rather than
+account plans, and describe native-policy effects separately from model tools.
+
 ## AI write boundary
 
 `Provider.Complete` returns untrusted output. The service selects namespace-bound
@@ -52,6 +83,12 @@ code assigns provenance and timestamps. Expansions use compare-and-swap and
 append without retries on conflict. Error handling follows the
 [fallback contract](ai.md#fallbacks-and-errors). Returned reasons use fixed
 application messages to avoid exposing provider diagnostics.
+
+Provider-side schemas only improve generation. They never replace GinkGo's
+strict proposal validation, namespace/target checks, byte budgets, tag policy,
+or compare-and-swap boundary. Screenshot capture, image relevance instructions,
+original text and image retention, attachment storage, and sync remain GinkGo
+responsibilities. Historical attachments are not resent with candidate notes.
 
 Drafts require a nonempty final normalized tag set. Creation merges defaults,
 explicit tags, and draft tags; expansion merges target and explicit tags with

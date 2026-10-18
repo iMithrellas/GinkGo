@@ -44,6 +44,13 @@ func Run(ctx context.Context, app *wire.App) (runErr error) {
 	defer cancel()
 	daemonCtx := ctx
 	aiNotes := newAINoteService(app)
+	// Closing native owners must begin on cancellation, before serving/voice
+	// joins: a handler may itself be waiting for a provider-owned process.
+	stopAIShutdown := context.AfterFunc(daemonCtx, func() { _ = aiNotes.Close() })
+	defer func() {
+		stopAIShutdown()
+		runErr = errors.Join(runErr, aiNotes.Close())
+	}()
 	voiceNotes := newVoiceRuntime(app, aiNotes)
 	voiceNotes.root = daemonCtx
 	voiceNotes.syncNote = func(ctx context.Context) { _ = app.Syncer.SyncNow(ctx) }
@@ -406,10 +413,10 @@ func newAINoteService(app *wire.App) *ai.Service {
 	if limit <= 0 {
 		limit = 8
 	}
-	return ai.NewService(app.Store.Entries, func(name string) (ai.Provider, error) {
-		return resolveAIProvider(app.Cfg, name)
-	}, ai.ServiceOptions{
-		Enabled: app.Cfg.GetBool("ai.enabled"), DefaultNamespace: app.Cfg.GetString("namespace"),
+	registry := ai.NewRegistry(5 * time.Minute)
+	return ai.NewService(app.Store.Entries, cachedAIResolver(app.Cfg, registry), ai.ServiceOptions{
+		Registry: registry,
+		Enabled:  app.Cfg.GetBool("ai.enabled"), DefaultNamespace: app.Cfg.GetString("namespace"),
 		DefaultTags: app.Cfg.GetStringSlice("default_tags"), ContextLimit: limit,
 		MaxInputBytes: 256 * 1024, MaxContextBytes: 256 * 1024,
 		SystemPrompt: app.Cfg.GetString("ai.notes.system_prompt"),

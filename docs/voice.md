@@ -211,6 +211,12 @@ ginkgo-cli voice stream --save --trigger GINKGO --mode ai --provider opencode
 AI processes each selected transcript as a new note request and preserves it as
 the original. See [AI fallbacks and privacy](ai.md#fallbacks-and-errors).
 
+Native OpenCode, Codex, and Claude Code use this same pipeline; pass the name of
+their configured provider table with `--provider`, not an executable name.
+Their [version and authentication requirements](ai-providers.md) still apply.
+Saved AI voice warms model discovery before the wake listener; raw notes and
+caption-only streams do not start AI providers.
+
 Optional [screenshot context](image-context.md) captures a window, focused monitor,
 or all monitors on each accepted Sherpa AI wake. Automatic capture requires known
 model/adapter image support; explicit `context attach` and `context capture`

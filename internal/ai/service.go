@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -45,6 +46,16 @@ type ServiceOptions struct {
 	MaxContextBytes  int
 	SystemPrompt     string
 	Images           imagecontext.Store
+	// Registry is optional and owned by this service's daemon lifetime.
+	Registry *Registry
+}
+
+// Close shuts down daemon-owned providers. Ordinary services have no resources.
+func (s *Service) Close() error {
+	if s.options.Registry != nil {
+		return s.options.Registry.Close()
+	}
+	return nil
 }
 
 // Service coordinates one bounded inference at a time with ordinary note writes.
@@ -92,7 +103,10 @@ func NewService(repo db.EntryRepo, resolve func(string) (Provider, error), optio
 // wrappers and resolvers can return untrusted text containing secrets or input.
 // Only sentinel identity selects an application-owned diagnostic.
 func providerFallbackReason(err error) string {
+	var admission *nativePromptHTTPFailure
 	switch {
+	case errors.Is(err, ErrIsolationUnavailable):
+		return "AI provider/version cannot enforce generation-only isolation; consult the provider/version support matrix and choose a supported provider/version"
 	case errors.Is(err, ErrGenerationRestricted):
 		return "AI model's free-tier policy rejects generation-only use; choose a provider/model supporting tool-free generation (tools remain disabled)"
 	case errors.Is(err, ErrOpenCodeConsole):
@@ -115,6 +129,8 @@ func providerFallbackReason(err error) string {
 		return "AI provider output exceeds the configured limit"
 	case errors.Is(err, ErrProtocol):
 		return "AI provider returned an incompatible response; check adapter/provider version compatibility"
+	case errors.As(err, &admission) && admission.status >= 100 && admission.status <= 599:
+		return fmt.Sprintf("AI provider prompt admission failed (HTTP %d); check native provider/version compatibility and image input limits", admission.status)
 	default:
 		return "AI provider failed; check provider configuration, model access and connectivity"
 	}
@@ -236,13 +252,26 @@ func (s *Service) Note(ctx context.Context, request NoteRequest, providerName st
 		return raw(providerFallbackReason(err))
 	}
 	var images []imagecontext.Image
+	var imageCaps Capabilities
 	if len(request.Images) != 0 {
 		caps, err := ProviderCapabilities(ctx, provider)
+		imageCaps = caps
 		if err == nil && caps.ImageInput == Supported {
-			images = request.Images
-			imageStatus = "retained; included in AI request"
+			if imagesFitCapabilities(request.Images, caps) {
+				images = request.Images
+				imageStatus = "retained; AI image submission unconfirmed"
+			} else {
+				imageStatus = "retained; skipped because images exceed adapter format or size limits"
+			}
 		} else {
-			imageStatus = "retained; skipped because model or adapter image support is unavailable"
+			switch {
+			case err != nil:
+				imageStatus = "retained; skipped because image capability discovery failed"
+			case caps.ImageInput == Unsupported:
+				imageStatus = "retained; skipped because model or adapter image support is disabled or unsupported"
+			default:
+				imageStatus = "retained; skipped because model or adapter image support is unknown"
+			}
 		}
 	}
 	// Share only the source kind, not capture metadata or earlier originals.
@@ -250,20 +279,63 @@ func (s *Service) Note(ctx context.Context, request NoteRequest, providerName st
 	if request.Source != nil && request.Source.Kind == "voice" {
 		inputKind = "voice"
 	}
-	prompt, _ := json.Marshal(struct {
-		Input      string        `json:"input"`
-		InputKind  string        `json:"input_kind"`
-		Action     string        `json:"action"`
-		TargetID   string        `json:"target_id,omitempty"`
-		Notes      []noteContext `json:"notes"`
-		Tags       tagHints      `json:"tag_context"`
-		ImageCount int           `json:"image_count,omitempty"`
-	}{request.Text, inputKind, request.Action, request.NoteID, candidates.views, hints, len(images)})
+	makePrompt := func(imageCount int) string {
+		prompt, _ := json.Marshal(struct {
+			Input      string        `json:"input"`
+			InputKind  string        `json:"input_kind"`
+			Action     string        `json:"action"`
+			TargetID   string        `json:"target_id,omitempty"`
+			Notes      []noteContext `json:"notes"`
+			Tags       tagHints      `json:"tag_context"`
+			ImageCount int           `json:"image_count,omitempty"`
+		}{request.Text, inputKind, request.Action, request.NoteID, candidates.views, hints, imageCount})
+		return string(prompt)
+	}
 	system := s.options.SystemPrompt
-	if len(request.Images) != 0 && !strings.Contains(system, ImageContextSystemPrompt) {
+	if len(request.Images) != 0 && !strings.HasSuffix(strings.TrimSpace(system), ImageContextSystemPrompt) {
 		system += "\n\n" + ImageContextSystemPrompt
 	}
-	response, err := provider.Complete(ctx, Request{System: system, Prompt: string(prompt), Images: images})
+	inference := Request{System: system, Prompt: makePrompt(len(images)), Images: images, OutputSchema: json.RawMessage(NoteProposalSchema)}
+	if len(images) != 0 {
+		fits := imageRequestFitsCapabilities(inference, imageCaps)
+		skipReason := "retained; skipped because images exceed adapter request limits"
+		if fits {
+			if preflight, ok := provider.(ImageRequestPreflighter); ok {
+				preflightErr := preflight.PreflightImages(ctx, inference)
+				fits = preflightErr == nil
+				if preflightErr != nil && !errors.Is(preflightErr, ErrInputLimit) {
+					// Discovery/authentication can also fail during exact preflight.
+					// Do not misreport those failures as a size limit or expose errors.
+					skipReason = "retained; skipped because provider image preflight failed"
+				}
+				if errors.Is(preflightErr, ErrImagePreparation) {
+					skipReason = "retained; skipped because reduced-size AI images could not be prepared within adapter limits"
+				}
+			}
+		}
+		if err := ctx.Err(); err != nil {
+			return NoteResult{}, err
+		}
+		if !fits {
+			images = nil
+			inference.Images = nil
+			inference.Prompt = makePrompt(0)
+			imageStatus = skipReason
+		}
+	}
+	response, err := provider.Complete(ctx, inference)
+	if len(images) != 0 {
+		if response.ImagesSubmitted != nil && !*response.ImagesSubmitted {
+			imageStatus = "retained; not sent to AI"
+		} else if response.ImagesTransformed {
+			imageStatus = "retained originals; reduced-size image submission unconfirmed"
+			if err == nil || response.ImagesSubmitted != nil && *response.ImagesSubmitted {
+				imageStatus = "retained originals; included reduced-size copies in AI request"
+			}
+		} else if err == nil || (response.ImagesSubmitted != nil && *response.ImagesSubmitted) {
+			imageStatus = "retained; included in AI request"
+		}
+	}
 	// Only the request's context controls whether saving is forbidden. An
 	// adapter's shorter local timeout is a provider failure, not cancellation
 	// of the incoming note, and must preserve its text through raw fallback.
@@ -302,6 +374,42 @@ func (s *Service) Note(ctx context.Context, request NoteRequest, providerName st
 		return NoteResult{}, err
 	}
 	return NoteResult{Entry: entry, Action: draft.Action}, nil
+}
+
+func imagesFitCapabilities(images []imagecontext.Image, caps Capabilities) bool {
+	if caps.MaxImages > 0 && len(images) > caps.MaxImages {
+		return false
+	}
+	total := 0
+	for _, im := range images {
+		total += len(im.Data)
+		if caps.MaxTotalImageBytes > 0 && total > caps.MaxTotalImageBytes {
+			return false
+		}
+		if caps.MaxImageWidth > 0 && im.Width > caps.MaxImageWidth {
+			return false
+		}
+		if caps.MaxImageHeight > 0 && im.Height > caps.MaxImageHeight {
+			return false
+		}
+		if caps.MaxImageBytes > 0 && len(im.Data) > caps.MaxImageBytes {
+			return false
+		}
+		if len(caps.ImageMediaTypes) > 0 && !slices.Contains(caps.ImageMediaTypes, im.MediaType) {
+			return false
+		}
+	}
+	return true
+}
+
+func imageRequestFitsCapabilities(request Request, caps Capabilities) bool {
+	if caps.MaxRequestBytes <= 0 {
+		return true
+	}
+	// Marshal the actual prompt and system strings: using their unencoded byte
+	// lengths would undercount JSON escaping, especially nested user JSON.
+	encoded, err := json.Marshal(request)
+	return err == nil && len(encoded) <= caps.MaxRequestBytes-(64<<10)
 }
 
 const (

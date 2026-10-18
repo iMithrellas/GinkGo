@@ -47,9 +47,12 @@ func namespaceFields() []ConfigOption {
 
 func providerFields() []ConfigOption {
 	return []ConfigOption{
-		{Key: "type", Default: "", Comment: "opencode, opencode-session, cli or openai-compatible; defaults to opencode for the provider named opencode"},
+		{Key: "type", Default: "", Comment: "opencode, opencode-session, opencode-native, codex, claude-code, cli or openai-compatible; defaults to opencode for the provider named opencode"},
 		{Key: "executable", Default: "", Comment: "Provider executable; OpenCode providers default to opencode"},
 		{Key: "model", Default: "", Comment: "Provider model identifier"},
+		{Key: "variant", Default: "", Comment: "Native provider model variant or reasoning effort"},
+		{Key: "temp_dir", Default: "", Comment: "Parent directory for isolated native provider sessions"},
+		{Key: "auth_home", Default: "", Comment: "Codex: dedicated clean native login profile (absolute CODEX_HOME path)"},
 		{Key: "image_input", Default: "auto", Comment: "Selected model image support: auto (metadata, unknown skips), supported, unsupported; adapter must also accept images"},
 		{Key: "args", Default: []string{}, Comment: "Arguments for CLI providers"},
 		{Key: "adapter", Default: "", Comment: "Legacy CLI adapter: opencode selects the OpenCode provider"},

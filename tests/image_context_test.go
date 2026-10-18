@@ -31,6 +31,11 @@ func TestE2E_ImageContext(t *testing.T) {
 	t.Setenv("XDG_RUNTIME_DIR", root)
 	requests := make(chan int, 4)
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			require.Equal(t, "/models/test", r.URL.Path)
+			_, _ = w.Write([]byte(`{"id":"test","input_modalities":["text","image"]}`))
+			return
+		}
 		var request struct {
 			Messages []struct{ Content json.RawMessage }
 		}

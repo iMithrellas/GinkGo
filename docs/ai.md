@@ -7,6 +7,12 @@
 Merge the settings below into your [configuration](config.md), then restart the
 daemon. Provider names are arbitrary; select one with `ai.provider` or `--provider`.
 
+For native multimodal integrations, use the explicit types `opencode-native`,
+`codex`, or `claude-code`; the original `opencode` and `opencode-session` types
+retain their text-only behavior. Read the [provider support/version matrix and
+isolation requirements](ai-providers.md) first. The examples below preserve the
+existing generation-only OpenCode configuration.
+
 ```toml
 [ai]
 enabled = true
@@ -63,7 +69,7 @@ keep work in its foreground process group so cancellation can terminate it.
 
 </details>
 
-Credentials come from the daemon's environment or OpenCode auth store. Avoid
+Credentials come from the daemon's environment or the selected native login. Avoid
 putting them in TOML, command arguments, or logs. A service can have a different
 `HOME`, `PATH`, and environment from your shell; verify those settings without
 printing secrets.
@@ -93,7 +99,8 @@ model capability checks, prompt-controlled use, original storage, and sync.
 
 To customize cleanup and terminology, edit `ai.notes.system_prompt`. Start from
 the generated default and preserve its JSON response contract: `action`, `title`,
-`body`, `tags`, and `target_id` for expansion. The final merged tag set must be
+`body`, `tags`, and `target_id` (null for creation, an eligible ID for expansion).
+Historical drafts that omit the creation target remain valid. The final merged tag set must be
 nonempty. See [draft validation](internals.md#ai-write-boundary) for the rules.
 
 ## Fallbacks and errors
@@ -105,10 +112,31 @@ save the exact input as a new raw note. Inspect `action`, `entry.id`, and
 | Symptom | Check |
 | --- | --- |
 | Raw note after changing settings | Confirm `ai.enabled`, provider name, and the daemon's config; restart after edits. |
-| Authentication or model error | Check daemon profile/environment, OpenCode version, and model access. |
+| Authentication or model error | Check daemon profile/environment, executable version, and model access. |
+| Generation isolation unavailable | Check the native provider's supported version/profile requirements; GinkGo will not enable agent tools or unrelated integrations to make generation work. |
 | Free-tier generation restriction | Choose a model/provider that permits the selected generation endpoint. |
 | Expansion produced a new note | Inspect the fallback reason; a concurrent edit or invalid draft can cause this. |
 | Timeout | Check provider connectivity and `ai.timeout`. |
 
 Provider requests can expose input and candidate note bodies independently of
 sync encryption. Local copies follow the [storage rules](usage.md#export-import-and-originals).
+
+## Verification
+
+Normal tests use fake executables and protocol servers; they require no provider
+account, paid inference, network service, or running desktop. They verify the
+wire contract and GinkGo's behavior, not a provider's live model availability.
+
+```sh
+go test ./...
+go test -race ./internal/ai ./internal/daemon ./internal/imagecontext ./tests
+go vet ./...
+make build
+```
+
+`TestE2E_AIImageRetentionAndExport` crosses the real CLI, IPC, daemon, compatible
+HTTP adapter, and original-image store. It verifies ordered image bytes,
+explicit attachments with automatic capture disabled, unsupported-model text
+processing, raw fallback, namespace-scoped export, one-shot staging consumption,
+and omission of historical attachments. Attachment sync tests separately verify
+encrypted transfer, integrity, retries, and text availability before images.
