@@ -54,6 +54,22 @@ func validateStreamEnabled(v *viper.Viper, key string) error {
 	return nil
 }
 
+func validateVoiceAutostart(v *viper.Viper, key string) error {
+	if !v.GetBool(key) {
+		return nil
+	}
+	if !v.GetBool("voice.enabled") || !VoiceFeatureEnabled(v, "voice.stream.enabled") || !VoiceFeatureEnabled(v, "voice.events.enabled") {
+		return fmt.Errorf("%s requires voice.enabled, voice.stream.enabled and voice.events.enabled", key)
+	}
+	if VoiceStreamBackend(v) != "sherpa" {
+		return fmt.Errorf("%s requires the sherpa stream backend", key)
+	}
+	if mode := v.GetString("voice.mode"); mode != "" && mode != "raw" && mode != "ai" {
+		return fmt.Errorf("voice.mode must be raw or ai")
+	}
+	return nil
+}
+
 func streamDuration(min, max time.Duration) func(*viper.Viper, string) error {
 	return func(v *viper.Viper, key string) error {
 		if !v.GetBool("voice.enabled") || !VoiceFeatureEnabled(v, "voice.stream.enabled") {

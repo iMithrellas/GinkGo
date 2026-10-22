@@ -72,6 +72,12 @@ and automatic discovery; all existing keys and environment overrides remain
 supported. `config generate --update` preserves advanced values already present
 without adding the advanced settings to a basic config.
 
+Set `voice.autostart = true` to start wake-gated Sherpa capture with saving on
+daemon startup. It defaults to `false`, uses `voice.mode` and the default namespace,
+and requires enabled voice streaming and events. Manual stop/cancel leaves capture
+stopped until another explicit start or daemon restart. See [persistent voice
+capture](voice.md#persistent-capture-and-autostart) for renewal and service behavior.
+
 ## Local daemon listener
 
 Besides its Unix IPC socket, the daemon starts an unauthenticated, health-only

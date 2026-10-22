@@ -348,7 +348,11 @@ func Run(ctx context.Context, app *wire.App) (runErr error) {
 			return ipc.Response{OK: false, Msg: "unknown command"}
 		}
 	})
-	listener := daemonIPCListener{Listener: transport.UnixListener{Path: sock}, cancel: cancel}
+	listener := daemonIPCListener{Listener: transport.UnixListener{Path: sock}, cancel: cancel, ready: func() {
+		if err := voiceNotes.autostartVoice(ctx); err != nil {
+			log.Print(err)
+		}
+	}}
 	return serveDaemonLifetime(ctx, cancel, srv, transport.NewUnixServer(listener), handler)
 }
 
@@ -358,6 +362,7 @@ func Run(ctx context.Context, app *wire.App) (runErr error) {
 type daemonIPCListener struct {
 	transport.Listener
 	cancel context.CancelFunc
+	ready  func()
 }
 
 func (l daemonIPCListener) Listen(ctx context.Context) (net.Listener, error) {
@@ -365,6 +370,9 @@ func (l daemonIPCListener) Listen(ctx context.Context) (net.Listener, error) {
 	if err != nil {
 		l.cancel()
 		return nil, err
+	}
+	if l.ready != nil {
+		l.ready()
 	}
 	return daemonAcceptListener{Listener: listener, cancel: l.cancel}, nil
 }

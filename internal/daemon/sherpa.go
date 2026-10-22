@@ -58,7 +58,7 @@ func (v *voiceRuntime) startSherpa(ctx context.Context, m ipc.Message) ipc.Respo
 	if err := ctx.Err(); err != nil {
 		return ipc.Response{Msg: err.Error()}
 	}
-	// Only an explicit enabled stream request resolves executables. No constructor,
+	// Explicit streams and configured autostart resolve executables. No constructor,
 	// status, watcher, disable, or ordinary Whisper request reaches this code.
 	recorder, err := installedExecutable(s.GetString("voice.capture.executable"))
 	if err != nil {
@@ -224,7 +224,7 @@ func (s *sherpaIngest) emit(e voiceworker.Event) error {
 	case "error":
 		return s.fail() // Never expose raw native errors, stderr, or model paths.
 	case "stopped":
-		err = s.state(false)
+		err = s.v.events.UpdateState(voiceevents.State{})
 	default:
 		return s.fail()
 	}
@@ -240,7 +240,7 @@ func (v *voiceRuntime) runSherpa(ctx context.Context, j *listenJob, m ipc.Messag
 	s.images = newSessionImages(ctx, v, m)
 	runDone := make(chan error, 1)
 	go func() {
-		err := runner.Run(ctx, c, j.stop, s.emit)
+		err := runContinuousVoice(ctx, runner, c, j.stop, s.emit, voiceEpochDuration, voiceEpochIdentities)
 		s.mu.Lock() // Join any callback in the gate, reject all late callbacks.
 		s.sealed = true
 		if err != nil && ctx.Err() == nil {

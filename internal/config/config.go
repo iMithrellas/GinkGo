@@ -136,6 +136,7 @@ func GetConfigOptions() []ConfigOption {
 		{Key: "editor.delete_empty", Default: true, Comment: "Delete note if editor exits with no content"},
 		{Key: "ai.enabled", Default: false, Comment: "Opt in to AI notes; disabled requests save raw fallback notes without launching providers"},
 		{Key: "voice.enabled", Default: false, Comment: "Enable local transcription and microphone capture after running voice setup"},
+		{Key: "voice.autostart", Default: false, Comment: "Start wake-gated Sherpa capture with saving when the daemon starts; uses voice.mode and the default namespace", Validate: validateVoiceAutostart},
 		{Key: "voice.mode", Default: "raw", Comment: "Saved note mode: raw or ai; AI failure preserves raw voice input"},
 		{Key: "voice.screenshot.automatic", Default: false, Comment: "Capture visual context on Sherpa AI note wakes when model and adapter support images; explicit context commands work independently"},
 		{Key: "voice.screenshot.mode", Default: "screen", Comment: "Capture target: window, screen, all-screens", Validate: screenshotMode},

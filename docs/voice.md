@@ -50,7 +50,40 @@ Setup does not edit configuration or enable capture.
 
 `enable` and `listen` always use Whisper. `stop` finishes active speech and drains
 accepted work; `disable` or `cancel` discards pending work and cancels inference.
-Only one microphone job runs at a time. A daemon restart leaves capture idle.
+Only one microphone job runs at a time. A daemon restart leaves capture idle unless
+`voice.autostart` is enabled.
+
+## Persistent capture and autostart
+
+Sherpa streams remain active until stopped, canceled, or an actual capture/helper
+error occurs. The daemon gracefully renews the native helper every four hours or
+2048 caption/note identities, before its native clock and replay-tracking limits.
+Renewal waits for an active selected note to finish, drains the helper, and starts
+a fresh helper. There is a brief capture gap while native models reload. The
+daemon job, queued saves, namespace, and conversation session survive renewal;
+native audio clocks restart and public utterance IDs remain unique.
+
+To start wake-gated capture automatically whenever the daemon starts, merge:
+
+```toml
+[voice]
+enabled = true
+autostart = true
+mode = "ai"                 # or "raw"
+```
+
+Autostart defaults to `false`, requires Sherpa streaming and events, and saves to
+the configured top-level `namespace` using the configured wake keyword. AI mode
+uses the configured AI provider. Models must already be installed with `voice setup`.
+Restart the daemon after changing the setting. With a user service, enable that
+service at login if desired; this setting starts voice when the daemon runs, not
+the daemon itself.
+
+`voice stop`, `voice cancel`, and `voice disable` keep capture stopped for the rest
+of that daemon run. Use `voice stream --save` to start it again manually. Setting
+`autostart = false` disables automatic capture on future daemon starts. Startup
+failures are reported in daemon logs and `voice status`; the note CLI stays usable.
+Real helper failures are surfaced rather than retried in a crash loop.
 
 <details>
 <summary>Legacy Whisper workflows: WAV transcription, dictation and captions</summary>
@@ -198,8 +231,8 @@ arbitrary wake phrases or substitute a different/quantized KWS model.
 `--trigger` selects a compiled label. Say “Hey Ginkgo”, then dictate in the same
 breath or shortly after. Wake-only speech saves nothing; missed or rejected wakes
 also produce no note. The original retains the full selected transcript, including
-the control phrase. Each run ends after eight hours or 4096 utterances/selections;
-restart it to continue.
+the control phrase. Native helper epochs are renewed automatically; the voice
+stream has no total time or note-count limit.
 
 ### Optional Sherpa AI processing
 
