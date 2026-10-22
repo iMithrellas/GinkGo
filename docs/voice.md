@@ -38,6 +38,22 @@ shows live events. AI mode also needs [AI setup](ai.md). Sherpa AI streams inter
 conversational commands and report failures without saving commands as raw notes.
 Setup does not edit configuration or enable capture.
 
+With Sherpa `--save` (including autostart), transcription runs only after an
+accepted wake word. Ambient speech is not transcribed. Wake detection and VAD
+remain active, and Parakeet stays loaded to avoid model-loading latency. Pre-roll
+preserves the start of the command; live previews continue during selected
+dictation. Final recognition also completes the preview without decoding the same
+audio again. CPU savings are greatest when background speech is present; the
+wake detector and VAD still use CPU during silence. Omit `--save` to explicitly
+request continuous ambient captions.
+
+The native helper runs VAD on one thread to avoid ONNX Runtime worker spinning
+between audio windows. ASR retains its configured parallelism.
+
+This behavior is implemented in the native `ginkgo-voice` helper. Updating only
+the CLI/daemon does not update an already installed helper; rebuild/install the
+native bundle and restart capture to activate it.
+
 ## Choose a workflow
 
 | Goal | Command | Engine and saving |

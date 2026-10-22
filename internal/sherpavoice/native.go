@@ -106,7 +106,10 @@ func OpenNative(c NativeConfig) (Frontend, Recognizer, error) {
 	if maxSpeech == 0 {
 		maxSpeech = 25000
 	}
-	f.vad = C.ginkgo_vad(str(c.Silero), C.int(c.Threads), C.float(float32(silence)/1000), C.float(float32(maxSpeech)/1000))
+	// VAD runs on every audio window. A second ONNX worker spends most of
+	// the time between these small inferences spinning; keep VAD on its
+	// calling thread while preserving ASR's configured parallelism.
+	f.vad = C.ginkgo_vad(str(c.Silero), C.int(1), C.float(float32(silence)/1000), C.float(float32(maxSpeech)/1000))
 	if f.vad == nil {
 		f.Close()
 		return nil, nil, errors.New("frontend initialization failed")

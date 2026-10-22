@@ -49,6 +49,7 @@ func TestSlowASRDoesNotBlockFrontendAndFinalOverflowFaults(t *testing.T) {
 	f := &fakeFront{frames: []fakeFrame{{activity: Activity{Segments: []Span{{0, 8000}}}}, {activity: Activity{Segments: []Span{{8000, 16000}}}}, {activity: Activity{Segments: []Span{{16000, 24000}}}}}}
 	c := DefaultEngineConfig()
 	c.FinalQueue = 1
+	c.RecordingEnabled = false
 	e, err := NewEngine(c, f, r, func(Event) error { return nil })
 	if err != nil {
 		t.Fatal(err)

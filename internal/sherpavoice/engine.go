@@ -31,7 +31,7 @@ type EngineConfig struct {
 	Cooldown            int
 	FinalQueue          int
 	PreRollSamples      int
-	RecordingEnabled    bool
+	RecordingEnabled    bool // Wake-gated ASR when true; ambient captions only when false.
 	SelectedKeyword     string
 	MaxRecordingSamples int
 }
@@ -43,18 +43,24 @@ func DefaultEngineConfig() EngineConfig {
 }
 
 type selection struct {
-	id, phrase       string
-	utterance        string
-	start, deadline  int64
-	wakeEnd, lastEnd int64
-	hasSpeech        bool
-	decided          bool
-	recording        bool
-	pending          int
-	active           bool
-	label            string
-	closingEnd       int64
-	endedCode        string
+	id, phrase                      string
+	utterance                       string
+	start, deadline                 int64
+	wakeEnd, lastEnd                int64
+	hasSpeech                       bool
+	decided                         bool
+	recording                       bool
+	pending                         int
+	active                          bool
+	label                           string
+	closingEnd                      int64
+	endedCode                       string
+	previewID                       string
+	previewRevision                 uint64
+	previewAt                       int64
+	previewText                     string
+	previewSpan                     Span
+	previewPublished, previewClosed bool
 }
 
 // Engine processes one capture clock. Process, Poll, Stop and Cancel must be
@@ -167,7 +173,7 @@ func (e *Engine) Process(p []float32) error {
 			continue
 		}
 		noteID := e.id("note")
-		s := &selection{id: noteID, utterance: noteID + "-audio", phrase: w.SpokenForm, label: w.Phrase, start: start, wakeEnd: w.End, deadline: w.End + int64(e.config.WakeTimeout), recording: true}
+		s := &selection{id: noteID, utterance: noteID + "-audio", phrase: w.SpokenForm, label: w.Phrase, start: start, wakeEnd: w.End, deadline: w.End + int64(e.config.WakeTimeout), recording: true, previewAt: e.ring.end}
 		e.cooldownUntil = e.ring.end + int64(e.config.Cooldown)
 		if err := e.retrigger(s); err != nil {
 			return err
@@ -207,7 +213,16 @@ func (e *Engine) Process(p []float32) error {
 			return err
 		}
 	}
-	if a.Speaking && e.captionID != "" && e.ring.end-e.previewAt >= int64(e.config.PreviewEvery) {
+	if e.config.RecordingEnabled {
+		// Wake-gated streams keep ASR loaded but never decode ambient speech.
+		// Only the announced selection publishes previews; deferred wakes wait
+		// for their own authority while their original PCM stays in the ring.
+		if s := e.gate; a.Speaking && s != nil && s.recording && !s.decided && e.deferred == nil && e.ring.end-s.previewAt >= int64(e.config.PreviewEvery) {
+			if err := e.submitSelectedPreview(s); err != nil {
+				return err
+			}
+		}
+	} else if a.Speaking && e.captionID != "" && e.ring.end-e.previewAt >= int64(e.config.PreviewEvery) {
 		e.previewAt = e.ring.end
 		span := Span{max(e.captionStart, e.ring.end-int64(e.config.PreviewSamples)), e.ring.end}
 		if err := e.submit(e.captionID, span, false, nil); err != nil {
@@ -314,13 +329,15 @@ func (e *Engine) activity(a Activity) error {
 		if span.End-span.Start < int64(e.config.MinSpeech) {
 			continue
 		}
-		if e.captionID == "" {
-			e.captionID = e.id("caption")
+		if !e.config.RecordingEnabled {
+			if e.captionID == "" {
+				e.captionID = e.id("caption")
+			}
+			if err := e.submit(e.captionID, span, true, nil); err != nil {
+				return err
+			}
+			e.captionID = ""
 		}
-		if err := e.submit(e.captionID, span, true, nil); err != nil {
-			return err
-		}
-		e.captionID = ""
 		if s := e.capturing(); s != nil && s.recording && !s.decided && span.End >= s.wakeEnd {
 			if !s.active && span.Start >= s.deadline {
 				continue
@@ -336,7 +353,7 @@ func (e *Engine) activity(a Activity) error {
 			}
 		}
 	}
-	if a.Speaking && e.captionID == "" {
+	if !e.config.RecordingEnabled && a.Speaking && e.captionID == "" {
 		e.captionID = e.id("caption")
 		e.captionStart = max(e.ring.start(), e.ring.end-max(int64(e.config.PreRollSamples), 1))
 		e.previewAt = e.ring.end
@@ -390,11 +407,18 @@ func (e *Engine) Poll() error {
 }
 func (e *Engine) result(r decodeResult) error {
 	j := r.job
+	if j.preview != nil && (j.preview.decided || j.preview.previewClosed || j.preview != e.gate) {
+		return nil
+	}
 	if r.err != nil {
 		return errors.New("recognition failed")
 	}
 	if len(r.text) > 16384 || !utf8.ValidString(r.text) || strings.ContainsRune(r.text, 0) {
 		return errors.New("invalid recognition text")
+	}
+	if s := j.preview; s != nil {
+		s.previewText, s.previewSpan, s.previewPublished = r.text, j.span, true
+		return e.emit(Event{Type: "caption", ID: s.previewID, Revision: j.revision, Span: j.span, Original: r.text})
 	}
 	if !j.final && e.finals[j.id] {
 		return nil
@@ -431,6 +455,9 @@ func (e *Engine) result(r decodeResult) error {
 				return e.cancelSelection("control_only")
 			}
 			return nil
+		}
+		if err := e.closeSelectedPreview(s, r.text, j.span); err != nil {
+			return err
 		}
 		s.decided = true
 		if e.gate == s {
@@ -470,6 +497,9 @@ func (e *Engine) cancelSelection(code string) error {
 		return nil
 	}
 	s := e.gate
+	if err := e.closeSelectedPreview(s, s.previewText, s.previewSpan); err != nil {
+		return err
+	}
 	e.gate = nil
 	s.decided = true
 	s.recording = false

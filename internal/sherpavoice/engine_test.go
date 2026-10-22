@@ -91,6 +91,7 @@ func feed(t *testing.T, e *Engine, n int) {
 func TestCaptionCannotWakeOrSelect(t *testing.T) {
 	f := &fakeFront{frames: []fakeFrame{{activity: Activity{Speaking: true}}, {activity: Activity{Segments: []Span{{0, 16000}}}}}}
 	e, events := newTestEngine(t, f, &fakeASR{text: "hey ginkgo an ambient caption"})
+	e.config.RecordingEnabled = false
 	feed(t, e, 2)
 	if err := e.Stop(); err != nil {
 		t.Fatal(err)
@@ -173,6 +174,7 @@ func TestCooldownAndNoSpeech(t *testing.T) {
 func TestPreviewBeforeSilenceAndNoStaleAfterFinal(t *testing.T) {
 	f := &fakeFront{frames: []fakeFrame{{activity: Activity{Speaking: true}}, {activity: Activity{Speaking: true}}, {activity: Activity{Speaking: true}}, {activity: Activity{Segments: []Span{{0, 32000}}}}}}
 	e, events := newTestEngine(t, f, &fakeASR{text: "caption"})
+	e.config.RecordingEnabled = false
 	feed(t, e, 2)
 	if count(*events, "caption") == 0 {
 		first := <-e.results

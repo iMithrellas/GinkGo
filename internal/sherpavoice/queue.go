@@ -12,6 +12,7 @@ type decodeJob struct {
 	final     bool
 	revision  uint64
 	selection *selection
+	preview   *selection
 }
 type decodeResult struct {
 	job  decodeJob
@@ -87,4 +88,14 @@ func (q *decodeQueue) close(discard bool) {
 		q.finals = nil
 	}
 	q.cond.Broadcast()
+}
+
+// discardPreview removes queued work when its wake selection ends. In-flight
+// results are rejected by their selection identity in Engine.result.
+func (q *decodeQueue) discardPreview(id string) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.preview != nil && q.preview.id == id {
+		q.preview = nil
+	}
 }
