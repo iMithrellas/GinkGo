@@ -34,8 +34,9 @@ ginkgo-cli voice stop         # finish and save selected speech
 
 Say **“Hey Ginkgo”**, then dictate immediately or after a short pause. Wake-only
 speech saves nothing. Omit `--save` for captions only; `voice watch --output json`
-shows live events. AI mode also needs [AI setup](ai.md); AI failure preserves raw
-input. Setup does not edit configuration or enable capture.
+shows live events. AI mode also needs [AI setup](ai.md). Sherpa AI streams interpret
+conversational commands and report failures without saving commands as raw notes.
+Setup does not edit configuration or enable capture.
 
 ## Choose a workflow
 
@@ -208,8 +209,19 @@ Sherpa saved notes use `voice.mode` (default `raw`); `--mode ai` overrides it fo
 ginkgo-cli voice stream --save --trigger GINKGO --mode ai --provider opencode
 ```
 
-AI processes each selected transcript as a new note request and preserves it as
-the original. See [AI fallbacks and privacy](ai.md#fallbacks-and-errors).
+AI interprets each selected transcript as a conversational request: create, append,
+find, read, or summarize. For example: “Find my Nomad notes”, “Read the second one”,
+or “Expand the last meeting note with these discovery options…”. Ambiguous requests
+produce a clarification; answer after the next wake phrase. Responses are text in
+`conversation.response` events through `voice watch --output json`; committed writes
+remain `note.saved` events, with a text acknowledgment. There is no TTS.
+
+References and pending clarifications belong to the current stream and namespace.
+They expire after 30 minutes of inactivity; restarting the stream starts a new
+conversation. Original dictation and image context are retained for successful note
+writes. Read/search/summary requests do not save notes. AI or validation failures
+report an error rather than converting a command into a raw note. Raw mode and
+legacy Whisper workflows retain their existing behavior.
 
 Native OpenCode, Codex, and Claude Code use this same pipeline; pass the name of
 their configured provider table with `--provider`, not an executable name.

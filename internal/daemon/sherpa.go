@@ -31,7 +31,7 @@ func installedExecutable(name string) (string, error) {
 
 func (v *voiceRuntime) startSherpa(ctx context.Context, m ipc.Message) ipc.Response {
 	if m.NoteID != "" || m.Action != "" || m.AudioPath != "" || m.Model != "" || m.Language != "" && m.Language != "en" || m.Capture != nil {
-		return ipc.Response{Msg: "sherpa stream supports configured English new notes only; no legacy STT or capture overrides"}
+		return ipc.Response{Msg: "sherpa stream uses conversational AI or raw notes; no explicit targets, legacy STT or capture overrides"}
 	}
 	if len(m.Namespace) > 256 || strings.ContainsRune(m.Namespace, 0) {
 		return ipc.Response{Msg: "invalid voice namespace"}
@@ -265,6 +265,7 @@ func (v *voiceRuntime) runSherpa(ctx context.Context, j *listenJob, m ipc.Messag
 		s.mu.Unlock()
 		if candidate != nil {
 			noteMessage := m
+			noteMessage.ID = j.streamID
 			if visual != nil {
 				<-visual.done
 				if visual.err == nil && ctx.Err() == nil {
@@ -284,13 +285,18 @@ func (v *voiceRuntime) runSherpa(ctx context.Context, j *listenJob, m ipc.Messag
 				result, err := v.saveSherpaNote(ctx, noteMessage, tr, candidate.Body, candidate.Original)
 				if err == nil {
 					entry := result.Entry
-					outcome.Type, outcome.NoteID = "note.saved", entry.ID
-					outcome.Processing, outcome.FallbackReason = result.processing, result.FallbackReason
-					outcome.ImageStatus = result.ImageStatus
-					v.mu.Lock()
-					v.status.LastNoteID, v.status.Segments = entry.ID, v.status.Segments+1
-					v.mu.Unlock()
-					v.scheduleSync()
+					outcome.Text = result.text
+					if entry.ID == "" {
+						outcome.Type = "conversation.response"
+					} else {
+						outcome.Type, outcome.NoteID = "note.saved", entry.ID
+						outcome.Processing, outcome.FallbackReason = result.processing, result.FallbackReason
+						outcome.ImageStatus = result.ImageStatus
+						v.mu.Lock()
+						v.status.LastNoteID, v.status.Segments = entry.ID, v.status.Segments+1
+						v.mu.Unlock()
+						v.scheduleSync()
+					}
 				} else if ctx.Err() == nil {
 					outcome.Type, outcome.Error = "note.error", "voice note save failed"
 				}
@@ -338,6 +344,7 @@ func (v *voiceRuntime) runSherpa(ctx context.Context, j *listenJob, m ipc.Messag
 type sherpaNoteResult struct {
 	ai.NoteResult
 	processing string
+	text       string
 }
 
 // saveSherpaNote runs only in the joined persistence worker, never the capture
@@ -356,8 +363,22 @@ func (v *voiceRuntime) saveSherpaNote(ctx context.Context, m ipc.Message, tr voi
 	if v.ai == nil {
 		return sherpaNoteResult{}, errors.New("missing AI note service")
 	}
+	if v.conversation != nil {
+		result, err := v.conversation.Turn(ctx, "voice:"+m.ID, ai.NoteRequest{
+			Text: original, Namespace: m.Namespace, Title: m.Title, Tags: m.Tags,
+			Source: &api.Source{Kind: "voice", Language: tr.Language, STTEngine: tr.Engine, STTModel: tr.Model}, Images: m.Images,
+		}, m.Provider)
+		if err != nil {
+			return sherpaNoteResult{}, err
+		}
+		out := sherpaNoteResult{text: result.Text}
+		if result.Saved != nil {
+			out.NoteResult, out.processing = *result.Saved, "ai"
+		}
+		return out, nil
+	}
 	result, err := v.ai.Note(ctx, ai.NoteRequest{
-		Text: original, Namespace: m.Namespace, Title: m.Title, Tags: m.Tags, Action: "create",
+		Text: original, Namespace: m.Namespace, Title: m.Title, Tags: m.Tags, Action: "auto",
 		Source: &api.Source{Kind: "voice", Language: tr.Language, STTEngine: tr.Engine, STTModel: tr.Model},
 		Images: m.Images,
 	}, m.Provider)

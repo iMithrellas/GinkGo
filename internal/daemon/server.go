@@ -13,6 +13,7 @@ import (
 
 	"github.com/mithrel/ginkgo/internal/ai"
 	"github.com/mithrel/ginkgo/internal/config"
+	"github.com/mithrel/ginkgo/internal/conversation"
 	"github.com/mithrel/ginkgo/internal/db"
 	"github.com/mithrel/ginkgo/internal/ipc"
 	"github.com/mithrel/ginkgo/internal/ipc/transport"
@@ -52,6 +53,7 @@ func Run(ctx context.Context, app *wire.App) (runErr error) {
 		runErr = errors.Join(runErr, aiNotes.Close())
 	}()
 	voiceNotes := newVoiceRuntime(app, aiNotes)
+	voiceNotes.conversation = conversation.NewService(app.Store.Entries, aiNotes)
 	voiceNotes.root = daemonCtx
 	voiceNotes.syncNote = func(ctx context.Context) { _ = app.Syncer.SyncNow(ctx) }
 	if config.VoiceFeatureEnabled(app.Cfg, "voice.events.enabled") {
@@ -98,6 +100,22 @@ func Run(ctx context.Context, app *wire.App) (runErr error) {
 			ns = app.Cfg.GetString("namespace")
 		}
 		switch m.Name {
+		case "ai.converse":
+			if !m.Deadline.IsZero() {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithDeadline(ctx, m.Deadline)
+				defer cancel()
+			}
+			result, err := voiceNotes.conversation.Turn(ctx, "cli:"+m.ID, ai.NoteRequest{Text: m.Text, Namespace: ns}, m.Provider)
+			if err != nil {
+				return ipc.Response{Msg: err.Error()}
+			}
+			response := ipc.Response{OK: true, Msg: result.Text, Action: result.Action, Entries: result.Entries}
+			if result.Saved != nil {
+				response.Entry = &result.Saved.Entry
+				voiceNotes.scheduleSync()
+			}
+			return response
 		case "context.stage", "context.clear", "context.status":
 			m.Namespace = ns
 			return voiceNotes.imageContext(ctx, m)

@@ -93,7 +93,7 @@ func newVoiceStreamCmd() *cobra.Command {
 			if save {
 				message = "Wake-gated raw note capture requested"
 				if mode == "ai" {
-					message = "Wake-gated AI note capture requested (raw fallback if AI is disabled or unavailable)"
+					message = "Wake-gated AI conversation requested (text responses through voice watch)"
 				}
 			}
 			_, err = fmt.Fprintln(cmd.OutOrStdout(), message+"; inspect readiness with voice status or voice watch --output json; finalize with voice stop or discard pending work with voice cancel.")

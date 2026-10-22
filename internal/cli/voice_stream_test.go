@@ -226,6 +226,6 @@ func TestVoiceStreamAITextDoesNotPromiseProviderSuccess(t *testing.T) {
 	cmd.SetArgs([]string{"stream", "--save"})
 	require.NoError(t, cmd.Execute())
 	require.Equal(t, "ai", (<-messages).Mode)
-	require.Contains(t, out.String(), "AI note capture requested")
-	require.Contains(t, out.String(), "raw fallback if AI is disabled or unavailable")
+	require.Contains(t, out.String(), "AI conversation requested")
+	require.Contains(t, out.String(), "text responses through voice watch")
 }

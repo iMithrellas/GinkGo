@@ -57,7 +57,7 @@ func TestSherpaOptionalAIConfiguration(t *testing.T) {
 					require.NoError(t, json.Unmarshal(fields["action"], &prompt.Action))
 					require.NoError(t, json.Unmarshal(fields["input_kind"], &prompt.InputKind))
 					require.Equal(t, "Ginkgo: Keep Exact CASE!", prompt.Input)
-					require.Equal(t, "create", prompt.Action)
+					require.Equal(t, "auto", prompt.Action)
 					require.Equal(t, "voice", prompt.InputKind)
 					return ai.Response{Text: sherpaAIDraft}, nil
 				}), nil

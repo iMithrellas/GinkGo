@@ -72,6 +72,7 @@ message AINote {
   google.protobuf.Timestamp deadline = 8;
   repeated ContextImage images = 9;
 }
+message Conversation { string text = 1; string namespace = 2; string session = 3; string provider = 4; google.protobuf.Timestamp deadline = 5; }
 message NoteDelete { string id = 1; string namespace = 2; }
 message VoiceTranscribe {
   string audio_path = 1;
@@ -135,6 +136,7 @@ message Request {
     VoiceTranscribe voice_transcribe = 14;
     VoiceControl voice_control = 15;
     ImageContext image_context = 16;
+    Conversation conversation = 17;
   }
 }
 

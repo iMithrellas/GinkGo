@@ -76,6 +76,33 @@ printing secrets.
 
 ## Create and expand
 
+### Conversational control
+
+Use `ai converse` for text access to the same conversation service used by Sherpa
+AI voice streams:
+
+```sh
+ginkgo-cli ai converse --session work 'Find notes about Nomad'
+ginkgo-cli ai converse --session work 'Read the second one'
+ginkgo-cli ai converse --session work 'Summarize that note'
+ginkgo-cli ai converse --session work 'Append that VMagent is another discovery option'
+```
+
+Omit the positional request to read stdin. `--namespace`, `--provider`, and
+`--output json` are supported. Sessions are isolated by client and namespace;
+typed and voice sessions are separate. State is in memory, expires after 30 minutes
+of inactivity, and resets when the daemon restarts (at most 32 active sessions).
+
+The service resolves recent notes and keyword-search results before execution.
+“That note” refers to the last referenced note; numbered references use the last
+displayed search order. It asks for clarification when the target is ambiguous.
+Say “cancel” to clear a pending request. Read/search/summary results are text only;
+they never implicitly create notes. Commands that fail are not saved as raw notes.
+Appending preserves existing text and uses the existing version-checked update.
+Editing, deletion, and spoken playback are not supported by this command.
+
+### Direct note generation
+
 ```sh
 printf '%s\n' 'A short thought to organize.' \
   | ginkgo-cli ai note --stdin --new

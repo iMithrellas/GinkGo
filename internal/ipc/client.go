@@ -17,6 +17,12 @@ func Request(ctx context.Context, path string, m Message) (Response, error) {
 	var r Response
 	preq := &pb.Request{}
 	switch m.Name {
+	case "ai.converse":
+		n := &pb.Conversation{Text: m.Text, Namespace: m.Namespace, Session: m.ID, Provider: m.Provider}
+		if deadline, ok := ctx.Deadline(); ok {
+			n.Deadline = timestamppb.New(deadline)
+		}
+		preq.Cmd = &pb.Request_Conversation{Conversation: n}
 	case "context.stage", "context.clear", "context.status":
 		preq.Cmd = &pb.Request_ImageContext{ImageContext: &pb.ImageContext{Action: m.Name[len("context."):], Namespace: m.Namespace, Images: toPbImages(m.Images)}}
 	case "voice.transcribe":

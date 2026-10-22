@@ -120,6 +120,10 @@ func validateEvent(e Event) error {
 		return errors.New("invalid level")
 	}
 	switch e.Type {
+	case "conversation.response":
+		if e.NoteSessionID == "" || e.Text == "" {
+			return errors.New("conversation response requires session and text")
+		}
 	case "state":
 	case "level":
 		if e.Level == nil && e.Speech == nil {

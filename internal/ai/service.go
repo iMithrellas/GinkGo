@@ -21,7 +21,9 @@ import (
 // NoteRequest supplies original input and application-controlled overrides.
 type NoteRequest struct {
 	Text, Namespace, Title, Action, NoteID string
-	Tags                                   []string
+	// Strict prevents conversational commands from becoming raw notes on failure.
+	Strict bool
+	Tags   []string
 	// Source contains trusted application capture metadata, never model output.
 	// The notes service generates source identity/time and uses Text as original.
 	Source *api.Source
@@ -176,6 +178,9 @@ func (s *Service) Note(ctx context.Context, request NoteRequest, providerName st
 		}
 	}()
 	raw := func(reason string) (NoteResult, error) {
+		if request.Strict {
+			return NoteResult{}, errors.New(reason)
+		}
 		if err := ctx.Err(); err != nil {
 			return NoteResult{}, err
 		}
@@ -292,6 +297,9 @@ func (s *Service) Note(ctx context.Context, request NoteRequest, providerName st
 		return string(prompt)
 	}
 	system := s.options.SystemPrompt
+	if request.Strict {
+		system += "\n\nThe application has resolved a conversational note request and its target. Generate only the factual note material; omit wake words, operation requests and target-selection replies from the title and body. Preserve the user's original meaning and uncertainty."
+	}
 	if len(request.Images) != 0 && !strings.HasSuffix(strings.TrimSpace(system), ImageContextSystemPrompt) {
 		system += "\n\n" + ImageContextSystemPrompt
 	}

@@ -35,6 +35,7 @@ for published events; gaps are allowed. `epoch_id` changes on daemon restart.
 | `level` | `level` and/or `speech` | Optional finite level from 0 to 1 and/or boolean activity. |
 | `transcript` | `utterance_id`, positive `revision`, `text`, `final` | Each revision replaces prior text; never append revisions or revise after final. |
 | `note.saved` | `note_session_id`, `note_id` | A saved result. Optional AI `processing` and bounded `fallback_reason` describe postprocessing. Optional `image_status` (at most 256 bytes) describes retained/supplied/skipped image context. |
+| `conversation.response` | `note_session_id`, `text` | Text-only search, read, summary, clarification, or cancellation response. No note was written. Conversational writes remain `note.saved`, with an acknowledgment in `text`. |
 | `note.canceled` | `note_session_id` | A selected note did not save. |
 | `note.error` | `note_session_id`, bounded `error` | A note workflow error. |
 | `error` | bounded `error` | Capture/STT or endpoint error; attribution may be present. |

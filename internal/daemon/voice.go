@@ -11,6 +11,7 @@ import (
 
 	"github.com/mithrel/ginkgo/internal/ai"
 	"github.com/mithrel/ginkgo/internal/config"
+	"github.com/mithrel/ginkgo/internal/conversation"
 	"github.com/mithrel/ginkgo/internal/imagecontext"
 	"github.com/mithrel/ginkgo/internal/ipc"
 	"github.com/mithrel/ginkgo/internal/notes"
@@ -23,14 +24,15 @@ import (
 // voiceRuntime is daemon-owned. Its single lazy transcriber serializes engine
 // invocations; ordinary note operations never validate or initialize speech.
 type voiceRuntime struct {
-	enabled     bool
-	mode        string
-	residency   string
-	configErr   error
-	transcriber *voice.Transcriber
-	notes       *notes.Service
-	ai          *ai.Service
-	defaultTags []string
+	enabled      bool
+	mode         string
+	residency    string
+	configErr    error
+	transcriber  *voice.Transcriber
+	notes        *notes.Service
+	ai           *ai.Service
+	conversation *conversation.Service
+	defaultTags  []string
 
 	// mu protects lifecycle/status only; never hold it across capture, inference,
 	// storage, synchronization, or a worker join.

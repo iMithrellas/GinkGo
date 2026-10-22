@@ -22,7 +22,7 @@ func newAICmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "ai", Short: "Optional AI-assisted notes"}
 	cmd.PersistentFlags().StringP("namespace", "n", "", "override namespace for this command")
 	registerNamespaceCompletion(cmd)
-	cmd.AddCommand(newAINoteCmd())
+	cmd.AddCommand(newAINoteCmd(), newAIConverseCmd())
 	return cmd
 }
 

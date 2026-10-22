@@ -25,6 +25,16 @@ func (h pbHandler) Handle(ctx context.Context, req any) (any, error) {
 	preq := req.(*pb.Request)
 	m := Message{}
 	switch x := preq.Cmd.(type) {
+	case *pb.Request_Conversation:
+		if n := x.Conversation; n != nil {
+			m.Name, m.Text, m.Namespace, m.ID, m.Provider = "ai.converse", n.Text, n.Namespace, n.Session, n.Provider
+			if n.Deadline != nil {
+				if err := n.Deadline.CheckValid(); err != nil {
+					return &pb.Response{Msg: "invalid deadline"}, nil
+				}
+				m.Deadline = n.Deadline.AsTime()
+			}
+		}
 	case *pb.Request_ImageContext:
 		if n := x.ImageContext; n != nil {
 			m.Name, m.Namespace, m.Images = "context."+n.Action, n.Namespace, fromPbImages(n.Images)
