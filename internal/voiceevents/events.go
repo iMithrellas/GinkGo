@@ -23,6 +23,14 @@ type State struct {
 	Listening           bool   `json:"listening"`
 	RecordingNote       bool   `json:"recording_note"`
 	ActiveNoteSessionID string `json:"active_note_session_id"`
+	// Optional lifecycle fields describe Sherpa streams, including model reload
+	// gaps. StreamID survives renewal; CaptureEpochID identifies an audio clock.
+	CaptureState   string `json:"capture_state,omitempty"`
+	StreamID       string `json:"stream_id,omitempty"`
+	CaptureEpochID string `json:"capture_epoch_id,omitempty"`
+	Namespace      string `json:"namespace,omitempty"`
+	Mode           string `json:"mode,omitempty"`
+	CaptureError   string `json:"capture_error,omitempty"`
 }
 
 // Event is a v1 observation. Envelope and State fields are assigned by Hub.
@@ -50,6 +58,9 @@ type Event struct {
 	Processing     string `json:"processing,omitempty"`
 	FallbackReason string `json:"fallback_reason,omitempty"`
 	ImageStatus    string `json:"image_status,omitempty"`
+	// Action identifies a conversational outcome; NoteIDs preserves displayed order.
+	Action  string   `json:"action,omitempty"`
+	NoteIDs []string `json:"note_ids,omitempty"`
 }
 
 // Options sets fixed bounds. Zero values select defaults.
@@ -93,10 +104,54 @@ func validateState(s State) error {
 	if len(s.ActiveNoteSessionID) > 256 || !utf8.ValidString(s.ActiveNoteSessionID) || s.RecordingNote != (s.ActiveNoteSessionID != "") {
 		return errors.New("invalid active note session state")
 	}
+	for _, value := range []string{s.StreamID, s.CaptureEpochID, s.Namespace} {
+		if len(value) > 256 || !utf8.ValidString(value) {
+			return errors.New("invalid capture identity")
+		}
+	}
+	switch s.CaptureState {
+	case "", "starting", "streaming", "renewing", "stopping", "idle", "canceled", "error":
+	default:
+		return errors.New("invalid capture state")
+	}
+	if s.Mode != "" && s.Mode != "raw" && s.Mode != "ai" {
+		return errors.New("invalid capture mode")
+	}
+	if len(s.CaptureError) > 1024 || !utf8.ValidString(s.CaptureError) || s.CaptureError != "" && s.CaptureState != "error" {
+		return errors.New("invalid capture error")
+	}
 	return nil
 }
 
 func validateEvent(e Event) error {
+	if e.Action != "" {
+		switch e.Type {
+		case "conversation.response":
+			switch e.Action {
+			case "search", "read", "summarize", "clarify", "cancel":
+			default:
+				return errors.New("invalid conversation action")
+			}
+		case "note.saved":
+			if e.Action != "create" && e.Action != "append" {
+				return errors.New("invalid saved action")
+			}
+		default:
+			return errors.New("action requires a conversation outcome")
+		}
+	}
+	if len(e.NoteIDs) > 0 {
+		if e.Type != "conversation.response" || len(e.NoteIDs) > 8 {
+			return errors.New("invalid response note IDs")
+		}
+		seen := map[string]bool{}
+		for _, id := range e.NoteIDs {
+			if id == "" || len(id) > 256 || !utf8.ValidString(id) || seen[id] {
+				return errors.New("invalid response note ID")
+			}
+			seen[id] = true
+		}
+	}
 	if e.ImageStatus != "" && (e.Type != "note.saved" || len(e.ImageStatus) > 256 || !utf8.ValidString(e.ImageStatus)) {
 		return errors.New("invalid note image status")
 	}

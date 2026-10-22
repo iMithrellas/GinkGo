@@ -39,6 +39,9 @@ func runVoiceEpoch(ctx context.Context, runner workerRunner, config voiceworker.
 	active, renew, sealed := false, false, false
 	seen := make(map[string]bool)
 	prefix := api.NewID() + "/"
+	if err := emit(qualifyVoiceEvent(voiceworker.Event{Type: "starting"}, prefix)); err != nil {
+		return false, err
+	}
 	timer := time.NewTimer(duration)
 	defer timer.Stop()
 	done, joined := make(chan struct{}), make(chan struct{})
@@ -86,6 +89,9 @@ func runVoiceEpoch(ctx context.Context, runner workerRunner, config voiceworker.
 		if len(seen) >= identities {
 			renew = true
 		}
+		if event.Type == "stopped" && renew {
+			event.Code = "renewal"
+		}
 		// A new helper reuses local IDs and its audio clock. Qualify identities
 		// before they enter the persistence/image queues or public events.
 		if err := emit(qualifyVoiceEvent(event, prefix)); err != nil {
@@ -105,6 +111,7 @@ func runVoiceEpoch(ctx context.Context, runner workerRunner, config voiceworker.
 }
 
 func qualifyVoiceEvent(event voiceworker.Event, prefix string) voiceworker.Event {
+	event.Epoch = prefix[:len(prefix)-1]
 	qualify := func(id string) string {
 		if id == "" {
 			return ""

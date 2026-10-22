@@ -111,18 +111,19 @@ func (v *voiceRuntime) startSherpa(ctx context.Context, m ipc.Message) ipc.Respo
 // is still scheduled: seal joins a callback already inside this gate, and every
 // later invocation is inert. The job owns the gate until persistence is joined.
 type sherpaIngest struct {
-	mu       sync.Mutex
-	sealed   bool
-	fault    bool
-	selected string
-	queue    []voiceworker.Candidate
-	pending  map[string]bool
-	wake     chan struct{}
-	v        *voiceRuntime
-	j        *listenJob
-	ctx      context.Context
-	save     bool
-	images   *sessionImages
+	mu                                          sync.Mutex
+	sealed                                      bool
+	fault                                       bool
+	selected                                    string
+	queue                                       []voiceworker.Candidate
+	pending                                     map[string]bool
+	wake                                        chan struct{}
+	v                                           *voiceRuntime
+	j                                           *listenJob
+	ctx                                         context.Context
+	save                                        bool
+	images                                      *sessionImages
+	captureState, captureEpoch, namespace, mode string
 }
 
 const sherpaStreamError = "voice helper stream failed; check installed helper, models, and recorder"
@@ -130,7 +131,8 @@ const sherpaStreamError = "voice helper stream failed; check installed helper, m
 func (s *sherpaIngest) id(id string) string { return s.j.streamID + "/" + id }
 func (s *sherpaIngest) fail() error {
 	if !s.fault {
-		_ = s.v.events.UpdateState(voiceevents.State{})
+		s.captureState = "error"
+		_ = s.state(false)
 		_ = s.v.events.Publish(voiceevents.Event{Type: "error", Error: sherpaStreamError})
 		s.v.mu.Lock()
 		s.v.status.State, s.v.status.LastError = "error", sherpaStreamError
@@ -146,7 +148,12 @@ func (s *sherpaIngest) state(recording bool) error {
 	if recording {
 		id = s.id(s.selected)
 	}
-	return s.v.events.UpdateState(voiceevents.State{Listening: true, RecordingNote: recording, ActiveNoteSessionID: id})
+	state := voiceevents.State{Listening: s.captureState == "streaming", RecordingNote: recording, ActiveNoteSessionID: id,
+		CaptureState: s.captureState, StreamID: s.j.streamID, CaptureEpochID: s.captureEpoch, Namespace: s.namespace, Mode: s.mode}
+	if s.captureState == "error" {
+		state.CaptureError = sherpaStreamError
+	}
+	return s.v.events.UpdateState(state)
 }
 func (s *sherpaIngest) emit(e voiceworker.Event) error {
 	s.mu.Lock()
@@ -156,10 +163,21 @@ func (s *sherpaIngest) emit(e voiceworker.Event) error {
 	}
 	var err error
 	switch e.Type {
+	case "starting":
+		s.captureState = "starting"
+		if s.captureEpoch != "" {
+			s.captureState = "renewing"
+		}
+		s.captureEpoch = e.Epoch
+		s.v.mu.Lock()
+		s.v.status.State = s.captureState
+		s.v.mu.Unlock()
+		err = s.state(false)
 	case "ready":
 		if e.Provider == nil {
 			return s.fail()
 		}
+		s.captureState = "streaming"
 		s.v.mu.Lock()
 		s.v.status.State, s.v.status.HelperEngine = "streaming", "sherpa-onnx"
 		s.v.status.RequestedProvider, s.v.status.EffectiveProvider, s.v.status.ProviderFallbackReason = string(e.Provider.Requested), string(e.Provider.Effective), e.Provider.FallbackReason
@@ -224,7 +242,19 @@ func (s *sherpaIngest) emit(e voiceworker.Event) error {
 	case "error":
 		return s.fail() // Never expose raw native errors, stderr, or model paths.
 	case "stopped":
-		err = s.v.events.UpdateState(voiceevents.State{})
+		s.captureState = "stopping"
+		if e.Code == "renewal" {
+			s.captureState = "renewing"
+		}
+		select {
+		case <-s.j.stop:
+			s.captureState = "stopping"
+		default:
+		}
+		s.v.mu.Lock()
+		s.v.status.State = s.captureState
+		s.v.mu.Unlock()
+		err = s.state(false)
 	default:
 		return s.fail()
 	}
@@ -236,7 +266,7 @@ func (s *sherpaIngest) emit(e voiceworker.Event) error {
 
 func (v *voiceRuntime) runSherpa(ctx context.Context, j *listenJob, m ipc.Message, c voiceworker.Config, runner workerRunner) {
 	defer j.cancel()
-	s := &sherpaIngest{v: v, j: j, ctx: ctx, save: m.Save, pending: make(map[string]bool), wake: make(chan struct{}, 1)}
+	s := &sherpaIngest{v: v, j: j, ctx: ctx, save: m.Save, pending: make(map[string]bool), wake: make(chan struct{}, 1), namespace: m.Namespace, mode: m.Mode}
 	s.images = newSessionImages(ctx, v, m)
 	runDone := make(chan error, 1)
 	go func() {
@@ -286,6 +316,7 @@ func (v *voiceRuntime) runSherpa(ctx context.Context, j *listenJob, m ipc.Messag
 				if err == nil {
 					entry := result.Entry
 					outcome.Text = result.text
+					outcome.Action, outcome.NoteIDs = result.action, result.noteIDs
 					if entry.ID == "" {
 						outcome.Type = "conversation.response"
 					} else {
@@ -303,7 +334,9 @@ func (v *voiceRuntime) runSherpa(ctx context.Context, j *listenJob, m ipc.Messag
 			}
 			s.mu.Lock()
 			delete(s.pending, candidate.SessionID)
-			_ = v.events.Publish(outcome)
+			if err := v.events.Publish(outcome); err != nil {
+				_ = v.events.Publish(voiceevents.Event{Type: "note.error", NoteSessionID: outcome.NoteSessionID, Error: "voice response could not be published; request a shorter result"})
+			}
 			s.mu.Unlock()
 			continue
 		}
@@ -319,7 +352,13 @@ func (v *voiceRuntime) runSherpa(ctx context.Context, j *listenJob, m ipc.Messag
 	s.images.finish()
 	s.mu.Lock()
 	s.queue = nil
-	_ = v.events.UpdateState(voiceevents.State{})
+	s.captureState = "idle"
+	if s.fault {
+		s.captureState = "error"
+	} else if ctx.Err() != nil {
+		s.captureState = "canceled"
+	}
+	_ = s.state(false)
 	for id := range s.pending {
 		_ = v.events.Publish(voiceevents.Event{Type: "note.canceled", NoteSessionID: s.id(id)})
 	}
@@ -345,6 +384,8 @@ type sherpaNoteResult struct {
 	ai.NoteResult
 	processing string
 	text       string
+	action     string
+	noteIDs    []string
 }
 
 // saveSherpaNote runs only in the joined persistence worker, never the capture
@@ -371,7 +412,10 @@ func (v *voiceRuntime) saveSherpaNote(ctx context.Context, m ipc.Message, tr voi
 		if err != nil {
 			return sherpaNoteResult{}, err
 		}
-		out := sherpaNoteResult{text: result.Text}
+		out := sherpaNoteResult{text: result.Text, action: result.Action}
+		for _, entry := range result.Entries {
+			out.noteIDs = append(out.noteIDs, entry.ID)
+		}
 		if result.Saved != nil {
 			out.NoteResult, out.processing = *result.Saved, "ai"
 		}

@@ -30,6 +30,11 @@ func (v *voiceRuntime) autostartVoice(ctx context.Context) error {
 	v.mu.Lock()
 	v.status.State, v.status.LastError = "error", response.Msg
 	v.mu.Unlock()
+	mode := settings.GetString("voice.mode")
+	if mode != "raw" && mode != "ai" {
+		mode = ""
+	}
+	_ = v.events.UpdateState(voiceevents.State{CaptureState: "error", Namespace: namespace, Mode: mode, CaptureError: response.Msg})
 	_ = v.events.Publish(voiceevents.Event{Type: "error", Error: response.Msg})
 	return fmt.Errorf("voice autostart: %s", response.Msg)
 }

@@ -51,4 +51,7 @@ func TestVoiceAutostartFailureLeavesDaemonAvailable(t *testing.T) {
 	require.False(t, status.Active)
 	require.Equal(t, "error", status.State)
 	require.NotEmpty(t, status.LastError)
+	snapshot := v.events.Snapshot()
+	require.Equal(t, "error", snapshot.CaptureState)
+	require.Equal(t, status.LastError, snapshot.CaptureError)
 }

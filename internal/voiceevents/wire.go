@@ -29,6 +29,7 @@ func decodeWireEvent(data []byte) (Event, error) {
 		"listening", "recording_note", "active_note_session_id", "text", "final",
 		"note_session_id", "utterance_id", "revision", "audio_start_ms", "audio_end_ms",
 		"level", "speech", "note_id", "error", "processing", "fallback_reason", "image_status",
+		"capture_state", "stream_id", "capture_epoch_id", "namespace", "mode", "capture_error", "action", "note_ids",
 	} {
 		if raw, ok := fields[name]; ok {
 			if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {

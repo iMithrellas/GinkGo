@@ -15,6 +15,13 @@ notes, or returns audio. It does expose transcript text, including ambient
 captions while saving is off. Treat the socket, consumer logs, and retained text
 as sensitive. It keeps no transcript history.
 
+Sherpa saving streams (including autostart) publish transcript previews only for
+acoustically selected dictation. They do not transcribe ambient speech. Explicit
+captions-only streams still publish ambient captions. Selected previews have
+their own utterance IDs, distinct from the authoritative final selected transcript.
+Their final revision reuses final recognition, or closes with the last displayed
+text on selection cancellation; a preview never authorizes a save.
+
 Each UTF-8 line is one JSON object, newline terminated, at most 65,536 bytes
 including the newline. The envelope and live-state keys below are required and
 must have their declared JSON types, including explicit false, empty, and zero
@@ -29,22 +36,43 @@ are ignored for additive v1 evolution.
 for published events; gaps are allowed. `epoch_id` changes on daemon restart.
 `active_note_session_id` is nonempty only while recording a note.
 
+Sherpa streams also supply these optional v1 live-state fields on every event and
+on the initial/reconnect snapshot:
+
+| Field | Meaning |
+| --- | --- |
+| `capture_state` | `starting`, `streaming`, `renewing`, `stopping`, `idle`, `canceled`, or `error`. |
+| `stream_id` | Stable for one daemon-owned voice stream, including automatic helper renewals. A manual restart gets a new ID. |
+| `capture_epoch_id` | Identifies the current native audio clock; changes when the helper renews. |
+| `namespace` | Namespace selected for the stream. |
+| `mode` | `raw` or `ai`. |
+| `capture_error` | Bounded diagnostic retained in an `error` snapshot; otherwise absent. |
+
+During autostart/model initialization, `capture_state` is `starting` and
+`listening` is false. During helper renewal it is `renewing`, also with listening
+false; ready returns it to `streaming`. Stop completion becomes `idle`, cancel
+completion becomes `canceled`, and helper failures remain `error`. Completed
+streams retain their last identity/mode/namespace for attribution. Older servers
+and legacy Whisper streams can omit these fields; consumers must tolerate that.
+These fields describe capture, not whether asynchronous AI work is still running.
+
 | Type | Required event data | Meaning |
 | --- | --- | --- |
 | `state` | Live-state fields | Current listening and note-recording state. |
 | `level` | `level` and/or `speech` | Optional finite level from 0 to 1 and/or boolean activity. |
 | `transcript` | `utterance_id`, positive `revision`, `text`, `final` | Each revision replaces prior text; never append revisions or revise after final. |
-| `note.saved` | `note_session_id`, `note_id` | A saved result. Optional AI `processing` and bounded `fallback_reason` describe postprocessing. Optional `image_status` (at most 256 bytes) describes retained/supplied/skipped image context. |
-| `conversation.response` | `note_session_id`, `text` | Text-only search, read, summary, clarification, or cancellation response. No note was written. Conversational writes remain `note.saved`, with an acknowledgment in `text`. |
+| `note.saved` | `note_session_id`, `note_id` | A saved result. Optional `action` is `create` or `append`. Optional AI `processing` and bounded `fallback_reason` describe postprocessing. Optional `image_status` (at most 256 bytes) describes retained/supplied/skipped image context. |
+| `conversation.response` | `note_session_id`, `text` | Text-only response. Optional `action` is `search`, `read`, `summarize`, `clarify`, or `cancel`. Optional `note_ids` lists up to eight referenced notes in displayed order. No note was written. Conversational writes remain `note.saved`, with an acknowledgment in `text`. |
 | `note.canceled` | `note_session_id` | A selected note did not save. |
-| `note.error` | `note_session_id`, bounded `error` | A note workflow error. |
+| `note.error` | `note_session_id`, bounded `error` | A note/conversation workflow error, including a response that exceeds socket message limits. |
 | `error` | bounded `error` | Capture/STT or endpoint error; attribution may be present. |
 
 All events carry `type`, `schema_version:1`, `epoch_id`, `seq`, `observed_at`,
 the three live-state fields, `text`, and `final`, even where empty or false.
 Optional audio offsets `audio_start_ms` and `audio_end_ms` are nonnegative
 sample-derived offsets; when both exist end is not before start. Origins differ
-by backend, so do not compare them across streams or interpret them as wall time
+by backend and reset on helper renewal, so do not compare them across capture
+epochs or streams or interpret them as wall time
 or phonetic boundaries. IDs are limited to 256 UTF-8 bytes, text to 49,152 bytes,
 and errors to 1,024 bytes; JSON encoding must also fit the line bound.
 
