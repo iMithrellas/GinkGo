@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"testing"
 
 	"github.com/spf13/viper"
@@ -55,6 +56,8 @@ func TestLazyNativeAIProviderConstruction(t *testing.T) {
 		{"opencode-native", &ai.OpenCodeNativeProvider{}},
 		{"codex", &ai.CodexProvider{}},
 		{"claude-code", &ai.ClaudeCodeProvider{}},
+		{"antigravity", &ai.AntigravityProvider{}},
+		{"agy", &ai.AntigravityProvider{}},
 	} {
 		t.Run(tc.kind, func(t *testing.T) {
 			v := viper.New()
@@ -67,5 +70,22 @@ func TestLazyNativeAIProviderConstruction(t *testing.T) {
 			require.IsType(t, tc.want, p)
 			require.NoError(t, p.(ai.ProviderCloser).Close())
 		})
+	}
+}
+
+func TestAntigravityProviderDefaults(t *testing.T) {
+	for _, name := range []string{"agy", "antigravity"} {
+		v := viper.New()
+		v.Set("ai.enabled", true)
+		v.Set("ai.provider", name)
+		v.Set("ai.providers."+name+".executable", "/not/installed")
+		provider, err := resolveAIProvider(v, "")
+		require.NoError(t, err)
+		require.IsType(t, &ai.AntigravityProvider{}, provider)
+		caps, err := ai.ProviderCapabilities(context.Background(), provider)
+		require.NoError(t, err)
+		require.Equal(t, ai.DefaultAntigravityModel, caps.ResolvedModel)
+		require.Equal(t, ai.Unsupported, caps.ImageInput)
+		require.NoError(t, provider.(ai.ProviderCloser).Close())
 	}
 }

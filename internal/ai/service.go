@@ -303,7 +303,7 @@ func (s *Service) Note(ctx context.Context, request NoteRequest, providerName st
 	if len(request.Images) != 0 && !strings.HasSuffix(strings.TrimSpace(system), ImageContextSystemPrompt) {
 		system += "\n\n" + ImageContextSystemPrompt
 	}
-	inference := Request{System: system, Prompt: makePrompt(len(images)), Images: images, OutputSchema: json.RawMessage(NoteProposalSchema)}
+	inference := Request{SessionKey: "note:" + request.Namespace, System: system, Prompt: makePrompt(len(images)), Images: images, OutputSchema: json.RawMessage(NoteProposalSchema)}
 	if len(images) != 0 {
 		fits := imageRequestFitsCapabilities(inference, imageCaps)
 		skipReason := "retained; skipped because images exceed adapter request limits"

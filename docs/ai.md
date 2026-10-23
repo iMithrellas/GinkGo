@@ -7,6 +7,11 @@
 Merge the settings below into your [configuration](config.md), then restart the
 daemon. Provider names are arbitrary; select one with `ai.provider` or `--provider`.
 
+For Google-account OAuth with Gemini 3.8 Flash, use
+[`type = "antigravity"` (`agy`)](antigravity.md). It reuses persistent JSON-stream
+sessions and retains the generation-only provider contract. The current native
+streaming input is text-only; image attachments are retained but skipped for AI.
+
 For native multimodal integrations, use the explicit types `opencode-native`,
 `codex`, or `claude-code`; the original `opencode` and `opencode-session` types
 retain their text-only behavior. Read the [provider support/version matrix and

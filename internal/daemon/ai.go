@@ -43,6 +43,9 @@ func readAIProviderSettings(v *viper.Viper, name string) (aiProviderSettings, er
 	if kind == "" && name == "opencode" {
 		kind = "opencode"
 	}
+	if kind == "" && (name == "agy" || name == "antigravity") {
+		kind = "antigravity"
+	}
 	timeout := 120 * time.Second
 	if v.IsSet("ai.timeout") {
 		var err error
@@ -67,6 +70,8 @@ func readAIProviderSettings(v *viper.Viper, name string) (aiProviderSettings, er
 
 func (s aiProviderSettings) construct() (ai.Provider, error) {
 	switch s.Kind {
+	case "antigravity", "agy":
+		return ai.NewAntigravity(ai.AntigravityOptions{Options: s.Options, Executable: s.Executable, Model: s.Model, Variant: s.Variant, TempDir: s.TempDir, AuthHome: s.AuthHome})
 	case "opencode-native":
 		return ai.NewOpenCodeNative(ai.OpenCodeNativeOptions{Options: s.Options, Executable: s.Executable, Model: s.Model, Variant: s.Variant, TempDir: s.TempDir, EphemeralAuth: s.EphemeralAuth})
 	case "codex":

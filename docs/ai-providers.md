@@ -28,7 +28,7 @@ wrapper. See [AI configuration](ai.md) for the original contracts.
 
 ### Native support matrix
 
-These adapters currently target Linux and deliberately pin audited releases.
+The following three adapters target Linux and deliberately pin audited releases.
 Newer releases are unavailable until their isolation and protocol contracts have
 been checked; an unknown release is not silently treated as compatible.
 
@@ -43,6 +43,21 @@ retain GinkGo's strict final validation. Codex and Claude account plans are not
 blanket rejection criteria. A native policy that conflicts with the required
 tool surface can still make generation unavailable. Native policy startup
 effects are a separate trust boundary, described below.
+
+### Antigravity CLI: `antigravity` / `agy`
+
+The Linux [Antigravity adapter](antigravity.md) uses native Google-account OAuth
+and defaults to `gemini-3.8-flash-medium`. It keeps a scoped
+`--input-format stream-json --output-format stream-json` conversation alive
+across requests, supports optional incremental text callbacks, and denies all
+native model tools through a private workspace hook. GinkGo's existing services
+continue to own note operations. Its documented protocol is checked at runtime,
+rather than using the fixed version gates above.
+
+Image blocks were verified to be rejected by the native streaming parser; image
+capability is therefore **Unsupported**, including with explicit overrides.
+Schema instructions use prompts plus GinkGo validation. See the dedicated guide
+for login, configuration, scope rotation, native-history retention, and recovery.
 
 ### Native OpenCode: `opencode-native`
 

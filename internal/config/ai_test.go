@@ -108,6 +108,11 @@ type = "codex"
 variant = "medium"
 [ai.providers.claude]
 type = "claude-code"
+[ai.providers.agy]
+type = "antigravity"
+executable = "/custom/agy"
+auth_home = "/private/google-account"
+model = "gemini-3.8-flash-medium"
 `
 	updated, _ := UpdateTOML(text)
 	v := viper.New()
@@ -119,4 +124,8 @@ type = "claude-code"
 	require.True(t, v.GetBool("ai.providers.native.ephemeral_auth"))
 	require.Equal(t, "codex", v.GetString("ai.providers.code.type"))
 	require.Equal(t, "claude-code", v.GetString("ai.providers.claude.type"))
+	require.Equal(t, "antigravity", v.GetString("ai.providers.agy.type"))
+	require.Equal(t, "/custom/agy", v.GetString("ai.providers.agy.executable"))
+	require.Equal(t, "/private/google-account", v.GetString("ai.providers.agy.auth_home"))
+	require.Equal(t, "gemini-3.8-flash-medium", v.GetString("ai.providers.agy.model"))
 }

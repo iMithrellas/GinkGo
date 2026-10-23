@@ -65,6 +65,11 @@ daemon's environment, not in TOML. Restart the daemon after provider changes so
 owned runtimes and cached model metadata use the new configuration. See the
 [provider support matrix](ai-providers.md) before choosing an executable version.
 
+Antigravity uses `type = "antigravity"` (alias `"agy"`), executable `agy`, and
+model `gemini-3.8-flash-medium` by default. Its optional `auth_home` is an absolute
+HOME directory already signed into a Google account through the native CLI.
+See [Antigravity setup and session behavior](antigravity.md).
+
 For standard voice setup, run `ginkgo-cli voice setup`, then set `[voice]`
 `enabled = true` and `mode = "raw"` (or `"ai"`). Generated configuration keeps
 these common controls prominent. Advanced voice settings use built-in defaults

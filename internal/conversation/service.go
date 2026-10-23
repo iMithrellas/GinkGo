@@ -153,7 +153,7 @@ func (s *Service) Turn(ctx context.Context, client string, request ai.NoteReques
 			Results     []noteView `json:"results"`
 			Lookup      bool       `json:"lookup_done"`
 		}{request.Text, pending, st.question, st.current, current, views(recent), views(results), lookupDone})
-		response, err := s.ai.Generate(ctx, ai.Request{System: intentPrompt, Prompt: string(payload), OutputSchema: json.RawMessage(intentSchema)}, provider)
+		response, err := s.ai.Generate(ctx, ai.Request{SessionKey: "conversation:" + key, System: intentPrompt, Prompt: string(payload), OutputSchema: json.RawMessage(intentSchema)}, provider)
 		if err != nil {
 			return Result{}, err
 		}

@@ -130,6 +130,22 @@ func (p *managedProvider) Complete(parent context.Context, req Request) (Respons
 	return p.provider.Complete(ctx, req)
 }
 
+func (p *managedProvider) CompleteStream(parent context.Context, req Request, emit func(string) error) (Response, error) {
+	ctx, done, err := p.begin(parent)
+	if err != nil {
+		return Response{}, err
+	}
+	defer done()
+	if streaming, ok := p.provider.(StreamingProvider); ok {
+		return streaming.CompleteStream(ctx, req, emit)
+	}
+	response, err := p.provider.Complete(ctx, req)
+	if err == nil && emit != nil {
+		err = emit(response.Text)
+	}
+	return response, err
+}
+
 func (p *managedProvider) PreflightImages(parent context.Context, req Request) error {
 	ctx, done, err := p.begin(parent)
 	if err != nil {

@@ -15,6 +15,9 @@ import (
 
 // Request contains system instructions, user context, and optional images.
 type Request struct {
+	// SessionKey scopes optional warm conversations. Empty requests are independent.
+	// It is local transport metadata and is never included in model input.
+	SessionKey   string               `json:"-"`
 	Model        string               `json:"model,omitempty"`
 	Variant      string               `json:"variant,omitempty"`
 	OutputSchema json.RawMessage      `json:"output_schema,omitempty"`
@@ -64,6 +67,12 @@ type ProviderCloser interface{ Close() error }
 // Provider generates text without performing application actions.
 type Provider interface {
 	Complete(context.Context, Request) (Response, error)
+}
+
+// StreamingProvider optionally delivers incremental response text. Deltas are
+// provisional until completion succeeds. A callback error cancels the turn.
+type StreamingProvider interface {
+	CompleteStream(context.Context, Request, func(string) error) (Response, error)
 }
 
 // Options bounds a single request, including startup and response transport.
