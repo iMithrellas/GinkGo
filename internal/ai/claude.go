@@ -729,7 +729,9 @@ func (p *ClaudeCodeProvider) Capabilities(parent context.Context) (Capabilities,
 		return Capabilities{ImageInput: Unknown}, err
 	}
 	defer done()
-	return p.capabilities(ctx, p.options.Model)
+	caps, err := p.capabilities(ctx, p.options.Model)
+	caps.Uncacheable = true
+	return caps, err
 }
 
 // PreflightImages validates the complete ordered image batch and its exact

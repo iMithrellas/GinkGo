@@ -23,6 +23,7 @@ type Registry struct {
 }
 
 // NewRegistry creates a lazy provider owner with the given metadata cache TTL.
+// Providers with their own metadata cache may opt out of the outer cache.
 // Nonpositive TTLs select five minutes. Call Close at daemon shutdown.
 func NewRegistry(metadataTTL time.Duration) *Registry {
 	if metadataTTL <= 0 {
@@ -116,6 +117,9 @@ func (p *managedProvider) begin(parent context.Context) (context.Context, func()
 	if p.closed {
 		return nil, nil, ErrRegistryClosed
 	}
+	if err := parent.Err(); err != nil {
+		return nil, nil, err
+	}
 	p.wg.Add(1)
 	ctx, cancel := context.WithCancel(parent)
 	stop := context.AfterFunc(p.root, cancel)
@@ -140,6 +144,9 @@ func (p *managedProvider) CompleteStream(parent context.Context, req Request, em
 		return streaming.CompleteStream(ctx, req, emit)
 	}
 	response, err := p.provider.Complete(ctx, req)
+	if ctx.Err() != nil {
+		return response, ctx.Err()
+	}
 	if err == nil && emit != nil {
 		err = emit(response.Text)
 	}
@@ -174,7 +181,10 @@ func (p *managedProvider) Capabilities(parent context.Context) (Capabilities, er
 		return cloneCapabilities(p.caps), nil
 	}
 	caps, err := ProviderCapabilities(ctx, p.provider)
-	if err == nil && ctx.Err() == nil && !caps.Uncacheable {
+	if ctx.Err() != nil {
+		return Capabilities{ImageInput: Unknown}, ctx.Err()
+	}
+	if err == nil && !caps.Uncacheable {
 		p.caps = cloneCapabilities(caps)
 		p.expires = time.Now().Add(p.ttl)
 	}

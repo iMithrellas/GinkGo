@@ -16,8 +16,9 @@ const (
 
 // Capabilities describes the features supported by a model and its adapter.
 type Capabilities struct {
-	// Uncacheable marks effective support filled by configuration after a transient
-	// discovery failure. Outer owners must not turn that fallback into metadata.
+	// Uncacheable prevents outer owners from caching this result. Providers with
+	// their own cache retain control of expiry and runtime/authentication checks;
+	// transient discovery fallbacks must also remain retryable.
 	Uncacheable        bool     `json:"-"`
 	ImageInput         Support  `json:"image_input"`
 	ResolvedModel      string   `json:"resolved_model,omitempty"`

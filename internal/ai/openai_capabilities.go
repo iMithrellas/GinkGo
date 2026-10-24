@@ -39,6 +39,7 @@ func (p *OpenAIProvider) Capabilities(ctx context.Context) (Capabilities, error)
 		return *p.capabilities, nil
 	}
 	capabilities, err := p.discoverCapabilities(ctx)
+	capabilities.Uncacheable = true
 	capabilities.ResolvedModel = p.options.Model
 	capabilities.ImageInput = EffectiveImageSupport(capabilities.ImageInput, Supported, p.options.ImageInput)
 	if err == nil && ctx.Err() == nil {
@@ -48,7 +49,6 @@ func (p *OpenAIProvider) Capabilities(ctx context.Context) (Capabilities, error)
 	// Explicit configuration can fill missing metadata, but an unsuccessful
 	// lookup is still not cached and cannot override known text-only metadata.
 	if err != nil && capabilities.ImageInput == Supported && p.options.ImageInput == "supported" && ctx.Err() == nil {
-		capabilities.Uncacheable = true
 		return capabilities, nil
 	}
 	return capabilities, err
@@ -75,6 +75,9 @@ func (p *OpenAIProvider) discoverCapabilities(parent context.Context) (Capabilit
 	}
 	resp, err := client.Do(req)
 	if err != nil {
+		if ctx.Err() != nil {
+			return Capabilities{ImageInput: Unknown}, ctx.Err()
+		}
 		return Capabilities{ImageInput: Unknown}, ErrProviderUnavailable
 	}
 	defer resp.Body.Close()
@@ -84,9 +87,12 @@ func (p *OpenAIProvider) discoverCapabilities(parent context.Context) (Capabilit
 		return Capabilities{ImageInput: Unknown}, nil
 	}
 	if resp.StatusCode != http.StatusOK {
-		return Capabilities{ImageInput: Unknown}, ErrProviderUnavailable
+		return Capabilities{ImageInput: Unknown}, openAIHTTPError(resp.StatusCode)
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, (64<<10)+1))
+	if ctx.Err() != nil {
+		return Capabilities{ImageInput: Unknown}, ctx.Err()
+	}
 	if err != nil || len(data) > 64<<10 {
 		return Capabilities{ImageInput: Unknown}, ErrProtocol
 	}

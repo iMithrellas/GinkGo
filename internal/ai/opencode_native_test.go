@@ -1004,10 +1004,16 @@ func TestOpenCodeNativeCancellationAndClose(t *testing.T) {
 
 func TestOpenCodeNativeCapabilityCacheAndOverrides(t *testing.T) {
 	p, capture := nativeFixture(t, "ok")
+	managed := registerTestProvider(t, p)
 	for i := 0; i < 2; i++ {
-		if _, err := p.Capabilities(context.Background()); err != nil {
+		caps, err := ProviderCapabilities(context.Background(), managed)
+		if err != nil {
 			t.Fatal(err)
 		}
+		if caps.ImageMediaTypes[0] != "image/png" {
+			t.Fatal("caller mutated cached metadata")
+		}
+		caps.ImageMediaTypes[0] = "mutated"
 	}
 	count := func() int {
 		n := 0
@@ -1027,7 +1033,7 @@ func TestOpenCodeNativeCapabilityCacheAndOverrides(t *testing.T) {
 		p.cache[key] = value
 	}
 	p.gate <- struct{}{}
-	if _, err := p.Capabilities(context.Background()); err != nil {
+	if _, err := ProviderCapabilities(context.Background(), managed); err != nil {
 		t.Fatal(err)
 	}
 	if count() != 2 {

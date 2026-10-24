@@ -112,13 +112,14 @@ func (p *CodexProvider) acquire(parent context.Context) (context.Context, func()
 	case <-p.gate:
 	}
 	if ctx.Err() != nil || p.life.Err() != nil {
+		err := ctx.Err()
+		if err == nil {
+			err = context.Canceled
+		}
 		p.gate <- struct{}{}
 		stop()
 		cancel()
-		if parent.Err() != nil {
-			return nil, nil, parent.Err()
-		}
-		return nil, nil, context.Canceled
+		return nil, nil, err
 	}
 	return ctx, func() { stop(); cancel(); p.gate <- struct{}{} }, nil
 }
@@ -410,7 +411,9 @@ func (p *CodexProvider) Capabilities(parent context.Context) (Capabilities, erro
 	if err != nil {
 		return Capabilities{ImageInput: Unknown}, err
 	}
-	return p.capabilities(m), nil
+	caps := p.capabilities(m)
+	caps.Uncacheable = true
+	return caps, nil
 }
 
 func (p *CodexProvider) Complete(parent context.Context, request Request) (response Response, err error) {

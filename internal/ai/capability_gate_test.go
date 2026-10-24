@@ -55,10 +55,109 @@ func TestMissingMetadataEndpointDoesNotProbeEveryRequest(t *testing.T) {
 				caps, err := provider.Capabilities(context.Background())
 				require.NoError(t, err)
 				require.Equal(t, Supported, caps.ImageInput)
-				require.False(t, caps.Uncacheable)
 			}
 			require.EqualValues(t, 1, calls.Load())
 		})
+	}
+}
+
+func TestRegistryRespectsProviderMetadataExpiry(t *testing.T) {
+	var calls atomic.Int32
+	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) == 1 {
+			_, _ = w.Write([]byte(`{"id":"model","input_modalities":["image"]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"id":"model","input_modalities":["text"]}`))
+	}))
+	defer host.Close()
+	provider, err := NewOpenAI(OpenAIOptions{BaseURL: host.URL, Model: "model"})
+	require.NoError(t, err)
+	managed := registerTestProvider(t, provider)
+	for range 2 {
+		caps, err := ProviderCapabilities(context.Background(), managed)
+		require.NoError(t, err)
+		require.Equal(t, Supported, caps.ImageInput)
+	}
+	require.EqualValues(t, 1, calls.Load())
+	provider.capExpires = time.Time{}
+	caps, err := ProviderCapabilities(context.Background(), managed)
+	require.NoError(t, err)
+	require.Equal(t, Unsupported, caps.ImageInput)
+	require.EqualValues(t, 2, calls.Load())
+}
+
+func TestOpenAIDiscoveryFailures(t *testing.T) {
+	for _, tc := range []struct {
+		status int
+		want   error
+	}{
+		{http.StatusUnauthorized, ErrAuthentication},
+		{http.StatusForbidden, ErrAuthentication},
+		{http.StatusTooManyRequests, ErrRateLimited},
+		{http.StatusServiceUnavailable, ErrProviderUnavailable},
+	} {
+		t.Run(http.StatusText(tc.status), func(t *testing.T) {
+			host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte("secret upstream diagnostics"))
+			}))
+			defer host.Close()
+			provider, err := NewOpenAI(OpenAIOptions{BaseURL: host.URL, Model: "model"})
+			require.NoError(t, err)
+			_, err = provider.Capabilities(context.Background())
+			require.ErrorIs(t, err, tc.want)
+			require.NotContains(t, err.Error(), "secret")
+		})
+	}
+}
+
+func TestOpenAIDiscoveryCancellation(t *testing.T) {
+	for _, body := range []bool{false, true} {
+		name := "headers"
+		if body {
+			name = "body"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if body {
+					w.WriteHeader(http.StatusOK)
+					w.(http.Flusher).Flush()
+				}
+				cancel()
+				<-r.Context().Done()
+			}))
+			defer host.Close()
+			provider, err := NewOpenAI(OpenAIOptions{BaseURL: host.URL, Model: "model"})
+			require.NoError(t, err)
+			_, err = provider.Capabilities(ctx)
+			require.ErrorIs(t, err, context.Canceled)
+		})
+	}
+}
+
+func TestOpenAICompletionTimeoutIncludesDiscovery(t *testing.T) {
+	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("timed-out request reached endpoint")
+	}))
+	defer host.Close()
+	provider, err := NewOpenAI(OpenAIOptions{BaseURL: host.URL, Model: "model", Options: Options{Timeout: 20 * time.Millisecond}})
+	require.NoError(t, err)
+	require.NoError(t, provider.capMu.lock(context.Background()))
+	defer provider.capMu.unlock()
+	request := Request{Prompt: "note", Images: []imagecontext.Image{aiImage(t)}}
+	done := make(chan error, 1)
+	go func() {
+		_, err := provider.Complete(context.Background(), request)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+	case <-time.After(time.Second):
+		t.Fatal("completion timeout did not bound queued discovery")
 	}
 }
 

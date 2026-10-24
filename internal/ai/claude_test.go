@@ -314,14 +314,15 @@ func claudeArg(args []string, flag string) string {
 func TestClaudeCodeCapabilitiesConservativeAndCached(t *testing.T) {
 	path, dir := claudeFake(t)
 	p := claudeTestProvider(t, path, Options{})
-	caps, err := p.Capabilities(context.Background())
+	managed := registerTestProvider(t, p)
+	caps, err := ProviderCapabilities(context.Background(), managed)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if caps.ImageInput != Unknown || caps.ResolvedModel != "claude-exact-default" || caps.ImageReason == "" || caps.MaxImageBytes != 5<<20 || caps.MaxTotalImageBytes != 6<<20 || caps.MaxImageWidth != 8000 || caps.MaxImageHeight != 8000 || caps.MaxRequestBytes != 10_000_000 {
 		t.Fatalf("%+v", caps)
 	}
-	if _, err := p.Capabilities(context.Background()); err != nil {
+	if _, err := ProviderCapabilities(context.Background(), managed); err != nil {
 		t.Fatal(err)
 	}
 	if len(claudeCalls(t, dir)) != 4 {
@@ -336,7 +337,7 @@ func TestClaudeCodeCapabilitiesConservativeAndCached(t *testing.T) {
 	}
 	// Returned slices cannot mutate the cached metadata.
 	caps.ImageMediaTypes[0] = "forged"
-	caps, _ = p.Capabilities(context.Background())
+	caps, _ = ProviderCapabilities(context.Background(), managed)
 	if caps.ImageMediaTypes[0] != "image/png" {
 		t.Fatal("mutable cached capabilities")
 	}

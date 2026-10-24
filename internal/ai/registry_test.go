@@ -18,6 +18,45 @@ type registryProvider struct {
 	finished chan struct{}
 }
 
+func registerTestProvider(t *testing.T, provider Provider) Provider {
+	t.Helper()
+	registry := NewRegistry(time.Minute)
+	t.Cleanup(func() { _ = registry.Close() })
+	managed, err := registry.Resolve("test", func() (Provider, error) { return provider, nil })
+	require.NoError(t, err)
+	return managed
+}
+
+func TestRegistryCanceledRequestsDoNotStartProvider(t *testing.T) {
+	provider := registerTestProvider(t, noteProviderFunc(func(context.Context, Request) (Response, error) {
+		t.Fatal("canceled request reached provider")
+		return Response{}, nil
+	}))
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := provider.Complete(ctx, Request{})
+	require.ErrorIs(t, err, context.Canceled)
+	_, err = provider.(StreamingProvider).CompleteStream(ctx, Request{}, func(string) error {
+		t.Fatal("canceled request emitted text")
+		return nil
+	})
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestRegistryBufferedStreamCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	provider := registerTestProvider(t, noteProviderFunc(func(context.Context, Request) (Response, error) {
+		cancel()
+		return Response{Text: "late result"}, nil
+	}))
+	_, err := provider.(StreamingProvider).CompleteStream(ctx, Request{}, func(string) error {
+		t.Fatal("canceled completion emitted text")
+		return nil
+	})
+	require.ErrorIs(t, err, context.Canceled)
+}
+
 func (p *registryProvider) Complete(ctx context.Context, _ Request) (Response, error) {
 	close(p.started)
 	defer close(p.finished)

@@ -731,14 +731,15 @@ func TestCodexModelAndImagePreflight(t *testing.T) {
 
 func TestCodexMetadataRecoveryExpiryAndExplicitOverride(t *testing.T) {
 	p, log := codexFakeProvider(t, "metadata-once", Options{})
-	if _, err := p.Capabilities(context.Background()); !errors.Is(err, ErrProviderUnavailable) {
+	managed := registerTestProvider(t, p)
+	if _, err := ProviderCapabilities(context.Background(), managed); !errors.Is(err, ErrProviderUnavailable) {
 		t.Fatalf("expected transient metadata failure: %v", err)
 	}
-	if caps, err := p.Capabilities(context.Background()); err != nil || caps.ImageInput != Supported {
+	if caps, err := ProviderCapabilities(context.Background(), managed); err != nil || caps.ImageInput != Supported {
 		t.Fatalf("transient failure was cached: %+v %v", caps, err)
 	}
 	p.expires = time.Now().Add(-time.Second)
-	if _, err := p.Capabilities(context.Background()); err != nil {
+	if _, err := ProviderCapabilities(context.Background(), managed); err != nil {
 		t.Fatal(err)
 	}
 	starts := 0

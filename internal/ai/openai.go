@@ -54,6 +54,8 @@ func NewOpenAI(options OpenAIOptions) (*OpenAIProvider, error) {
 // Complete sends only system/user messages; no tools or executable instructions
 // are supplied. Truncated completions and attempted tool calls fail closed.
 func (p *OpenAIProvider) Complete(parent context.Context, request Request) (completion Response, completionErr error) {
+	ctx, cancel := context.WithTimeout(parent, p.options.Timeout)
+	defer cancel()
 	wantedImages := len(request.Images) != 0
 	submittedImages := false
 	submissionKnown := true
@@ -75,11 +77,11 @@ func (p *OpenAIProvider) Complete(parent context.Context, request Request) (comp
 	}
 	var content any = request.Prompt
 	if len(request.Images) != 0 {
-		caps, err := p.Capabilities(parent)
+		caps, err := p.Capabilities(ctx)
 		if err != nil || caps.ImageInput != Supported {
 			request.Images = nil
 		} else {
-			images, err := imagecontext.Validate(parent, request.Images)
+			images, err := imagecontext.Validate(ctx, request.Images)
 			if err != nil {
 				return Response{}, err
 			}
@@ -107,8 +109,6 @@ func (p *OpenAIProvider) Complete(parent context.Context, request Request) (comp
 	if len(input) > encodedInputLimit(p.options.MaxInputBytes, request.Images) {
 		return Response{}, ErrInputLimit
 	}
-	ctx, cancel := context.WithTimeout(parent, p.options.Timeout)
-	defer cancel()
 	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, p.options.BaseURL+"/chat/completions", bytes.NewReader(input))
 	if err != nil {
 		return Response{}, fmt.Errorf("create openai request: %w", err)
@@ -127,7 +127,7 @@ func (p *OpenAIProvider) Complete(parent context.Context, request Request) (comp
 			return Response{}, ctx.Err()
 		}
 		// Transport errors can contain credentials/notes in URLs or remote text.
-		return Response{}, fmt.Errorf("openai request transport failed")
+		return Response{}, fmt.Errorf("openai request transport failed: %w", ErrProviderUnavailable)
 	}
 	defer result.Body.Close()
 	submissionKnown = true
@@ -140,13 +140,10 @@ func (p *OpenAIProvider) Complete(parent context.Context, request Request) (comp
 		if ctx.Err() != nil {
 			return Response{}, ctx.Err()
 		}
-		return Response{}, fmt.Errorf("read openai response failed")
-	}
-	if result.StatusCode == 401 || result.StatusCode == 403 {
-		return Response{}, ErrAuthentication
+		return Response{}, fmt.Errorf("read openai response failed: %w", ErrProviderUnavailable)
 	}
 	if result.StatusCode != http.StatusOK {
-		return Response{}, fmt.Errorf("openai completion returned HTTP %d", result.StatusCode)
+		return Response{}, openAIHTTPError(result.StatusCode)
 	}
 	var response struct {
 		Choices []struct {
@@ -170,4 +167,19 @@ func (p *OpenAIProvider) Complete(parent context.Context, request Request) (comp
 		return Response{}, ErrProtocol
 	}
 	return Response{Text: *choice.Message.Content}, nil
+}
+
+// Compatible endpoints have no shared error-body schema. Classify only status
+// codes with stable meaning; upstream messages may contain credentials or input.
+func openAIHTTPError(status int) error {
+	switch {
+	case status == http.StatusUnauthorized || status == http.StatusForbidden:
+		return ErrAuthentication
+	case status == http.StatusTooManyRequests:
+		return ErrRateLimited
+	case status == http.StatusRequestTimeout || status >= 500 && status <= 599:
+		return ErrProviderUnavailable
+	default:
+		return fmt.Errorf("openai request returned HTTP %d", status)
+	}
 }

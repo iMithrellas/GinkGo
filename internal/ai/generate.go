@@ -5,6 +5,13 @@ import (
 	"fmt"
 )
 
+// generationError keeps provider diagnostics private while preserving the cause
+// for callers that distinguish cancellation, limits and retryable failures.
+type generationError struct{ cause error }
+
+func (e *generationError) Error() string { return providerFallbackReason(e.cause) }
+func (e *generationError) Unwrap() error { return e.cause }
+
 // Generate performs bounded, generation-only inference without saving a note.
 // It shares provider ownership and admission with note generation.
 func (s *Service) Generate(ctx context.Context, request Request, providerName string) (Response, error) {
@@ -24,15 +31,18 @@ func (s *Service) Generate(ctx context.Context, request Request, providerName st
 		return Response{}, err
 	}
 	provider, err := s.resolve(providerName)
-	if err != nil || provider == nil {
-		return Response{}, fmt.Errorf("%s", providerFallbackReason(err))
+	if err != nil {
+		return Response{}, &generationError{cause: err}
+	}
+	if provider == nil {
+		return Response{}, &generationError{cause: ErrProviderUnavailable}
 	}
 	response, err := provider.Complete(ctx, request)
 	if ctx.Err() != nil {
 		return Response{}, ctx.Err()
 	}
 	if err != nil {
-		return Response{}, fmt.Errorf("%s", providerFallbackReason(err))
+		return Response{}, &generationError{cause: err}
 	}
 	if len(response.Text) > 32<<10 {
 		return Response{}, ErrOutputLimit

@@ -55,7 +55,13 @@ func TestOpenAIFailures(t *testing.T) {
 		want       error
 	}{
 		{"auth", "secret", 401, ErrAuthentication},
-		{"rate limit", "secret", 429, nil},
+		{"forbidden", "secret", 403, ErrAuthentication},
+		{"rate limit", "secret", 429, ErrRateLimited},
+		{"timeout", "secret", 408, ErrProviderUnavailable},
+		{"server error", "secret", 500, ErrProviderUnavailable},
+		{"unavailable", "secret", 503, ErrProviderUnavailable},
+		{"bad request", "secret", 400, nil},
+		{"missing route", "secret", 404, nil},
 		{"bad json", `data: {}`, 200, ErrProtocol},
 		{"missing", `{}`, 200, ErrProtocol},
 		{"truncated", `{"choices":[{"finish_reason":"length","message":{"role":"assistant","content":"partial"}}]}`, 200, ErrProtocol},

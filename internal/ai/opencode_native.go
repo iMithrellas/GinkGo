@@ -150,10 +150,14 @@ func (p *OpenCodeNativeProvider) acquire(parent context.Context) (context.Contex
 	case <-p.gate:
 	}
 	if p.closed.Load() || ctx.Err() != nil {
+		err := ctx.Err()
+		if err == nil {
+			err = context.Canceled
+		}
 		p.gate <- struct{}{}
 		stop()
 		cancel()
-		return nil, nil, context.Canceled
+		return nil, nil, err
 	}
 	return ctx, func() { p.gate <- struct{}{}; stop(); cancel() }, nil
 }
@@ -568,7 +572,9 @@ func (p *OpenCodeNativeProvider) Capabilities(parent context.Context) (Capabilit
 		p.stopRuntime()
 		return Capabilities{ImageInput: Unknown}, err
 	}
-	return resolved.caps, nil
+	caps := cloneCapabilities(resolved.caps)
+	caps.Uncacheable = true
+	return caps, nil
 }
 
 func (p *OpenCodeNativeProvider) requestModel(request Request) (string, string) {
